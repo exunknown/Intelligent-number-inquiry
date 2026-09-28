@@ -1,0 +1,21 @@
+views:
+  - name: ecommerce
+    title: 电商经营分析
+    description: 已治理的电商订单指标与分析维度
+    public: true
+    cubes:
+      - join_path: orders
+        prefix: false
+        includes: [gmv, order_count, sales_quantity, aov]
+      - join_path: orders.regions
+        prefix: false
+        includes: [region_name, province, country]
+      - join_path: orders.products
+        prefix: false
+        includes: [product_name, category, brand]
+      - join_path: orders.customers
+        prefix: false
+        includes: [customer_name, gender, member_level]
+      - join_path: orders.dates
+        prefix: false
+        includes: [order_date]

@@ -1,0 +1,66 @@
+logging:
+  file:
+    enable: true
+    level: INFO
+    path: logs
+    rotation: "10 MB"
+    retention: "7 days"
+  console:
+    enable: true
+    level: INFO
+
+db_meta:
+  host: localhost
+  port: 3307
+  user: ${oc.env:MYSQL_USER}
+  password: ${oc.env:MYSQL_PASSWORD}
+  database: meta
+
+db_dw:
+  host: localhost
+  port: 3307
+  user: ${oc.env:MYSQL_USER}
+  password: ${oc.env:MYSQL_PASSWORD}
+  database: dw
+
+qdrant:
+  host: localhost
+  port: 6333
+  embedding_size: 1024
+
+embedding:
+  host: localhost
+  port: 8081
+  model: BAAI/bge-large-zh-v1.5
+
+es:
+  host: localhost
+  port: 19200
+  index_name: data_agent
+
+llm:
+  model_name: ${oc.env:LLM_MODEL_NAME}
+  api_key: ${oc.env:LLM_API_KEY}
+  base_url: ${oc.env:LLM_BASE_URL}
+
+ini:
+  base_url: ${oc.env:INI_BASE_URL}
+  api_key: ${oc.env:INI_API_KEY}
+  chat_model: ${oc.env:INI_CHAT_MODEL}
+  embedding_model: ${oc.env:INI_EMBEDDING_MODEL}
+  rerank_model: ${oc.env:INI_RERANK_MODEL}
+
+selector:
+  enabled: true
+  schema_token_threshold: 4000
+  token_estimate_chars_per_token: 2.0
+
+cube:
+  base_url: http://127.0.0.1:4000/cubejs-api
+  api_secret: ${oc.env:CUBE_API_SECRET}
+  timeout_seconds: 10
+  max_limit: 500
+  semantic_view: ecommerce
+
+metric_governance:
+  api_key: ${oc.env:METRIC_GOVERNANCE_API_KEY,""}

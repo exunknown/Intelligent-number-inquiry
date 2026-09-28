@@ -1,0 +1,39 @@
+cubes:
+  - name: customers
+    sql_table: dw.dim_customer
+    public: false
+    dimensions:
+      - name: customer_id
+        sql: customer_id
+        type: string
+        primary_key: true
+      - name: customer_name
+        sql: customer_name
+        type: string
+        title: 客户名称
+        description: 下单客户名称
+        meta:
+          aliases: [用户名称, 客户]
+          ai_context: 用于分析具体客户
+          source_column_id: dim_customer.customer_name
+          filterable: true
+      - name: gender
+        sql: gender
+        type: string
+        title: 性别
+        description: 客户性别
+        meta:
+          aliases: [客户性别, 用户性别]
+          ai_context: 用于客户性别分组和筛选
+          source_column_id: dim_customer.gender
+          filterable: true
+      - name: member_level
+        sql: member_level
+        type: string
+        title: 会员等级
+        description: 客户会员等级
+        meta:
+          aliases: [用户等级, 客户等级]
+          ai_context: 用于会员等级分组和筛选
+          source_column_id: dim_customer.member_level
+          filterable: true

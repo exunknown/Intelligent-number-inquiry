@@ -1,0 +1,39 @@
+cubes:
+  - name: products
+    sql_table: dw.dim_product
+    public: false
+    dimensions:
+      - name: product_id
+        sql: product_id
+        type: string
+        primary_key: true
+      - name: product_name
+        sql: product_name
+        type: string
+        title: 商品名称
+        description: 商品名称
+        meta:
+          aliases: [产品名称, 商品]
+          ai_context: 用于分析具体商品
+          source_column_id: dim_product.product_name
+          filterable: true
+      - name: category
+        sql: category
+        type: string
+        title: 商品品类
+        description: 商品所属品类
+        meta:
+          aliases: [商品类别, 品类, 分类]
+          ai_context: 用于商品品类分组和筛选
+          source_column_id: dim_product.category
+          filterable: true
+      - name: brand
+        sql: brand
+        type: string
+        title: 品牌
+        description: 商品品牌
+        meta:
+          aliases: [品牌名称]
+          ai_context: 用于商品品牌分析
+          source_column_id: dim_product.brand
+          filterable: true

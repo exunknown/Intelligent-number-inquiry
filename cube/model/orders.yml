@@ -1,0 +1,62 @@
+cubes:
+  - name: orders
+    sql_table: dw.fact_order
+    public: false
+    joins:
+      - name: regions
+        sql: "{CUBE}.region_id = {regions}.region_id"
+        relationship: many_to_one
+      - name: products
+        sql: "{CUBE}.product_id = {products}.product_id"
+        relationship: many_to_one
+      - name: customers
+        sql: "{CUBE}.customer_id = {customers}.customer_id"
+        relationship: many_to_one
+      - name: dates
+        sql: "{CUBE}.date_id = {dates}.date_id"
+        relationship: many_to_one
+    measures:
+      - name: gmv
+        sql: order_amount
+        type: sum
+        title: 销售额
+        description: 所有订单成交金额之和
+        meta:
+          aliases: [GMV, 成交额, 成交总额, 订单总额]
+          ai_context: 统计订单成交金额总和，不代表利润或回款
+          source_column_id: fact_order.order_amount
+          filterable: false
+      - name: order_count
+        sql: order_id
+        type: count_distinct
+        title: 订单数
+        description: 去重订单数量
+        meta:
+          aliases: [订单量, 成交订单数]
+          ai_context: 按订单ID去重后的订单数量
+          source_column_id: fact_order.order_id
+          filterable: false
+      - name: sales_quantity
+        sql: order_quantity
+        type: sum
+        title: 销量
+        description: 所有订单商品购买数量之和
+        meta:
+          aliases: [销售数量, 件数, 购买数量]
+          ai_context: 统计订单商品件数之和
+          source_column_id: fact_order.order_quantity
+          filterable: false
+      - name: aov
+        sql: "{gmv} / NULLIF({order_count}, 0)"
+        type: number
+        title: 平均客单价
+        description: 销售额除以去重订单数
+        meta:
+          aliases: [AOV, 客单价, 平均订单金额]
+          ai_context: GMV除以去重订单数，不是商品平均单价
+          filterable: false
+    dimensions:
+      - name: order_id
+        sql: order_id
+        type: string
+        primary_key: true

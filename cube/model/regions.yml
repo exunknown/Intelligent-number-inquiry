@@ -1,0 +1,39 @@
+cubes:
+  - name: regions
+    sql_table: dw.dim_region
+    public: false
+    dimensions:
+      - name: region_id
+        sql: region_id
+        type: string
+        primary_key: true
+      - name: region_name
+        sql: region_name
+        type: string
+        title: 大区
+        description: 订单所属大区
+        meta:
+          aliases: [地区, 区域, 大区]
+          ai_context: 用于华东、华南、华北等大区分析
+          source_column_id: dim_region.region_name
+          filterable: true
+      - name: province
+        sql: province
+        type: string
+        title: 省份
+        description: 订单所属省份
+        meta:
+          aliases: [省, 所在省份]
+          ai_context: 用于省级区域分析
+          source_column_id: dim_region.province
+          filterable: true
+      - name: country
+        sql: country
+        type: string
+        title: 国家
+        description: 订单所属国家
+        meta:
+          aliases: [国家名称]
+          ai_context: 用于国家级区域分析
+          source_column_id: dim_region.country
+          filterable: true

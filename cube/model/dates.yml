@@ -1,0 +1,19 @@
+cubes:
+  - name: dates
+    sql_table: dw.dim_date
+    public: false
+    dimensions:
+      - name: date_id
+        sql: date_id
+        type: number
+        primary_key: true
+      - name: order_date
+        sql: "STR_TO_DATE(CAST({CUBE}.date_id AS CHAR), '%Y%m%d')"
+        type: time
+        title: 下单日期
+        description: 订单发生日期
+        meta:
+          aliases: [日期, 订单日期, 成交日期]
+          ai_context: 用于按日、周、月、季度或年筛选和分组
+          source_column_id: dim_date.date_id
+          filterable: true

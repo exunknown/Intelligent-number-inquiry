@@ -1,0 +1,148 @@
+"""Question execution service and SSE serialization."""
+
+import json
+from time import perf_counter
+
+from langchain_huggingface import HuggingFaceEndpointEmbeddings
+
+from app.agent.context import DataAgentContext
+from app.agent.graph import graph
+from app.agent.state import DataAgentState
+from app.core.log import logger
+from app.core.query_errors import QueryExecutionError
+from app.entities.query_audit import QueryAuditRecord
+from app.repositories.cube.cube_repository import CubeRepository
+from app.repositories.es.value_es_repository import ValueESRepository
+from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
+from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
+from app.repositories.mysql.meta.metric_candidate_repository import (
+    MetricCandidateRepository,
+)
+from app.repositories.mysql.meta.query_audit_repository import QueryAuditRepository
+from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
+from app.repositories.qdrant.cube_member_qdrant_repository import (
+    CubeMemberQdrantRepository,
+)
+
+
+class QueryService:
+    """Orchestrate one question and expose graph events as SSE messages."""
+
+    def __init__(
+        self,
+        meta_mysql_repository: MetaMySQLRepository,
+        embedding_client: HuggingFaceEndpointEmbeddings,
+        dw_mysql_repository: DWMySQLRepository,
+        column_qdrant_repository: ColumnQdrantRepository,
+        cube_member_qdrant_repository: CubeMemberQdrantRepository,
+        cube_repository: CubeRepository,
+        value_es_repository: ValueESRepository,
+        query_audit_repository: QueryAuditRepository | None = None,
+        metric_candidate_repository: MetricCandidateRepository | None = None,
+    ):
+        self.meta_mysql_repository = meta_mysql_repository
+        self.dw_mysql_repository = dw_mysql_repository
+        self.embedding_client = embedding_client
+        self.column_qdrant_repository = column_qdrant_repository
+        self.cube_member_qdrant_repository = cube_member_qdrant_repository
+        self.cube_repository = cube_repository
+        self.value_es_repository = value_es_repository
+        self.query_audit_repository = query_audit_repository
+        self.metric_candidate_repository = metric_candidate_repository
+
+    async def query(self, query: str):
+        """Execute one graph run and yield SSE-formatted events."""
+
+        state = DataAgentState(query=query)
+        context = DataAgentContext(
+            column_qdrant_repository=self.column_qdrant_repository,
+            embedding_client=self.embedding_client,
+            cube_member_qdrant_repository=self.cube_member_qdrant_repository,
+            cube_repository=self.cube_repository,
+            value_es_repository=self.value_es_repository,
+            meta_mysql_repository=self.meta_mysql_repository,
+            dw_mysql_repository=self.dw_mysql_repository,
+        )
+        started_at = perf_counter()
+        audit = {
+            "query_mode": None,
+            "route_reason": None,
+            "metric_query": None,
+            "cube_query": None,
+            "sql": None,
+            "outcome": "aborted",
+            "error_code": None,
+            "verified": None,
+        }
+        try:
+            async for chunk in graph.astream(
+                input=state, context=context, stream_mode="custom"
+            ):
+                if isinstance(chunk, dict) and chunk.get("type") == "audit":
+                    for field in (
+                        "query_mode",
+                        "route_reason",
+                        "metric_query",
+                        "cube_query",
+                        "sql",
+                    ):
+                        if chunk.get(field) is not None:
+                            audit[field] = chunk[field]
+                    continue
+                if isinstance(chunk, dict) and chunk.get("type") == "route":
+                    audit["query_mode"] = chunk.get("mode")
+                    audit["route_reason"] = chunk.get("reason")
+                elif isinstance(chunk, dict) and chunk.get("type") == "result":
+                    audit["outcome"] = "success"
+                    audit["verified"] = chunk.get("verified")
+                yield f"data: {json.dumps(chunk, ensure_ascii=False, default=str)}\n\n"
+        except QueryExecutionError as e:
+            logger.exception("Question execution failed: {}", e.code)
+            audit["outcome"] = "error"
+            audit["error_code"] = e.code
+            error = {
+                "type": "error",
+                "code": e.code,
+                "message": e.message,
+                "retryable": e.retryable,
+            }
+            yield f"data: {json.dumps(error, ensure_ascii=False, default=str)}\n\n"
+        except Exception:
+            logger.exception("Unexpected question execution error")
+            audit["outcome"] = "error"
+            audit["error_code"] = "internal_error"
+            error = {
+                "type": "error",
+                "code": "internal_error",
+                "message": "服务内部错误，请稍后重试",
+                "retryable": False,
+            }
+            yield f"data: {json.dumps(error, ensure_ascii=False, default=str)}\n\n"
+        finally:
+            if self.query_audit_repository is not None:
+                record = QueryAuditRecord(
+                    query_text=query,
+                    query_mode=audit["query_mode"],
+                    route_reason=audit["route_reason"],
+                    metric_query=audit["metric_query"],
+                    cube_query=audit["cube_query"],
+                    sql=audit["sql"],
+                    outcome=audit["outcome"],
+                    error_code=audit["error_code"],
+                    verified=audit["verified"],
+                    duration_ms=max(0, round((perf_counter() - started_at) * 1000)),
+                )
+                try:
+                    await self.query_audit_repository.save(record)
+                except Exception:
+                    logger.warning("Failed to save query audit record")
+            if (
+                self.metric_candidate_repository is not None
+                and audit["query_mode"] == "sql"
+            ):
+                try:
+                    await self.metric_candidate_repository.upsert_pending(
+                        query, audit["route_reason"]
+                    )
+                except Exception:
+                    logger.warning("Failed to save metric governance candidate")
