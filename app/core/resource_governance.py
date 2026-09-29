@@ -8,6 +8,7 @@ from functools import lru_cache
 from typing import Awaitable, Callable, TypeVar
 
 from app.conf.app_config import app_config
+from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
 
 T = TypeVar("T")
@@ -228,11 +229,23 @@ async def await_with_budget(
         async with asyncio.timeout(budget.remaining_seconds()):
             return await awaitable
     except QueryExecutionError:
+        logger.warning(
+            "resource_event=budget_rejected resource_class={} deadline_ms={} resource={}",
+            "dependency" if resource else "request",
+            round(budget.remaining_seconds() * 1000),
+            resource or "request",
+        )
         close = getattr(awaitable, "close", None)
         if close is not None:
             close()
         raise
     except TimeoutError:
+        logger.warning(
+            "resource_event=deadline_exceeded resource_class={} deadline_ms={} resource={}",
+            "dependency" if resource else "request",
+            round(budget.remaining_seconds() * 1000),
+            resource or "request",
+        )
         raise QueryExecutionError(
             "resource_deadline_exceeded", "问数请求已超过时间预算", False
         ) from None
@@ -290,14 +303,27 @@ class ResourceAdmission:
             while request_times and request_times[0] <= cutoff:
                 request_times.popleft()
             if len(request_times) >= self.rate_limit:
+                logger.warning(
+                    "resource_event=admission_rejected resource_class=request reason=rate_limited user_id={}",
+                    user_id,
+                )
                 raise QueryExecutionError(
                     "rate_limited", "请求过于频繁，请稍后重试", True
                 )
             if self._global_in_use >= self.global_limit:
+                logger.warning(
+                    "resource_event=admission_rejected resource_class=request reason=capacity_exhausted user_id={} concurrency_in_use={}",
+                    user_id,
+                    self._global_in_use,
+                )
                 raise QueryExecutionError(
                     "capacity_exhausted", "当前问数容量已满，请稍后重试", True
                 )
             if self._user_in_use[user_id] >= self.user_limit:
+                logger.warning(
+                    "resource_event=admission_rejected resource_class=request reason=user_capacity_exhausted user_id={}",
+                    user_id,
+                )
                 raise QueryExecutionError(
                     "user_capacity_exhausted", "当前用户请求数已达上限", True
                 )

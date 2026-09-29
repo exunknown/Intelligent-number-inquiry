@@ -111,6 +111,12 @@ class CubeRepository:
                 return result
             except QueryExecutionError as error:
                 if error.code == "dependency_circuit_open":
+                    logger.warning(
+                        "resource_event=circuit_open resource_class=dependency dependency=cube method={} path={} circuit_state={}",
+                        method,
+                        path,
+                        self.circuit_breaker.state,
+                    )
                     raise
                 if error.retryable and error.code in {
                     "cube_timeout",
@@ -122,11 +128,12 @@ class CubeRepository:
                 if budget is not None:
                     budget.check()
                 logger.warning(
-                    "Cube request retry method={} path={} attempt={} code={}",
+                    "resource_event=dependency_retry resource_class=dependency dependency=cube method={} path={} attempt={} code={} circuit_state={}",
                     method,
                     path,
                     attempt + 2,
                     error.code,
+                    self.circuit_breaker.state,
                 )
                 if self.retry_backoff_seconds > 0:
                     delay = self.retry_backoff_seconds
@@ -214,8 +221,8 @@ class CubeRepository:
             return QueryExecutionError("cube_unavailable", "Cube 服务暂不可用", True)
         return QueryExecutionError("cube_unavailable", "Cube 服务请求失败", False)
 
-    @staticmethod
     def _log(
+        self,
         method: str,
         path: str,
         status: int | None,
@@ -223,10 +230,11 @@ class CubeRepository:
         code: str,
     ) -> None:
         logger.info(
-            "Cube 请求 method={} path={} status={} duration_ms={} code={}",
+            "resource_class=dependency dependency=cube method={} path={} status={} duration_ms={} circuit_state={} code={}",
             method,
             path,
             status,
             round((time.monotonic() - started_at) * 1000),
+            self.circuit_breaker.state,
             code,
         )
