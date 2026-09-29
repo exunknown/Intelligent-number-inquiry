@@ -164,6 +164,7 @@ class ResourceConfig:
     """问数请求的单实例资源预算。"""
 
     request_timeout_seconds: float
+    max_request_body_bytes: int
     global_concurrency: int
     user_concurrency: int
     rate_limit: int

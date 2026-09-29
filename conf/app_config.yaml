@@ -97,6 +97,7 @@ sql_safety:
 
 resource:
   request_timeout_seconds: ${oc.env:QUERY_REQUEST_TIMEOUT_SECONDS,60}
+  max_request_body_bytes: ${oc.env:QUERY_MAX_REQUEST_BODY_BYTES,65536}
   global_concurrency: ${oc.env:QUERY_GLOBAL_CONCURRENCY,8}
   user_concurrency: ${oc.env:QUERY_USER_CONCURRENCY,2}
   rate_limit: ${oc.env:QUERY_RATE_LIMIT,30}

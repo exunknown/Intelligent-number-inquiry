@@ -11,6 +11,83 @@ from app.conf.app_config import app_config
 from app.core.query_errors import QueryExecutionError
 
 
+class RequestBodyTooLarge(ValueError):
+    """请求体超过接口配置的字节上限。"""
+
+
+def validate_content_length(content_length: str | None, max_bytes: int) -> int | None:
+    """校验声明的请求体大小，缺少长度时交由 ASGI 接收器累计校验。"""
+
+    if max_bytes <= 0:
+        raise ValueError("max_bytes must be positive")
+    if content_length is None:
+        return None
+    try:
+        length = int(content_length)
+    except (TypeError, ValueError) as exc:
+        raise RequestBodyTooLarge("invalid content length") from exc
+    if length < 0 or length > max_bytes:
+        raise RequestBodyTooLarge("request body is too large")
+    return length
+
+
+class QueryBodyLimitMiddleware:
+    """只为问数接口限制请求体字节数，兼容 Content-Length 和分块请求。"""
+
+    def __init__(self, app, max_bytes: int):
+        if max_bytes <= 0:
+            raise ValueError("max_bytes must be positive")
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http" or scope.get("path") != "/api/query":
+            await self.app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers", []))
+        content_length = headers.get(b"content-length")
+        try:
+            validate_content_length(
+                content_length.decode("ascii") if content_length else None,
+                self.max_bytes,
+            )
+        except RequestBodyTooLarge:
+            await self._send_rejection(send)
+            return
+
+        received = 0
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    raise RequestBodyTooLarge("request body is too large")
+            return message
+
+        try:
+            await self.app(scope, limited_receive, send)
+        except RequestBodyTooLarge:
+            await self._send_rejection(send)
+
+    @staticmethod
+    async def _send_rejection(send) -> None:
+        body = '{"detail":"请求体超过大小限制"}'.encode("utf-8")
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 413,
+                "headers": [
+                    (b"content-type", b"application/json; charset=utf-8"),
+                    (b"content-length", str(len(body)).encode("ascii")),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+
 @dataclass(slots=True)
 class RequestBudget:
     """使用单调时钟计算的请求级截止时间。"""
