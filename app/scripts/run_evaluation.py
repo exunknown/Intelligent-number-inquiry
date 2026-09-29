@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app.evaluation.runner import (
     EvaluationCase,
+    EvaluationIdentity,
     EvaluationObservation,
     EvaluationRunner,
     EvaluationVersions,
@@ -34,6 +35,26 @@ def _read_jsonl(path: Path) -> list[dict]:
 
 
 def _case(record: dict) -> EvaluationCase:
+    identity_record = record.get("identity")
+    identity = None
+    if identity_record is not None:
+        if not isinstance(identity_record, dict):
+            raise ValueError("identity 必须是 JSON 对象")
+        identity = EvaluationIdentity(
+            user_id=identity_record["user_id"],
+            username=identity_record.get("username"),
+            roles=tuple(identity_record.get("roles", [])),
+            policy_version=int(identity_record["policy_version"]),
+            allowed_metrics=tuple(identity_record.get("allowed_metrics", [])),
+            allowed_tables=tuple(identity_record.get("allowed_tables", [])),
+            allowed_columns=tuple(identity_record.get("allowed_columns", [])),
+            allowed_department_ids=tuple(
+                identity_record.get("allowed_department_ids", [])
+            ),
+            sql_fallback_allowed=bool(
+                identity_record.get("sql_fallback_allowed", False)
+            ),
+        )
     return EvaluationCase(
         case_id=record["case_id"],
         expected_route=record["expected_route"],
@@ -41,6 +62,8 @@ def _case(record: dict) -> EvaluationCase:
         expected_outcome=record["expected_outcome"],
         expected_rejection_code=record.get("expected_rejection_code"),
         tags=tuple(record.get("tags", [])),
+        query=record.get("query"),
+        identity=identity,
     )
 
 

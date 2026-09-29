@@ -7,6 +7,8 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any, Iterable
 
+from app.entities.auth import AuthContext, PermissionSnapshot, QueryPrincipal
+
 _SENSITIVE_KEYS = {
     "access_token",
     "api_key",
@@ -15,6 +17,7 @@ _SENSITIVE_KEYS = {
     "raw_result",
     "sql",
     "token",
+    "token_id",
 }
 
 
@@ -37,6 +40,43 @@ class EvaluationVersions:
 
 
 @dataclass(frozen=True)
+class EvaluationIdentity:
+    """不携带访问令牌的固定评测身份。"""
+
+    user_id: str
+    username: str | None
+    roles: tuple[str, ...]
+    policy_version: int
+    allowed_metrics: tuple[str, ...]
+    allowed_tables: tuple[str, ...]
+    allowed_columns: tuple[str, ...]
+    allowed_department_ids: tuple[str, ...]
+    sql_fallback_allowed: bool = False
+
+    def to_principal(self) -> QueryPrincipal:
+        if not self.user_id.strip():
+            raise ValueError("评测身份 user_id 不能为空")
+        return QueryPrincipal(
+            auth=AuthContext(
+                user_id=self.user_id,
+                username=self.username,
+                roles=frozenset(self.roles),
+                token_id=None,
+                issued_at=0,
+                expires_at=2**63 - 1,
+            ),
+            permissions=PermissionSnapshot(
+                policy_version=self.policy_version,
+                allowed_metrics=frozenset(self.allowed_metrics),
+                allowed_tables=frozenset(self.allowed_tables),
+                allowed_columns=frozenset(self.allowed_columns),
+                allowed_department_ids=frozenset(self.allowed_department_ids),
+                sql_fallback_allowed=self.sql_fallback_allowed,
+            ),
+        )
+
+
+@dataclass(frozen=True)
 class EvaluationCase:
     """黄金集中的单个脱敏样本。"""
 
@@ -46,6 +86,8 @@ class EvaluationCase:
     expected_outcome: str
     expected_rejection_code: str | None = None
     tags: tuple[str, ...] = ()
+    query: str | None = None
+    identity: EvaluationIdentity | None = None
 
     def validate(self) -> None:
         if not self.case_id.strip():
