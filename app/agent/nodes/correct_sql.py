@@ -36,6 +36,7 @@ async def correct_sql(state: DataAgentState, runtime: Runtime[DataAgentContext])
         sql = state["raw_sql"]
         error_code = state["sql_validation_error"]
         resource_budget = runtime.context.get("resource_budget")
+        llm_breaker = runtime.context.get("dependency_breakers", {}).get("llm")
 
         prompt = PromptTemplate(
             template=load_prompt("correct_sql"),
@@ -74,6 +75,8 @@ async def correct_sql(state: DataAgentState, runtime: Runtime[DataAgentContext])
             ),
             resource_budget,
             resource="llm",
+            circuit_breaker=llm_breaker,
+            dependency="llm",
         )
 
         logger.info("SQL candidate corrected chars={}", len(result))

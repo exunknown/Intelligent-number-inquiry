@@ -69,6 +69,7 @@ class QdrantConfig:
     host: str
     port: int
     embedding_size: int
+    timeout_seconds: float
 
 
 @dataclass
@@ -87,6 +88,7 @@ class ESConfig:
     host: str
     port: int
     index_name: str
+    timeout_seconds: float
 
 
 @dataclass
@@ -96,6 +98,7 @@ class LLMConfig:
     model_name: str
     api_key: str
     base_url: str
+    timeout_seconds: float
 
 
 @dataclass

@@ -15,6 +15,7 @@ from app.core.query_errors import QueryExecutionError
 from app.core.resource_governance import (
     AdmissionLease,
     RequestBudget,
+    get_dependency_breakers,
     get_resource_admission,
 )
 from app.entities.auth import QueryPrincipal
@@ -122,6 +123,7 @@ class QueryService:
             permissions=principal.permissions,
             auth=principal.auth,
             resource_budget=budget,
+            dependency_breakers=get_dependency_breakers(),
         )
         started_at = perf_counter()
         audit = {

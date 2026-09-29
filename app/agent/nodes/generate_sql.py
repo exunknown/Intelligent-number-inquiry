@@ -33,6 +33,7 @@ async def generate_sql(state: DataAgentState, runtime: Runtime[DataAgentContext]
         db_info = state["db_info"]
         query = state["query"]
         resource_budget = runtime.context.get("resource_budget")
+        llm_breaker = runtime.context.get("dependency_breakers", {}).get("llm")
 
         prompt = PromptTemplate(
             template=load_prompt("generate_sql"),
@@ -67,6 +68,8 @@ async def generate_sql(state: DataAgentState, runtime: Runtime[DataAgentContext]
             ),
             resource_budget,
             resource="llm",
+            circuit_breaker=llm_breaker,
+            dependency="llm",
         )
         logger.info("SQL candidate generated chars={}", len(result))
         writer({"type": "progress", "step": step, "status": "success"})

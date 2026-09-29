@@ -38,6 +38,7 @@ qdrant:
   host: localhost
   port: 6333
   embedding_size: 1024
+  timeout_seconds: ${oc.env:QDRANT_TIMEOUT_SECONDS,10}
 
 embedding:
   host: localhost
@@ -48,11 +49,13 @@ es:
   host: localhost
   port: 19200
   index_name: data_agent
+  timeout_seconds: ${oc.env:ES_TIMEOUT_SECONDS,10}
 
 llm:
   model_name: ${oc.env:LLM_MODEL_NAME}
   api_key: ${oc.env:LLM_API_KEY}
   base_url: ${oc.env:LLM_BASE_URL}
+  timeout_seconds: ${oc.env:LLM_TIMEOUT_SECONDS,45}
 
 ini:
   base_url: ${oc.env:INI_BASE_URL}

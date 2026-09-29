@@ -34,6 +34,7 @@ async def recall_value(state: DataAgentState, runtime: Runtime[DataAgentContext]
         # 字段取值更关注真实文本命中，因此这里走 Elasticsearch，而不是向量检索
         value_es_repository = runtime.context["value_es_repository"]
         resource_budget = runtime.context.get("resource_budget")
+        breakers = runtime.context.get("dependency_breakers", {})
 
         # 用 LLM 把用户问法扩展成“可能出现在字段值里的词”
         # 例如“华北地区”可以补充出“华北”，避免 SQL 条件值和真实存储值不一致
@@ -47,7 +48,11 @@ async def recall_value(state: DataAgentState, runtime: Runtime[DataAgentContext]
         chain = prompt | llm | output_parser
 
         result = await await_with_budget(
-            chain.ainvoke({"query": query}), resource_budget, resource="llm"
+            chain.ainvoke({"query": query}),
+            resource_budget,
+            resource="llm",
+            circuit_breaker=breakers.get("llm"),
+            dependency="llm",
         )
 
         # 通用关键词和字段值扩展词一起检索 ES，尽量提高真实取值召回率
@@ -57,7 +62,10 @@ async def recall_value(state: DataAgentState, runtime: Runtime[DataAgentContext]
         value_infos_map: dict[str, ValueInfo] = {}
         for keyword in keywords:
             current_value_infos: list[ValueInfo] = await await_with_budget(
-                value_es_repository.search(keyword), resource_budget
+                value_es_repository.search(keyword),
+                resource_budget,
+                circuit_breaker=breakers.get("elasticsearch"),
+                dependency="elasticsearch",
             )
             for current_value_info in current_value_infos:
                 if current_value_info.id not in value_infos_map:

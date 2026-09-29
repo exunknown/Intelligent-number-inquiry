@@ -27,6 +27,7 @@ async def selector_agent(state: DataAgentState, runtime: Runtime[DataAgentContex
     try:
         candidates = state["selector_candidates"]
         resource_budget = runtime.context.get("resource_budget")
+        llm_breaker = runtime.context.get("dependency_breakers", {}).get("llm")
         prompt = PromptTemplate(
             template=load_prompt("select_schema"),
             input_variables=["query", "candidates"],
@@ -41,6 +42,8 @@ async def selector_agent(state: DataAgentState, runtime: Runtime[DataAgentContex
             ),
             resource_budget,
             resource="llm",
+            circuit_breaker=llm_breaker,
+            dependency="llm",
         )
         candidate_tables = {table["id"] for table in candidates["tables"]}
         candidate_values = {

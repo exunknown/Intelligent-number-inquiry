@@ -35,6 +35,7 @@ async def recall_column(state: DataAgentState, runtime: Runtime[DataAgentContext
         column_qdrant_repository = runtime.context["column_qdrant_repository"]
         embedding_client = runtime.context["embedding_client"]
         resource_budget = runtime.context.get("resource_budget")
+        breakers = runtime.context.get("dependency_breakers", {})
 
         # 用 LLM 把用户问法扩展成“字段语义”列表，例如“销售总额”可扩展出“销售金额”
         prompt = PromptTemplate(
@@ -47,7 +48,11 @@ async def recall_column(state: DataAgentState, runtime: Runtime[DataAgentContext
         chain = prompt | llm | output_parser
 
         result = await await_with_budget(
-            chain.ainvoke({"query": query}), resource_budget, resource="llm"
+            chain.ainvoke({"query": query}),
+            resource_budget,
+            resource="llm",
+            circuit_breaker=breakers.get("llm"),
+            dependency="llm",
         )
 
         # 原始关键词和 LLM 扩展词一起参与召回；set 去重，避免重复请求同一关键词
@@ -61,9 +66,14 @@ async def recall_column(state: DataAgentState, runtime: Runtime[DataAgentContext
                 embedding_client.aembed_query(keyword),
                 resource_budget,
                 resource="embedding",
+                circuit_breaker=breakers.get("embedding"),
+                dependency="embedding",
             )
             current_column_infos: list[ColumnInfo] = await await_with_budget(
-                column_qdrant_repository.search(embedding), resource_budget
+                column_qdrant_repository.search(embedding),
+                resource_budget,
+                circuit_breaker=breakers.get("qdrant"),
+                dependency="qdrant",
             )
             for column_info in current_column_infos:
                 if column_info.id not in column_info_map:

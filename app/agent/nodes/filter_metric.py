@@ -29,6 +29,7 @@ async def filter_metric(state: DataAgentState, runtime: Runtime[DataAgentContext
         query = state["query"]
         metric_infos: list[MetricInfoState] = state["metric_infos"]
         resource_budget = runtime.context.get("resource_budget")
+        llm_breaker = runtime.context.get("dependency_breakers", {}).get("llm")
 
         # metric_infos 转成 YAML 后作为候选项交给模型，模型只需要返回被选中的指标名称
         prompt = PromptTemplate(
@@ -51,6 +52,8 @@ async def filter_metric(state: DataAgentState, runtime: Runtime[DataAgentContext
             ),
             resource_budget,
             resource="llm",
+            circuit_breaker=llm_breaker,
+            dependency="llm",
         )
         # 用模型返回的指标名称过滤原始结构，保留描述 依赖字段 别名等完整上下文
         filtered_metric_infos = [

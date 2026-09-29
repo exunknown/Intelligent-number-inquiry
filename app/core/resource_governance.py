@@ -14,6 +14,16 @@ from app.core.query_errors import QueryExecutionError
 T = TypeVar("T")
 
 
+def _counts_as_dependency_failure(dependency: str | None, error: BaseException) -> bool:
+    """只把传输层/超时错误计入熔断，模型结构错误不应触发熔断。"""
+
+    if dependency != "llm":
+        return True
+    if isinstance(error, TimeoutError):
+        return True
+    return type(error).__module__.split(".", 1)[0] in {"httpx", "openai"}
+
+
 class RequestBodyTooLarge(ValueError):
     """请求体超过接口配置的字节上限。"""
 
@@ -71,6 +81,20 @@ class DependencyCircuitBreaker:
             if self._failure_count >= self.failure_threshold:
                 self._state = "open"
                 self._opened_at = self.clock()
+
+
+@lru_cache(maxsize=1)
+def get_dependency_breakers() -> dict[str, DependencyCircuitBreaker]:
+    """获取应用进程级依赖熔断器，单实例部署内共享状态。"""
+
+    names = ("llm", "embedding", "qdrant", "elasticsearch")
+    return {
+        name: DependencyCircuitBreaker(
+            failure_threshold=app_config.resource.circuit_failure_threshold,
+            open_seconds=app_config.resource.circuit_open_seconds,
+        )
+        for name in names
+    }
 
 
 def validate_content_length(content_length: str | None, max_bytes: int) -> int | None:
@@ -217,22 +241,47 @@ async def await_with_budget(
     awaitable: Awaitable[T],
     budget: RequestBudget | None,
     resource: str | None = None,
+    circuit_breaker: DependencyCircuitBreaker | None = None,
+    dependency: str | None = None,
 ) -> T:
     """等待一个下游调用，并把超时转换为稳定的资源错误。"""
 
-    if budget is None:
-        return await awaitable
+    if circuit_breaker is not None:
+        try:
+            await circuit_breaker.before_call()
+        except QueryExecutionError:
+            close = getattr(awaitable, "close", None)
+            if close is not None:
+                close()
+            raise
     try:
-        budget.check()
-        if resource is not None:
-            budget.consume(resource)
-        async with asyncio.timeout(budget.remaining_seconds()):
-            return await awaitable
-    except QueryExecutionError:
+        if budget is None:
+            result = await awaitable
+        else:
+            budget.check()
+            if resource is not None:
+                budget.consume(resource)
+            async with asyncio.timeout(budget.remaining_seconds()):
+                result = await awaitable
+    except asyncio.CancelledError:
+        raise
+    except QueryExecutionError as error:
+        if (
+            circuit_breaker is not None
+            and _counts_as_dependency_failure(dependency, error)
+            and error.code
+            not in {
+                "resource_deadline_exceeded",
+                "resource_budget_exceeded",
+                "dependency_circuit_open",
+            }
+        ):
+            await circuit_breaker.record_failure()
         logger.warning(
-            "resource_event=budget_rejected resource_class={} deadline_ms={} resource={}",
+            "resource_event=budget_rejected resource_class={} dependency={} deadline_ms={} resource={}",
             "dependency" if resource else "request",
-            round(budget.remaining_seconds() * 1000),
+            dependency or "unknown",
+            round(budget.remaining_seconds() * 1000) if budget else None,
             resource or "request",
         )
         close = getattr(awaitable, "close", None)
@@ -240,15 +289,30 @@ async def await_with_budget(
             close()
         raise
     except TimeoutError:
+        if circuit_breaker is not None and _counts_as_dependency_failure(
+            dependency, TimeoutError()
+        ):
+            await circuit_breaker.record_failure()
         logger.warning(
-            "resource_event=deadline_exceeded resource_class={} deadline_ms={} resource={}",
+            "resource_event=deadline_exceeded resource_class={} dependency={} deadline_ms={} resource={}",
             "dependency" if resource else "request",
-            round(budget.remaining_seconds() * 1000),
+            dependency or "unknown",
+            round(budget.remaining_seconds() * 1000) if budget else None,
             resource or "request",
         )
         raise QueryExecutionError(
             "resource_deadline_exceeded", "问数请求已超过时间预算", False
         ) from None
+    except Exception:
+        if circuit_breaker is not None and _counts_as_dependency_failure(
+            dependency, RuntimeError()
+        ):
+            await circuit_breaker.record_failure()
+        raise
+    else:
+        if circuit_breaker is not None:
+            await circuit_breaker.record_success()
+        return result
 
 
 class AdmissionLease:

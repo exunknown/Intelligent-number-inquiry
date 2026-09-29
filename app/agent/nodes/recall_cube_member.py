@@ -30,18 +30,24 @@ async def recall_cube_member(state: DataAgentState, runtime: Runtime[DataAgentCo
         dimensions: dict[str, CubeMember] = {}
         permissions = runtime.context["permissions"]
         resource_budget = runtime.context.get("resource_budget")
+        breakers = runtime.context.get("dependency_breakers", {})
 
         for term in terms:
             embedding = await await_with_budget(
                 embedding_client.aembed_query(term),
                 resource_budget,
                 resource="embedding",
+                circuit_breaker=breakers.get("embedding"),
+                dependency="embedding",
             )
             _append_unseen(
                 measures,
                 filter_cube_members(
                     await await_with_budget(
-                        repository.search(embedding, {"measure"}), resource_budget
+                        repository.search(embedding, {"measure"}),
+                        resource_budget,
+                        circuit_breaker=breakers.get("qdrant"),
+                        dependency="qdrant",
                     ),
                     permissions,
                 ),
@@ -52,13 +58,20 @@ async def recall_cube_member(state: DataAgentState, runtime: Runtime[DataAgentCo
                     await await_with_budget(
                         repository.search(embedding, {"dimension", "time_dimension"}),
                         resource_budget,
+                        circuit_breaker=breakers.get("qdrant"),
+                        dependency="qdrant",
                     ),
                     permissions,
                 ),
             )
 
         catalog_members = filter_cube_members(
-            await await_with_budget(repository.list_members(), resource_budget),
+            await await_with_budget(
+                repository.list_members(),
+                resource_budget,
+                circuit_breaker=breakers.get("qdrant"),
+                dependency="qdrant",
+            ),
             permissions,
         )
         _append_unseen(

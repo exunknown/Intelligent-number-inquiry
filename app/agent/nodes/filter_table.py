@@ -29,6 +29,7 @@ async def filter_table(state: DataAgentState, runtime: Runtime[DataAgentContext]
         query = state["query"]
         table_infos: list[TableInfoState] = state["table_infos"]
         resource_budget = runtime.context.get("resource_budget")
+        llm_breaker = runtime.context.get("dependency_breakers", {}).get("llm")
 
         # table_infos 是嵌套结构，转成 YAML 后更适合放进提示词，也保留中文字段说明
         prompt = PromptTemplate(
@@ -51,6 +52,8 @@ async def filter_table(state: DataAgentState, runtime: Runtime[DataAgentContext]
             ),
             resource_budget,
             resource="llm",
+            circuit_breaker=llm_breaker,
+            dependency="llm",
         )
         # 模型只负责选择，程序根据选择结果从原始 TableInfoState 中裁剪，避免模型重写复杂结构出错
         filtered_table_infos: list[TableInfoState] = []

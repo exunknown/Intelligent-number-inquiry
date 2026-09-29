@@ -12,7 +12,7 @@ from typing import NotRequired, TypedDict
 
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 
-from app.core.resource_governance import RequestBudget
+from app.core.resource_governance import DependencyCircuitBreaker, RequestBudget
 from app.entities.auth import AuthContext, PermissionSnapshot
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
@@ -53,3 +53,5 @@ class DataAgentContext(TypedDict):
     auth: AuthContext
     # 请求级端到端资源预算；调试入口和旧调用可暂不提供
     resource_budget: NotRequired[RequestBudget]
+    # 进程级依赖熔断器，问数节点只消费不重建
+    dependency_breakers: NotRequired[dict[str, DependencyCircuitBreaker]]

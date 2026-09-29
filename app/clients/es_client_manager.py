@@ -32,7 +32,9 @@ class ESClientManager:
         初始化异步 Elasticsearch 客户端
         hosts 之所以是列表，是为了兼容 ES 常见的集群连接方式
         """
-        self.client = AsyncElasticsearch(hosts=[self._get_url()])
+        self.client = AsyncElasticsearch(
+            hosts=[self._get_url()], request_timeout=self.es_config.timeout_seconds
+        )
 
     async def close(self):
         """关闭客户端连接"""

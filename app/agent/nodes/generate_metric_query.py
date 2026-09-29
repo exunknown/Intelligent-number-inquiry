@@ -56,12 +56,18 @@ _UNMATCHED_REASONS = [
 ]
 
 
-async def invoke_metric_query_model(prompt_text: str, resource_budget=None) -> object:
+async def invoke_metric_query_model(
+    prompt_text: str, resource_budget=None, circuit_breaker=None
+) -> object:
     """调用全局模型并把唯一 JSON 对象解析为 Python 值。"""
 
     chain = llm | JsonOutputParser()
     return await await_with_budget(
-        chain.ainvoke(prompt_text), resource_budget, resource="llm"
+        chain.ainvoke(prompt_text),
+        resource_budget,
+        resource="llm",
+        circuit_breaker=circuit_breaker,
+        dependency="llm",
     )
 
 
@@ -163,10 +169,15 @@ async def generate_metric_query(
     max_limit = app_config.cube.max_limit
     base_prompt = _build_prompt(state, max_limit)
     resource_budget = getattr(runtime, "context", {}).get("resource_budget")
+    llm_breaker = (
+        getattr(runtime, "context", {}).get("dependency_breakers", {}).get("llm")
+    )
     invalid: object = "<unparseable>"
     try:
         try:
-            invalid = await invoke_metric_query_model(base_prompt, resource_budget)
+            invalid = await invoke_metric_query_model(
+                base_prompt, resource_budget, llm_breaker
+            )
             validated = validate_metric_query_shape(invalid, max_limit=max_limit)
         except (OutputParserException, MetricQueryValidationError) as first_error:
             if isinstance(first_error, OutputParserException):
@@ -174,7 +185,7 @@ async def generate_metric_query(
             repair_prompt = _repair_prompt(base_prompt, invalid, str(first_error))
             try:
                 repaired = await invoke_metric_query_model(
-                    repair_prompt, resource_budget
+                    repair_prompt, resource_budget, llm_breaker
                 )
                 validated = validate_metric_query_shape(repaired, max_limit=max_limit)
             except (
