@@ -142,6 +142,9 @@ class SQLPolicyEngine:
         executable_expression = self._inject_department_scope(
             expression.copy(), policy_input
         )
+        executable_expression = self._inject_date_scope(
+            executable_expression, policy_input
+        )
         executable_expression = self._wrap_with_row_limit(executable_expression)
         return SQLPolicyResult(
             raw_sql=policy_input.raw_sql,
@@ -219,6 +222,8 @@ class SQLPolicyEngine:
             for table, columns in policy_input.schema.items()
         }
         physical_tables = cls._physical_tables(expression)
+        if not physical_tables:
+            raise SQLPolicyViolation(SQLPolicyReason.TABLE_NOT_SUPPORTED)
         referenced_tables: set[str] = set()
 
         for table in physical_tables:
@@ -328,6 +333,56 @@ class SQLPolicyEngine:
                         exp.Literal.string(department_id)
                         for department_id in department_ids
                     ],
+                )
+                predicate = (
+                    alias_predicate
+                    if predicate is None
+                    else exp.and_(predicate, alias_predicate)
+                )
+
+            existing_where = scope.expression.args.get("where")
+            if existing_where is not None:
+                predicate = exp.and_(existing_where.this.copy(), predicate)
+            scope.expression.set("where", exp.Where(this=predicate))
+
+        return expression
+
+    def _inject_date_scope(
+        self,
+        expression: exp.Expression,
+        policy_input: SQLPolicyInput,
+    ) -> exp.Expression:
+        if policy_input.date_range is None:
+            return expression
+
+        start_date, end_date = policy_input.date_range
+        if start_date > end_date:
+            raise SQLPolicyViolation(SQLPolicyReason.INVALID_SQL)
+        fact_columns = {
+            column.casefold()
+            for column in policy_input.schema.get("fact_order", frozenset())
+        }
+        if "date_id" not in fact_columns:
+            raise SQLPolicyViolation(SQLPolicyReason.IDENTIFIER_UNRESOLVED)
+
+        for scope in traverse_scope(expression):
+            if not isinstance(scope.expression, exp.Select):
+                continue
+            aliases = sorted(
+                alias
+                for alias, source in scope.sources.items()
+                if isinstance(source, exp.Table)
+                and source.name.casefold() == "fact_order"
+            )
+            if not aliases:
+                continue
+
+            predicate: exp.Expression | None = None
+            for alias in aliases:
+                alias_predicate = exp.Between(
+                    this=exp.column("date_id", table=alias),
+                    low=exp.Literal.number(str(start_date)),
+                    high=exp.Literal.number(str(end_date)),
                 )
                 predicate = (
                     alias_predicate

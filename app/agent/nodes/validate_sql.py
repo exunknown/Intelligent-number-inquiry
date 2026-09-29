@@ -1,5 +1,7 @@
 """使用 AST 策略引擎校验并重写模型 SQL。"""
 
+from datetime import date
+
 from langgraph.runtime import Runtime
 
 from app.agent.context import DataAgentContext
@@ -7,6 +9,7 @@ from app.agent.state import DataAgentState
 from app.core.query_errors import QueryExecutionError
 from app.entities.sql_execution import SQLPolicyInput
 from app.security.sql_policy import SQLPolicyReason, SQLPolicyViolation
+from app.security.temporal_scope import resolve_date_range
 
 _CORRECTABLE_REASONS = frozenset(
     {SQLPolicyReason.INVALID_SQL, SQLPolicyReason.IDENTIFIER_UNRESOLVED}
@@ -27,7 +30,16 @@ async def validate_sql(
         for table in state["table_infos"]
     }
     if "fact_order" in schema:
-        schema["fact_order"] = schema["fact_order"] | {"department_id"}
+        schema["fact_order"] = schema["fact_order"] | {"department_id", "date_id"}
+
+    date_context = state.get("date_info")
+    date_range = (
+        resolve_date_range(
+            state.get("query", ""), date.fromisoformat(date_context["date"])
+        )
+        if date_context is not None
+        else None
+    )
 
     try:
         result = runtime.context["sql_policy_engine"].prepare(
@@ -35,6 +47,7 @@ async def validate_sql(
                 raw_sql=state["raw_sql"],
                 schema=schema,
                 permissions=runtime.context["permissions"],
+                date_range=date_range,
             )
         )
     except SQLPolicyViolation as exc:

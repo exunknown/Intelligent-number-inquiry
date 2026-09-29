@@ -26,6 +26,7 @@ class SQLPolicyInput:
     schema: Mapping[str, frozenset[str]]
     permissions: PermissionSnapshot
     dialect: str = "mysql"
+    date_range: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True)
