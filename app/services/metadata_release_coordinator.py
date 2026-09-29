@@ -57,6 +57,29 @@ class MetadataReleaseCoordinator:
                 )
             raise
 
+    async def rollback(
+        self,
+        release_version: str,
+        bindings: list[MetadataAliasBinding],
+    ):
+        """切换到已校验版本；激活失败时只补偿 alias，不污染目标状态。"""
+
+        record = await self.release_service.repository.get(release_version)
+        if record is None or record["status"] not in {"validated", "active"}:
+            raise ValueError("release version is not validated")
+
+        attempted: list[MetadataAliasBinding] = []
+        try:
+            for binding in bindings:
+                if binding.target == binding.previous:
+                    continue
+                attempted.append(binding)
+                await binding.repository.swap_alias(binding.target, binding.previous)
+            return await self.release_service.activate_validated(release_version)
+        except Exception:
+            await self._compensate_aliases(attempted, [])
+            raise
+
     async def _compensate_aliases(
         self,
         attempted: list[MetadataAliasBinding],
