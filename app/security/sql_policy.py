@@ -5,7 +5,9 @@ from enum import StrEnum
 
 import sqlglot
 from sqlglot import ErrorLevel, exp
-from sqlglot.errors import ParseError, TokenError
+from sqlglot.errors import OptimizeError, ParseError, TokenError
+from sqlglot.optimizer.qualify import qualify
+from sqlglot.optimizer.scope import Scope, traverse_scope
 
 from app.entities.sql_execution import (
     SQLPolicyInput,
@@ -41,6 +43,12 @@ class SQLPolicyReason(StrEnum):
     FORBIDDEN_CONSTRUCT = "forbidden_construct"
     FORBIDDEN_FUNCTION = "forbidden_function"
     QUERY_TOO_COMPLEX = "query_too_complex"
+    SCHEMA_NOT_ALLOWED = "schema_not_allowed"
+    TABLE_NOT_SUPPORTED = "table_not_supported"
+    TABLE_NOT_ALLOWED = "table_not_allowed"
+    COLUMN_NOT_ALLOWED = "column_not_allowed"
+    IDENTIFIER_UNRESOLVED = "identifier_unresolved"
+    WILDCARD_NOT_ALLOWED = "wildcard_not_allowed"
 
 
 class SQLPolicyViolation(ValueError):
@@ -95,6 +103,7 @@ _ALLOWED_FUNCTION_TYPES = _expression_types(
     "Coalesce",
     "Count",
     "Day",
+    "Exists",
     "Max",
     "Min",
     "Month",
@@ -123,19 +132,12 @@ class SQLPolicyEngine:
         self._validate_read_only(expression)
         self._validate_complexity(expression)
         self._validate_functions(expression)
+        self._validate_wildcards(expression)
+        expression, referenced_tables, referenced_columns = self._authorize_scope(
+            expression, policy_input
+        )
 
         normalized_sql = expression.sql(dialect=policy_input.dialect)
-        referenced_tables = tuple(
-            sorted({table.name for table in expression.find_all(exp.Table)})
-        )
-        referenced_columns = tuple(
-            sorted(
-                {
-                    column.sql(dialect=policy_input.dialect)
-                    for column in expression.find_all(exp.Column)
-                }
-            )
-        )
         return SQLPolicyResult(
             raw_sql=policy_input.raw_sql,
             normalized_sql=normalized_sql,
@@ -190,6 +192,97 @@ class SQLPolicyEngine:
         for function in expression.find_all(exp.Func):
             if not isinstance(function, _ALLOWED_FUNCTION_TYPES):
                 raise SQLPolicyViolation(SQLPolicyReason.FORBIDDEN_FUNCTION)
+
+    @staticmethod
+    def _validate_wildcards(expression: exp.Expression) -> None:
+        for star in expression.find_all(exp.Star):
+            if not isinstance(star.parent, exp.Count):
+                raise SQLPolicyViolation(SQLPolicyReason.WILDCARD_NOT_ALLOWED)
+
+    @classmethod
+    def _authorize_scope(
+        cls,
+        expression: exp.Expression,
+        policy_input: SQLPolicyInput,
+    ) -> tuple[exp.Expression, tuple[str, ...], tuple[str, ...]]:
+        supported_schema = {
+            table.casefold(): {column.casefold(): "UNKNOWN" for column in columns}
+            for table, columns in policy_input.schema.items()
+        }
+        physical_tables = cls._physical_tables(expression)
+        referenced_tables: set[str] = set()
+
+        for table in physical_tables:
+            if table.catalog or (table.db and table.db.casefold() != "dw"):
+                raise SQLPolicyViolation(SQLPolicyReason.SCHEMA_NOT_ALLOWED)
+
+            table_name = table.name.casefold()
+            if table_name not in supported_schema:
+                raise SQLPolicyViolation(SQLPolicyReason.TABLE_NOT_SUPPORTED)
+            if table_name not in policy_input.permissions.allowed_tables:
+                raise SQLPolicyViolation(SQLPolicyReason.TABLE_NOT_ALLOWED)
+
+            referenced_tables.add(table_name)
+            table.set("catalog", None)
+            table.set("db", None)
+
+        try:
+            qualified = qualify(
+                expression,
+                dialect=policy_input.dialect,
+                schema=supported_schema,
+                expand_stars=False,
+                infer_schema=False,
+                allow_partial_qualification=False,
+                validate_qualify_columns=True,
+                quote_identifiers=False,
+                identify=False,
+            )
+        except OptimizeError as exc:
+            raise SQLPolicyViolation(SQLPolicyReason.IDENTIFIER_UNRESOLVED) from exc
+
+        referenced_columns: set[str] = set()
+        for scope in traverse_scope(qualified):
+            for column in scope.columns:
+                source = cls._resolve_source(scope, column.table)
+                if isinstance(source, Scope):
+                    continue
+                if not isinstance(source, exp.Table):
+                    raise SQLPolicyViolation(SQLPolicyReason.IDENTIFIER_UNRESOLVED)
+
+                table_name = source.name.casefold()
+                column_name = column.name.casefold()
+                column_id = f"{table_name}.{column_name}"
+                if column_name not in supported_schema.get(table_name, {}):
+                    raise SQLPolicyViolation(SQLPolicyReason.IDENTIFIER_UNRESOLVED)
+                if column_id not in policy_input.permissions.allowed_columns:
+                    raise SQLPolicyViolation(SQLPolicyReason.COLUMN_NOT_ALLOWED)
+                referenced_columns.add(column_id)
+
+        return (
+            qualified,
+            tuple(sorted(referenced_tables)),
+            tuple(sorted(referenced_columns)),
+        )
+
+    @staticmethod
+    def _physical_tables(expression: exp.Expression) -> tuple[exp.Table, ...]:
+        tables: dict[int, exp.Table] = {}
+        for scope in traverse_scope(expression):
+            for source in scope.sources.values():
+                if isinstance(source, exp.Table):
+                    tables[id(source)] = source
+        return tuple(tables.values())
+
+    @staticmethod
+    def _resolve_source(scope: Scope, alias: str) -> exp.Table | Scope | None:
+        current: Scope | None = scope
+        while current is not None:
+            source = current.sources.get(alias)
+            if source is not None:
+                return source
+            current = current.parent
+        return None
 
     @classmethod
     def _depth(cls, expression: exp.Expression) -> int:
