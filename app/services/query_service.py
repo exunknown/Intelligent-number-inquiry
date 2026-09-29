@@ -151,6 +151,7 @@ class QueryService:
             "result_truncated": None,
             "sql_execution_duration_ms": None,
         }
+        node_started_at: dict[str, float] = {}
         try:
             async with asyncio.timeout(budget.remaining_seconds()):
                 async for chunk in graph.astream(
@@ -165,6 +166,19 @@ class QueryService:
                             if chunk.get(field) is not None:
                                 audit[field] = chunk[field]
                         continue
+                    if isinstance(chunk, dict) and chunk.get("type") == "progress":
+                        step = chunk.get("step")
+                        status = chunk.get("status")
+                        if isinstance(step, str) and status == "running":
+                            node_started_at[step] = perf_counter()
+                        elif isinstance(step, str) and status in {"success", "error"}:
+                            node_started = node_started_at.pop(step, None)
+                            if node_started is not None:
+                                self.metrics.record_node(
+                                    step,
+                                    (perf_counter() - node_started) * 1000,
+                                    status,
+                                )
                     if isinstance(chunk, dict) and chunk.get("type") == "route":
                         audit["query_mode"] = chunk.get("mode")
                         audit["route_reason"] = chunk.get("reason")
@@ -210,6 +224,17 @@ class QueryService:
             yield f"data: {json.dumps(error, ensure_ascii=False, default=str)}\n\n"
         finally:
             duration_ms = max(0, round((perf_counter() - started_at) * 1000))
+            if node_started_at:
+                node_outcome = (
+                    "cancelled" if audit["outcome"] == "cancelled" else "error"
+                )
+                node_finished_at = perf_counter()
+                for step, node_started in node_started_at.items():
+                    self.metrics.record_node(
+                        step,
+                        (node_finished_at - node_started) * 1000,
+                        node_outcome,
+                    )
             self.metrics.record_request(
                 duration_ms=duration_ms,
                 outcome=audit["outcome"],

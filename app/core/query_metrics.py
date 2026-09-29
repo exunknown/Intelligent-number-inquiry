@@ -13,6 +13,29 @@ from typing import Deque
 
 _OUTCOMES = {"success", "error", "cancelled", "aborted"}
 _ROUTES = {"metric", "sql"}
+_NODE_NAMES = {
+    "抽取关键词",
+    "召回字段信息",
+    "召回指标信息",
+    "召回字段取值",
+    "召回 Cube 成员",
+    "合并召回信息",
+    "过滤指标信息",
+    "过滤表信息",
+    "添加额外上下文",
+    "生成 Metric Query",
+    "校验 Metric Query",
+    "评估Schema规模",
+    "Schema Selector",
+    "应用Schema筛选",
+    "生成SQL",
+    "校验SQL",
+    "SQL 安全检查",
+    "校正SQL",
+    "评估SQL成本",
+    "执行SQL",
+    "执行指标查询",
+}
 _ERROR_CODES = {
     "capacity_exhausted",
     "cube_unauthorized",
@@ -67,6 +90,21 @@ class QueryMetrics:
         self._outcomes: Counter[str] = Counter()
         self._routes: Counter[str] = Counter()
         self._errors_by_code: Counter[str] = Counter()
+        self._node_counts: Counter[str] = Counter()
+        self._node_errors: Counter[str] = Counter()
+        self._node_latencies: dict[str, Deque[float]] = {}
+
+    def record_node(self, node: str | None, duration_ms: float, outcome: str) -> None:
+        """记录固定图步骤的耗时，不保存原始步骤文本。"""
+
+        with self._lock:
+            normalized_node = _label(node, _NODE_NAMES)
+            self._node_counts[normalized_node] += 1
+            self._node_latencies.setdefault(
+                normalized_node, deque(maxlen=self._latencies.maxlen)
+            ).append(max(0.0, float(duration_ms)))
+            if _label(outcome, _OUTCOMES) in {"error", "cancelled", "aborted", "other"}:
+                self._node_errors[normalized_node] += 1
 
     def record_request(
         self,
@@ -98,6 +136,16 @@ class QueryMetrics:
 
         with self._lock:
             latencies = list(self._latencies)
+            nodes = {
+                node: {
+                    "count": self._node_counts[node],
+                    "errors": self._node_errors[node],
+                    "p50_ms": _percentile(list(self._node_latencies[node]), 0.50),
+                    "p95_ms": _percentile(list(self._node_latencies[node]), 0.95),
+                    "p99_ms": _percentile(list(self._node_latencies[node]), 0.99),
+                }
+                for node in self._node_counts
+            }
             return {
                 "requests_total": self._requests_total,
                 "successes_total": self._successes_total,
@@ -106,6 +154,7 @@ class QueryMetrics:
                 "outcomes": dict(self._outcomes),
                 "routes": dict(self._routes),
                 "errors_by_code": dict(self._errors_by_code),
+                "nodes": nodes,
                 "latency_ms": {
                     "p50": _percentile(latencies, 0.50),
                     "p95": _percentile(latencies, 0.95),
