@@ -2,7 +2,16 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Index, Integer, String, Text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -33,6 +42,18 @@ class QueryAuditMySQL(Base):
     metric_query: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     cube_query: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     sql: Mapped[str | None] = mapped_column("sql_text", Text, nullable=True)
+    normalized_sql: Mapped[str | None] = mapped_column(Text, nullable=True)
+    executed_sql: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sql_policy_outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    sql_rejection_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sql_estimated_rows: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    sql_query_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    result_row_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    result_truncated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    sql_execution_duration_ms: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
     outcome: Mapped[str] = mapped_column(String(32), nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     verified: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

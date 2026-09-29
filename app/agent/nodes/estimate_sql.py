@@ -33,6 +33,12 @@ async def estimate_sql(
         "estimated_rows": estimate.estimated_rows,
         "query_cost": estimate.query_cost,
     }
-    writer({"type": "audit", **value})
+    writer(
+        {
+            "type": "audit",
+            "sql_estimated_rows": estimate.estimated_rows,
+            "sql_query_cost": estimate.query_cost,
+        }
+    )
     writer({"type": "progress", "step": step, "status": "success"})
     return {"sql_cost_estimate": value}

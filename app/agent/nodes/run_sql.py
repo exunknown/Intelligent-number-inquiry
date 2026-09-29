@@ -40,7 +40,15 @@ async def run_sql(state: DataAgentState, runtime: Runtime[DataAgentContext]):
         result.truncated,
         result.duration_ms,
     )
-    writer({"type": "audit", **stats})
+    writer(
+        {
+            "type": "audit",
+            "result_row_count": result.row_count,
+            "result_bytes": result.result_bytes,
+            "result_truncated": result.truncated,
+            "sql_execution_duration_ms": result.duration_ms,
+        }
+    )
     writer({"type": "progress", "step": step, "status": "success"})
     writer(
         {

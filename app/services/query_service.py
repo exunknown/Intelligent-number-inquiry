@@ -27,6 +27,24 @@ from app.repositories.qdrant.cube_member_qdrant_repository import (
 )
 from app.security.sql_policy import SQLPolicyEngine
 
+_AUDIT_EVENT_FIELDS = (
+    "query_mode",
+    "route_reason",
+    "metric_query",
+    "cube_query",
+    "sql",
+    "normalized_sql",
+    "executed_sql",
+    "sql_policy_outcome",
+    "sql_rejection_reason",
+    "sql_estimated_rows",
+    "sql_query_cost",
+    "result_row_count",
+    "result_bytes",
+    "result_truncated",
+    "sql_execution_duration_ms",
+)
+
 
 class QueryService:
     """Orchestrate one question and expose graph events as SSE messages."""
@@ -84,19 +102,23 @@ class QueryService:
             "outcome": "aborted",
             "error_code": None,
             "verified": None,
+            "normalized_sql": None,
+            "executed_sql": None,
+            "sql_policy_outcome": None,
+            "sql_rejection_reason": None,
+            "sql_estimated_rows": None,
+            "sql_query_cost": None,
+            "result_row_count": None,
+            "result_bytes": None,
+            "result_truncated": None,
+            "sql_execution_duration_ms": None,
         }
         try:
             async for chunk in graph.astream(
                 input=state, context=context, stream_mode="custom"
             ):
                 if isinstance(chunk, dict) and chunk.get("type") == "audit":
-                    for field in (
-                        "query_mode",
-                        "route_reason",
-                        "metric_query",
-                        "cube_query",
-                        "sql",
-                    ):
+                    for field in _AUDIT_EVENT_FIELDS:
                         if chunk.get(field) is not None:
                             audit[field] = chunk[field]
                     continue
@@ -108,7 +130,7 @@ class QueryService:
                     audit["verified"] = chunk.get("verified")
                 yield f"data: {json.dumps(chunk, ensure_ascii=False, default=str)}\n\n"
         except QueryExecutionError as e:
-            logger.exception("Question execution failed: {}", e.code)
+            logger.error("Question execution failed code={}", e.code)
             audit["outcome"] = "error"
             audit["error_code"] = e.code
             error = {
@@ -119,7 +141,7 @@ class QueryService:
             }
             yield f"data: {json.dumps(error, ensure_ascii=False, default=str)}\n\n"
         except Exception:
-            logger.exception("Unexpected question execution error")
+            logger.error("Unexpected question execution error")
             audit["outcome"] = "error"
             audit["error_code"] = "internal_error"
             error = {
@@ -154,6 +176,16 @@ class QueryService:
                     error_code=audit["error_code"],
                     verified=audit["verified"],
                     duration_ms=max(0, round((perf_counter() - started_at) * 1000)),
+                    normalized_sql=audit["normalized_sql"],
+                    executed_sql=audit["executed_sql"],
+                    sql_policy_outcome=audit["sql_policy_outcome"],
+                    sql_rejection_reason=audit["sql_rejection_reason"],
+                    sql_estimated_rows=audit["sql_estimated_rows"],
+                    sql_query_cost=audit["sql_query_cost"],
+                    result_row_count=audit["result_row_count"],
+                    result_bytes=audit["result_bytes"],
+                    result_truncated=audit["result_truncated"],
+                    sql_execution_duration_ms=audit["sql_execution_duration_ms"],
                 )
                 try:
                     await self.query_audit_repository.save(record)

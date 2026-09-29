@@ -23,3 +23,13 @@ class QueryAuditRecord:
     error_code: str | None
     verified: bool | None
     duration_ms: int
+    normalized_sql: str | None = None
+    executed_sql: str | None = None
+    sql_policy_outcome: str | None = None
+    sql_rejection_reason: str | None = None
+    sql_estimated_rows: int | None = None
+    sql_query_cost: float | None = None
+    result_row_count: int | None = None
+    result_bytes: int | None = None
+    result_truncated: bool | None = None
+    sql_execution_duration_ms: int | None = None
