@@ -61,6 +61,9 @@ class QueryAuditMySQL(Base):
     llm_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     llm_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     llm_cost_units: Mapped[float | None] = mapped_column(Float, nullable=True)
+    metadata_release_version: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     outcome: Mapped[str] = mapped_column(String(32), nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     verified: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

@@ -28,6 +28,9 @@ from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
 from app.repositories.mysql.dw.sql_fallback_repository import SQLFallbackRepository
 from app.repositories.mysql.meta.authz_policy_repository import AuthzPolicyRepository
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
+from app.repositories.mysql.meta.metadata_release_repository import (
+    MetadataReleaseRepository,
+)
 from app.repositories.mysql.meta.metric_candidate_repository import (
     MetricCandidateRepository,
 )
@@ -81,6 +84,14 @@ async def get_query_audit_repository(
     """Create the request-scoped query audit repository."""
 
     return QueryAuditRepository(session)
+
+
+async def get_metadata_release_repository(
+    session: Annotated[AsyncSession, Depends(get_meta_session)],
+) -> MetadataReleaseRepository:
+    """创建请求级元数据发布版本仓储。"""
+
+    return MetadataReleaseRepository(session)
 
 
 async def get_authz_policy_repository(
@@ -232,6 +243,9 @@ async def get_query_service(
     query_audit_repository: Annotated[
         QueryAuditRepository, Depends(get_query_audit_repository)
     ],
+    metadata_release_repository: Annotated[
+        MetadataReleaseRepository, Depends(get_metadata_release_repository)
+    ],
     metric_candidate_repository: Annotated[
         MetricCandidateRepository, Depends(get_metric_candidate_repository)
     ],
@@ -252,6 +266,7 @@ async def get_query_service(
         cube_repository=cube_repository,
         value_es_repository=value_es_repository,
         query_audit_repository=query_audit_repository,
+        metadata_release_repository=metadata_release_repository,
         metric_candidate_repository=metric_candidate_repository,
         sql_fallback_repository=sql_fallback_repository,
         sql_policy_engine=sql_policy_engine,

@@ -38,3 +38,4 @@ class QueryAuditRecord:
     llm_input_tokens: int | None = None
     llm_output_tokens: int | None = None
     llm_cost_units: float | None = None
+    metadata_release_version: str | None = None

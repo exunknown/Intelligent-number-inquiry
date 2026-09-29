@@ -27,6 +27,9 @@ from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
 from app.repositories.mysql.dw.sql_fallback_repository import SQLFallbackRepository
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
+from app.repositories.mysql.meta.metadata_release_repository import (
+    MetadataReleaseRepository,
+)
 from app.repositories.mysql.meta.metric_candidate_repository import (
     MetricCandidateRepository,
 )
@@ -69,6 +72,7 @@ class QueryService:
         cube_repository: CubeRepository,
         value_es_repository: ValueESRepository,
         query_audit_repository: QueryAuditRepository | None = None,
+        metadata_release_repository: MetadataReleaseRepository | None = None,
         metric_candidate_repository: MetricCandidateRepository | None = None,
         sql_fallback_repository: SQLFallbackRepository | None = None,
         sql_policy_engine: SQLPolicyEngine | None = None,
@@ -82,6 +86,7 @@ class QueryService:
         self.cube_repository = cube_repository
         self.value_es_repository = value_es_repository
         self.query_audit_repository = query_audit_repository
+        self.metadata_release_repository = metadata_release_repository
         self.metric_candidate_repository = metric_candidate_repository
         self.sql_fallback_repository = sql_fallback_repository
         self.sql_policy_engine = sql_policy_engine
@@ -112,6 +117,15 @@ class QueryService:
             }
             yield f"data: {json.dumps(error, ensure_ascii=False)}\n\n"
             return
+
+        metadata_release_version = None
+        if self.metadata_release_repository is not None:
+            try:
+                metadata_release_version = (
+                    await self.metadata_release_repository.get_active_version()
+                )
+            except Exception:
+                logger.warning("Failed to read active metadata release")
 
         state = DataAgentState(query=query)
         context = DataAgentContext(
@@ -281,6 +295,7 @@ class QueryService:
                     llm_input_tokens=llm_input_tokens,
                     llm_output_tokens=llm_output_tokens,
                     llm_cost_units=None,
+                    metadata_release_version=metadata_release_version,
                 )
                 try:
                     await self.query_audit_repository.save(record)

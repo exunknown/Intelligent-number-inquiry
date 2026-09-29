@@ -48,6 +48,7 @@ class QueryAuditRepository:
             llm_input_tokens=record.llm_input_tokens,
             llm_output_tokens=record.llm_output_tokens,
             llm_cost_units=record.llm_cost_units,
+            metadata_release_version=record.metadata_release_version,
             outcome=record.outcome,
             error_code=record.error_code,
             verified=record.verified,
