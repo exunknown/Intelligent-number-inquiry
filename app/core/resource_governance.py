@@ -5,13 +5,69 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Awaitable, Callable, TypeVar
+from threading import Lock
+from typing import Any, Awaitable, Callable, TypeVar
+
+from langchain_core.callbacks import BaseCallbackHandler
 
 from app.conf.app_config import app_config
 from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
 
 T = TypeVar("T")
+
+
+class LLMUsageCallbackHandler(BaseCallbackHandler):
+    """聚合单次请求内模型响应返回的输入和输出 token。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._lock = Lock()
+        self._input_tokens = 0
+        self._output_tokens = 0
+        self._has_usage = False
+
+    @staticmethod
+    def _read_token_pair(value: Any) -> tuple[int, int] | None:
+        if not isinstance(value, dict):
+            return None
+        nested = value.get("token_usage")
+        if nested is not None:
+            return LLMUsageCallbackHandler._read_token_pair(nested)
+        input_tokens = value.get("input_tokens", value.get("prompt_tokens"))
+        output_tokens = value.get("output_tokens", value.get("completion_tokens"))
+        if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
+            return None
+        return input_tokens, output_tokens
+
+    def on_llm_end(self, response: Any, **kwargs: Any) -> None:
+        """读取 LangChain 标准 usage_metadata，兼容旧 token_usage 结构。"""
+
+        for generations in getattr(response, "generations", ()):
+            for generation in generations:
+                message = getattr(generation, "message", None)
+                usage = self._read_token_pair(getattr(message, "usage_metadata", None))
+                if usage is None:
+                    usage = self._read_token_pair(
+                        getattr(generation, "generation_info", None)
+                    )
+                if usage is None:
+                    usage = self._read_token_pair(getattr(response, "llm_output", None))
+                if usage is None:
+                    continue
+                with self._lock:
+                    self._input_tokens += usage[0]
+                    self._output_tokens += usage[1]
+                    self._has_usage = True
+                return
+
+    def totals(self) -> tuple[int | None, int | None]:
+        """返回聚合结果；下游未提供 usage 时保留空值。"""
+
+        with self._lock:
+            if not self._has_usage:
+                return None, None
+            return self._input_tokens, self._output_tokens
 
 
 def _counts_as_dependency_failure(dependency: str | None, error: BaseException) -> bool:

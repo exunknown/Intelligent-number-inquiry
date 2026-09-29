@@ -14,6 +14,7 @@ from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
 from app.core.resource_governance import (
     AdmissionLease,
+    LLMUsageCallbackHandler,
     RequestBudget,
     get_dependency_breakers,
     get_resource_admission,
@@ -125,6 +126,7 @@ class QueryService:
             resource_budget=budget,
             dependency_breakers=get_dependency_breakers(),
         )
+        usage_callback = LLMUsageCallbackHandler()
         started_at = perf_counter()
         audit = {
             "query_mode": None,
@@ -149,7 +151,10 @@ class QueryService:
         try:
             async with asyncio.timeout(budget.remaining_seconds()):
                 async for chunk in graph.astream(
-                    input=state, context=context, stream_mode="custom"
+                    input=state,
+                    context=context,
+                    stream_mode="custom",
+                    config={"callbacks": [usage_callback]},
                 ):
                     budget.check()
                     if isinstance(chunk, dict) and chunk.get("type") == "audit":
@@ -202,6 +207,7 @@ class QueryService:
             yield f"data: {json.dumps(error, ensure_ascii=False, default=str)}\n\n"
         finally:
             if self.query_audit_repository is not None:
+                llm_input_tokens, llm_output_tokens = usage_callback.totals()
                 record = QueryAuditRecord(
                     user_id=principal.auth.user_id,
                     username=principal.auth.username,
@@ -237,8 +243,8 @@ class QueryService:
                     sql_execution_duration_ms=audit["sql_execution_duration_ms"],
                     llm_call_count=budget.llm_calls,
                     embedding_call_count=budget.embedding_calls,
-                    llm_input_tokens=None,
-                    llm_output_tokens=None,
+                    llm_input_tokens=llm_input_tokens,
+                    llm_output_tokens=llm_output_tokens,
                     llm_cost_units=None,
                 )
                 try:
