@@ -13,7 +13,8 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       host: "0.0.0.0",
-      port: 5173,
+      // 5173 落在 Windows Hyper-V/WSL2 端口排除范围，使用本地开发白名单中的 3000。
+      port: 3000,
       proxy: {
         "/api": {
           target: backend,
