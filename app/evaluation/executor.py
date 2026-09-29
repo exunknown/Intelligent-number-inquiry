@@ -45,9 +45,8 @@ class QueryServiceEvaluationExecutor:
                     actual_route = _allowed_route(event.get("source"))
             elif event_type == "error":
                 outcome = "reject"
+                actual_route = "reject"
                 rejection_code = _stable_code(event.get("code"))
-                if actual_route is None:
-                    actual_route = "reject"
 
         if outcome is None or actual_route is None:
             raise ValueError(f"评测样本未产生终态事件: {case.case_id}")
