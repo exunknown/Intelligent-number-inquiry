@@ -8,10 +8,11 @@ Context 用来保存一次图执行过程中不参与状态合并的外部依赖
 这样节点可以通过 runtime.context 复用外部工具，而不需要把连接类对象塞进 State
 """
 
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 
+from app.core.resource_governance import RequestBudget
 from app.entities.auth import AuthContext, PermissionSnapshot
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
@@ -50,3 +51,5 @@ class DataAgentContext(TypedDict):
     permissions: PermissionSnapshot
     # 已验证的用户身份，用于下游服务令牌的主体声明
     auth: AuthContext
+    # 请求级端到端资源预算；调试入口和旧调用可暂不提供
+    resource_budget: NotRequired[RequestBudget]

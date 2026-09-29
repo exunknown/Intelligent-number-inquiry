@@ -94,3 +94,10 @@ sql_safety:
   max_execution_ms: 5000
   max_estimated_rows: 100000
   max_query_cost: 100000
+
+resource:
+  request_timeout_seconds: ${oc.env:QUERY_REQUEST_TIMEOUT_SECONDS,60}
+  global_concurrency: ${oc.env:QUERY_GLOBAL_CONCURRENCY,8}
+  user_concurrency: ${oc.env:QUERY_USER_CONCURRENCY,2}
+  rate_limit: ${oc.env:QUERY_RATE_LIMIT,30}
+  rate_window_seconds: ${oc.env:QUERY_RATE_WINDOW_SECONDS,60}

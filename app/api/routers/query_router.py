@@ -8,11 +8,13 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from starlette.responses import StreamingResponse
 
 from app.api.dependencies import get_query_service
 from app.api.schemas.query_schema import QuerySchema
+from app.core.query_errors import QueryExecutionError
+from app.core.resource_governance import get_resource_admission
 from app.entities.auth import QueryPrincipal
 from app.security.dependencies import get_query_principal
 from app.services.query_service import QueryService
@@ -31,8 +33,23 @@ async def query_handler(
 ):
     """接收用户自然语言问题，并流式返回 LangGraph 工作流输出"""
 
+    try:
+        lease = await get_resource_admission().acquire(principal.auth.user_id)
+    except QueryExecutionError as error:
+        status_code = (
+            429
+            if error.code
+            in {
+                "rate_limited",
+                "capacity_exhausted",
+                "user_capacity_exhausted",
+            }
+            else 400
+        )
+        raise HTTPException(status_code=status_code, detail=error.message) from error
+
     return StreamingResponse(
         # query.query 是用户问题字符串；QueryService.query 返回异步生成器供响应逐段消费
-        query_service.query(query.query, principal=principal),
+        query_service.query(query.query, principal=principal, lease=lease),
         media_type="text/event-stream",
     )

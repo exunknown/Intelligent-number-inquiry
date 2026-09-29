@@ -160,6 +160,17 @@ class SQLSafetyConfig:
 
 
 @dataclass
+class ResourceConfig:
+    """问数请求的单实例资源预算。"""
+
+    request_timeout_seconds: float
+    global_concurrency: int
+    user_concurrency: int
+    rate_limit: int
+    rate_window_seconds: float
+
+
+@dataclass
 class AppConfig:
     """项目级总配置入口"""
 
@@ -176,6 +187,7 @@ class AppConfig:
     cube: CubeConfig
     auth: AuthConfig
     sql_safety: SQLSafetyConfig
+    resource: ResourceConfig
 
 
 # 获取配置文件位置（为了不硬编码）：从当前文件位置回到项目根目录，再定位到 conf/app_config.yaml

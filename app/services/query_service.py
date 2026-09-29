@@ -1,5 +1,6 @@
 """Question execution service and SSE serialization."""
 
+import asyncio
 import json
 from time import perf_counter
 
@@ -8,8 +9,14 @@ from langchain_huggingface import HuggingFaceEndpointEmbeddings
 from app.agent.context import DataAgentContext
 from app.agent.graph import graph
 from app.agent.state import DataAgentState
+from app.conf.app_config import app_config
 from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
+from app.core.resource_governance import (
+    AdmissionLease,
+    RequestBudget,
+    get_resource_admission,
+)
 from app.entities.auth import QueryPrincipal
 from app.entities.query_audit import QueryAuditRecord
 from app.repositories.cube.cube_repository import CubeRepository
@@ -75,8 +82,29 @@ class QueryService:
         self.sql_fallback_repository = sql_fallback_repository
         self.sql_policy_engine = sql_policy_engine
 
-    async def query(self, query: str, principal: QueryPrincipal):
+    async def query(
+        self,
+        query: str,
+        principal: QueryPrincipal,
+        lease: AdmissionLease | None = None,
+    ):
         """Execute one graph run and yield SSE-formatted events."""
+
+        try:
+            if lease is None:
+                lease = await get_resource_admission().acquire(principal.auth.user_id)
+            budget = RequestBudget.from_timeout(
+                app_config.resource.request_timeout_seconds
+            )
+        except QueryExecutionError as e:
+            error = {
+                "type": "error",
+                "code": e.code,
+                "message": e.message,
+                "retryable": e.retryable,
+            }
+            yield f"data: {json.dumps(error, ensure_ascii=False)}\n\n"
+            return
 
         state = DataAgentState(query=query)
         context = DataAgentContext(
@@ -91,6 +119,7 @@ class QueryService:
             sql_policy_engine=self.sql_policy_engine,
             permissions=principal.permissions,
             auth=principal.auth,
+            resource_budget=budget,
         )
         started_at = perf_counter()
         audit = {
@@ -114,21 +143,37 @@ class QueryService:
             "sql_execution_duration_ms": None,
         }
         try:
-            async for chunk in graph.astream(
-                input=state, context=context, stream_mode="custom"
-            ):
-                if isinstance(chunk, dict) and chunk.get("type") == "audit":
-                    for field in _AUDIT_EVENT_FIELDS:
-                        if chunk.get(field) is not None:
-                            audit[field] = chunk[field]
-                    continue
-                if isinstance(chunk, dict) and chunk.get("type") == "route":
-                    audit["query_mode"] = chunk.get("mode")
-                    audit["route_reason"] = chunk.get("reason")
-                elif isinstance(chunk, dict) and chunk.get("type") == "result":
-                    audit["outcome"] = "success"
-                    audit["verified"] = chunk.get("verified")
-                yield f"data: {json.dumps(chunk, ensure_ascii=False, default=str)}\n\n"
+            async with asyncio.timeout(budget.remaining_seconds()):
+                async for chunk in graph.astream(
+                    input=state, context=context, stream_mode="custom"
+                ):
+                    budget.check()
+                    if isinstance(chunk, dict) and chunk.get("type") == "audit":
+                        for field in _AUDIT_EVENT_FIELDS:
+                            if chunk.get(field) is not None:
+                                audit[field] = chunk[field]
+                        continue
+                    if isinstance(chunk, dict) and chunk.get("type") == "route":
+                        audit["query_mode"] = chunk.get("mode")
+                        audit["route_reason"] = chunk.get("reason")
+                    elif isinstance(chunk, dict) and chunk.get("type") == "result":
+                        audit["outcome"] = "success"
+                        audit["verified"] = chunk.get("verified")
+                    yield f"data: {json.dumps(chunk, ensure_ascii=False, default=str)}\n\n"
+        except TimeoutError:
+            logger.warning("Question execution exceeded resource deadline")
+            audit["outcome"] = "error"
+            audit["error_code"] = "resource_deadline_exceeded"
+            error = {
+                "type": "error",
+                "code": "resource_deadline_exceeded",
+                "message": "问数请求已超过时间预算",
+                "retryable": False,
+            }
+            yield f"data: {json.dumps(error, ensure_ascii=False)}\n\n"
+        except asyncio.CancelledError:
+            audit["outcome"] = "cancelled"
+            raise
         except QueryExecutionError as e:
             logger.error("Question execution failed code={}", e.code)
             audit["outcome"] = "error"
@@ -201,3 +246,5 @@ class QueryService:
                     )
                 except Exception:
                     logger.warning("Failed to save metric governance candidate")
+            if lease is not None:
+                await lease.release()
