@@ -1,0 +1,101 @@
+"""运行脱敏 JSONL 评测并输出发布门禁报告。"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+from app.evaluation.runner import (
+    EvaluationCase,
+    EvaluationObservation,
+    EvaluationRunner,
+    EvaluationVersions,
+    reject_sensitive_keys,
+)
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    records = []
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), 1
+    ):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"{path}:{line_number} 不是有效 JSON") from error
+        if not isinstance(record, dict):
+            raise ValueError(f"{path}:{line_number} 必须是 JSON 对象")
+        reject_sensitive_keys(record)
+        records.append(record)
+    return records
+
+
+def _case(record: dict) -> EvaluationCase:
+    return EvaluationCase(
+        case_id=record["case_id"],
+        expected_route=record["expected_route"],
+        expected_resources=tuple(record.get("expected_resources", [])),
+        expected_outcome=record["expected_outcome"],
+        expected_rejection_code=record.get("expected_rejection_code"),
+        tags=tuple(record.get("tags", [])),
+    )
+
+
+def _observation(record: dict) -> EvaluationObservation:
+    return EvaluationObservation(
+        case_id=record["case_id"],
+        actual_route=record["actual_route"],
+        actual_resources=tuple(record.get("actual_resources", [])),
+        outcome=record["outcome"],
+        latency_ms=float(record["latency_ms"]),
+        rejection_code=record.get("rejection_code"),
+        result_valid=record.get("result_valid"),
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--cases", type=Path, required=True)
+    parser.add_argument("--observations", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    for name in (
+        "dataset-version",
+        "prompt-version",
+        "model-version",
+        "embedding-version",
+        "metadata-release-version",
+        "code-version",
+    ):
+        parser.add_argument(f"--{name}", required=True)
+    args = parser.parse_args()
+    try:
+        cases = [_case(record) for record in _read_jsonl(args.cases)]
+        observations = [
+            _observation(record) for record in _read_jsonl(args.observations)
+        ]
+        versions = EvaluationVersions(
+            dataset_version=args.dataset_version,
+            prompt_version=args.prompt_version,
+            model_version=args.model_version,
+            embedding_version=args.embedding_version,
+            metadata_release_version=args.metadata_release_version,
+            code_version=args.code_version,
+        )
+        report = EvaluationRunner().run(cases, observations, versions)
+        args.output.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        print(f"评测输入无效: {type(error).__name__}")
+        return 2
+    print(
+        f"评测完成 passed={report['gate']['passed']} samples={report['sample_count']}"
+    )
+    return 0 if report["gate"]["passed"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
