@@ -10,7 +10,7 @@
 
 import asyncio
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
@@ -30,6 +30,19 @@ from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantReposit
 from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantRepository
 
 _POINT_ID_NAMESPACE = uuid.UUID("b2a84750-45e7-5e50-8887-c5e81322a4f5")
+
+
+@dataclass(frozen=True)
+class MetadataBuildResult:
+    """一次 staging 构建产生的物理资源及其旧 alias 目标。"""
+
+    release_version: str
+    column_collection: str | None
+    value_index: str | None
+    metric_collection: str | None
+    previous_column_collection: str | None
+    previous_value_index: str | None
+    previous_metric_collection: str | None
 
 
 def _stable_point_id(
@@ -384,13 +397,23 @@ class MetaKnowledgeService:
             )
         return len(points)
 
-    async def build(self, config_path: Path, release_version: str | None = None):
+    async def build(
+        self,
+        config_path: Path,
+        release_version: str | None = None,
+        activate_aliases: bool = True,
+    ):
         """串行执行当前进程内的元数据构建。"""
         async with self._build_lock:
-            return await self._build_unlocked(config_path, release_version)
+            return await self._build_unlocked(
+                config_path, release_version, activate_aliases
+            )
 
     async def _build_unlocked(
-        self, config_path: Path, release_version: str | None = None
+        self,
+        config_path: Path,
+        release_version: str | None = None,
+        activate_aliases: bool = True,
     ):
         """构建元数据索引；传入版本时先 staging，校验后切换 alias。"""
         context = OmegaConf.load(config_path)
@@ -554,9 +577,37 @@ class MetaKnowledgeService:
                 ):
                     raise ValueError("metric staging point count mismatch")
 
-            if release_version and staged_indexes:
+            if release_version and staged_indexes and activate_aliases:
                 commit_started = True
                 await self._commit_staged_indexes(staged_indexes)
+            if release_version:
+                return MetadataBuildResult(
+                    release_version=release_version,
+                    column_collection=next(
+                        (item[2] for item in staged_indexes if item[0] == "column"),
+                        None,
+                    ),
+                    value_index=next(
+                        (item[2] for item in staged_indexes if item[0] == "value"),
+                        None,
+                    ),
+                    metric_collection=next(
+                        (item[2] for item in staged_indexes if item[0] == "metric"),
+                        None,
+                    ),
+                    previous_column_collection=next(
+                        (item[3] for item in staged_indexes if item[0] == "column"),
+                        None,
+                    ),
+                    previous_value_index=next(
+                        (item[3] for item in staged_indexes if item[0] == "value"),
+                        None,
+                    ),
+                    previous_metric_collection=next(
+                        (item[3] for item in staged_indexes if item[0] == "metric"),
+                        None,
+                    ),
+                )
         except Exception:
             if not commit_started:
                 await self._cleanup_staging_resources(staging_resources)

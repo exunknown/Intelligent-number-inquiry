@@ -48,7 +48,11 @@ async def metadata_build_lock(engine, release_version: str | None = None):
             )
 
 
-async def build(config_path: Path, release_version: str | None = None):
+async def build(
+    config_path: Path,
+    release_version: str | None = None,
+    activate_aliases: bool = True,
+):
     """初始化依赖并执行一次元数据知识构建"""
 
     # 初始化元数据MySQL客户端
@@ -91,13 +95,18 @@ async def build(config_path: Path, release_version: str | None = None):
         )
 
         # 真正进入服务层的构建逻辑
-        await meta_knowledge_service.build(config_path, release_version=release_version)
+        build_result = await meta_knowledge_service.build(
+            config_path,
+            release_version=release_version,
+            activate_aliases=activate_aliases,
+        )
 
     # 结束后关闭客户端连接
     await meta_mysql_client_manager.close()
     await dw_mysql_client_manager.close()
     await get_qdrant_client_manager().close()
     await get_es_client_manager().close()
+    return build_result
 
 
 if __name__ == "__main__":
@@ -108,7 +117,18 @@ if __name__ == "__main__":
         "--release-version",
         help="显式发布模式版本；传入后先写 staging 资源，校验数量后切换 alias",
     )
+    parser.add_argument(
+        "--stage-only",
+        action="store_true",
+        help="只构建并校验 staging 资源，不切换稳定 alias",
+    )
     args = parser.parse_args()
 
     # 将字符串路径转成 Path，再启动异步 build
-    asyncio.run(build(Path(args.conf), release_version=args.release_version))
+    asyncio.run(
+        build(
+            Path(args.conf),
+            release_version=args.release_version,
+            activate_aliases=not args.stage_only,
+        )
+    )
