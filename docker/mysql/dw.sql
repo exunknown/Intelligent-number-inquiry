@@ -22,6 +22,19 @@ VALUES ('R001', '广东省', '华南', '中国'),
        ('R005', '上海市', '华东', '中国'),
        ('R006', '湖北省', '华中', '中国');
 
+DROP TABLE IF EXISTS dim_department;
+CREATE TABLE dim_department
+(
+    department_id   VARCHAR(20) PRIMARY KEY,
+    department_name VARCHAR(100) NOT NULL,
+    status          VARCHAR(20) NOT NULL
+);
+
+INSERT INTO dim_department (department_id, department_name, status)
+VALUES ('D001', '直营网销部', 'active'),
+       ('D002', '渠道销售部', 'active'),
+       ('D003', '企业客户部', 'active');
+
 
 DROP TABLE IF EXISTS dim_customer;
 CREATE TABLE dim_customer
@@ -196,6 +209,7 @@ CREATE TABLE fact_order
     product_id     VARCHAR(20),
     date_id        INT,
     region_id      VARCHAR(20),
+    department_id  VARCHAR(20) NULL,
     order_quantity INT,
     order_amount   FLOAT
 );
@@ -316,3 +330,16 @@ VALUES ('ORD20250101001', 'C001', 'P001', 20250101, 'R001', 1, 8999.00),
        ('ORD20250215002', 'C016', 'P003', 20250215, 'R001', 1, 6999.00),
        ('ORD20250320002', 'C018', 'P014', 20250320, 'R003', 1, 1399.00),
        ('ORD20250108002', 'C016', 'P005', 20250108, 'R001', 1, 3200.00);
+
+UPDATE fact_order
+SET department_id = CASE MOD(date_id, 3)
+    WHEN 0 THEN 'D001'
+    WHEN 1 THEN 'D002'
+    ELSE 'D003'
+END;
+
+ALTER TABLE fact_order
+    MODIFY department_id VARCHAR(20) NOT NULL,
+    ADD INDEX idx_fact_order_department (department_id),
+    ADD CONSTRAINT fk_fact_order_department
+        FOREIGN KEY (department_id) REFERENCES dim_department (department_id);

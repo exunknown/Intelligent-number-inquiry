@@ -28,6 +28,15 @@ dist/
 wheels/
 *.egg-info
 docs/
+!docs/
+docs/*
+!docs/production-roadmap/
+!docs/production-roadmap/**
+**/implementation-plan.md
+!docs/runbooks/
+!docs/runbooks/**
+!docs/learning-record.md
+!docs/frontend-learning-record.md
 .superpowers/
 texts/
 
@@ -48,6 +57,8 @@ speed-measure-plugin*.json
 
 # Misc (build / logs)
 README.md
+!/README.md
+!docs/production-roadmap/README.md
 *.log
 **/logs/
 /.sass-cache

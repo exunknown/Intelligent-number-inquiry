@@ -12,6 +12,7 @@ from typing import TypedDict
 
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 
+from app.entities.auth import AuthContext, PermissionSnapshot
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
@@ -39,3 +40,7 @@ class DataAgentContext(TypedDict):
     meta_mysql_repository: MetaMySQLRepository
     # 数仓仓储，负责在额外上下文补全时读取数据库方言 版本等执行环境信息
     dw_mysql_repository: DWMySQLRepository
+    # 认证入口生成的一次请求权限快照，所有节点必须复用同一对象
+    permissions: PermissionSnapshot
+    # 已验证的用户身份，用于下游服务令牌的主体声明
+    auth: AuthContext

@@ -1,0 +1,26 @@
+cubes:
+  - name: departments
+    sql_table: dw.dim_department
+    public: false
+    dimensions:
+      - name: department_id
+        sql: department_id
+        type: string
+        primary_key: true
+        title: 部门编码
+        description: 订单归属部门的唯一编码
+        meta:
+          aliases: [部门ID, 部门编号]
+          ai_context: 用于精确识别订单归属部门
+          source_column_id: dim_department.department_id
+          filterable: true
+      - name: department_name
+        sql: department_name
+        type: string
+        title: 部门
+        description: 订单归属部门名称
+        meta:
+          aliases: [部门名称, 归属部门, 销售部门]
+          ai_context: 用于按组织归属分析订单
+          source_column_id: dim_department.department_name
+          filterable: true

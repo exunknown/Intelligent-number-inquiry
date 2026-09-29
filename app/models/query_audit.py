@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -13,10 +13,20 @@ class QueryAuditMySQL(Base):
     """Persisted audit row for one `/api/query` execution."""
 
     __tablename__ = "query_audit"
+    __table_args__ = (
+        Index("idx_query_audit_user_created", "user_id", "created_at"),
+        Index("idx_query_audit_policy_created", "policy_version", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    roles: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    policy_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    allowed_department_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    authz_outcome: Mapped[str] = mapped_column(String(32), nullable=False)
     query_text: Mapped[str] = mapped_column(Text, nullable=False)
     query_mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
     route_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)

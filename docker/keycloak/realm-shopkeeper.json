@@ -1,0 +1,56 @@
+{
+  "realm": "shopkeeper",
+  "enabled": true,
+  "displayName": "Shopkeeper Inquiry",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "loginWithEmailAllowed": true,
+  "roles": {
+    "realm": [
+      {"name": "platform_admin", "description": "平台管理员"},
+      {"name": "metric_governor", "description": "指标治理人员"},
+      {"name": "analyst", "description": "问数分析人员"},
+      {"name": "auditor", "description": "审计人员"}
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "shopkeeper-api",
+      "name": "Shopkeeper API",
+      "enabled": true,
+      "bearerOnly": true,
+      "protocol": "openid-connect"
+    },
+    {
+      "clientId": "shopkeeper-web",
+      "name": "Shopkeeper Web",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:5173"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "shopkeeper-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "shopkeeper-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "lightweight.claim": "false"
+          }
+        }
+      ]
+    }
+  ]
+}

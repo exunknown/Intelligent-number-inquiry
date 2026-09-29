@@ -16,6 +16,7 @@ from app.agent.state import DataAgentState
 from app.core.log import logger
 from app.entities.value_info import ValueInfo
 from app.prompt.prompt_loader import load_prompt
+from app.security.resource_filter import filter_values
 
 
 async def recall_value(state: DataAgentState, runtime: Runtime[DataAgentContext]):
@@ -59,7 +60,9 @@ async def recall_value(state: DataAgentState, runtime: Runtime[DataAgentContext]
                     value_infos_map[current_value_info.id] = current_value_info
 
         # 写回 state 的是去重后的字段值实体，后续合并节点再决定如何组织上下文
-        retrieved_value_infos: list[ValueInfo] = list(value_infos_map.values())
+        retrieved_value_infos = filter_values(
+            list(value_infos_map.values()), runtime.context["permissions"]
+        )
         logger.info(f"检索到字段取值：{list(value_infos_map.keys())}")
         writer({"type": "progress", "step": step, "status": "success"})
         return {"retrieved_value_infos": retrieved_value_infos}

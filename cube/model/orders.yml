@@ -15,6 +15,9 @@ cubes:
       - name: dates
         sql: "{CUBE}.date_id = {dates}.date_id"
         relationship: many_to_one
+      - name: departments
+        sql: "{CUBE}.department_id = {departments}.department_id"
+        relationship: many_to_one
     measures:
       - name: gmv
         sql: order_amount

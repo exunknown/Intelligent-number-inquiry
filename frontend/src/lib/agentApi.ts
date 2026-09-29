@@ -2,6 +2,7 @@
  * 智能体接口客户端
  * 封装后端 /api/query SSE 流式接口请求与事件解析逻辑
  */
+import { getAccessToken } from "../auth/keycloak";
 import type { AgentEvent } from "../types/agent";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "";
@@ -12,17 +13,25 @@ type QueryOptions = {
 };
 
 export async function streamQuery(query: string, options: QueryOptions) {
+  const accessToken = await getAccessToken();
   const response = await fetch(`${API_BASE_URL}/api/query`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
+      Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify({ query }),
     signal: options.signal,
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("登录已失效，请重新登录");
+    }
+    if (response.status === 403) {
+      throw new Error("没有执行该操作的权限");
+    }
     throw new Error(`接口请求失败：HTTP ${response.status}`);
   }
 

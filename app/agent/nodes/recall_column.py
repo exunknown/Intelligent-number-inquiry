@@ -16,6 +16,7 @@ from app.agent.state import DataAgentState
 from app.core.log import logger
 from app.entities.column_info import ColumnInfo
 from app.prompt.prompt_loader import load_prompt
+from app.security.resource_filter import filter_columns
 
 
 async def recall_column(state: DataAgentState, runtime: Runtime[DataAgentContext]):
@@ -61,7 +62,9 @@ async def recall_column(state: DataAgentState, runtime: Runtime[DataAgentContext
                     column_info_map[column_info.id] = column_info
 
         # 写回 state 的是去重后的 ColumnInfo 列表，不暴露 Qdrant 原始 point 结构
-        retrieved_column_infos: list[ColumnInfo] = list(column_info_map.values())
+        retrieved_column_infos = filter_columns(
+            list(column_info_map.values()), runtime.context["permissions"]
+        )
 
         writer({"type": "progress", "step": step, "status": "success"})
         return {"retrieved_column_infos": retrieved_column_infos}

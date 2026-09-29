@@ -2,6 +2,7 @@
 
 from typing import Literal
 
+from app.entities.auth import PermissionSnapshot
 from app.entities.cube_member import CubeMember
 from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
@@ -20,6 +21,7 @@ class MetricCatalogService:
         self,
         member_type: CatalogMemberFilter = "measure",
         q: str | None = None,
+        permissions: PermissionSnapshot | None = None,
     ) -> list[CubeMember]:
         """Return governed members matching type and human-readable search text."""
 
@@ -40,5 +42,16 @@ class MetricCatalogService:
                 ).casefold()
                 if normalized_query not in searchable:
                     continue
+            if permissions is not None and not self._is_allowed(member, permissions):
+                continue
             result.append(member)
         return result
+
+    @staticmethod
+    def _is_allowed(member: CubeMember, permissions: PermissionSnapshot) -> bool:
+        if member.member_type == "measure":
+            return member.name in permissions.allowed_metrics
+        return (
+            member.source_column_id is not None
+            and member.source_column_id in permissions.allowed_columns
+        )

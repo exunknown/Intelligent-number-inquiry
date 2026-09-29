@@ -10,6 +10,7 @@ from app.agent.graph import graph
 from app.agent.state import DataAgentState
 from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
+from app.entities.auth import QueryPrincipal
 from app.entities.query_audit import QueryAuditRecord
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
@@ -50,7 +51,7 @@ class QueryService:
         self.query_audit_repository = query_audit_repository
         self.metric_candidate_repository = metric_candidate_repository
 
-    async def query(self, query: str):
+    async def query(self, query: str, principal: QueryPrincipal):
         """Execute one graph run and yield SSE-formatted events."""
 
         state = DataAgentState(query=query)
@@ -62,6 +63,8 @@ class QueryService:
             value_es_repository=self.value_es_repository,
             meta_mysql_repository=self.meta_mysql_repository,
             dw_mysql_repository=self.dw_mysql_repository,
+            permissions=principal.permissions,
+            auth=principal.auth,
         )
         started_at = perf_counter()
         audit = {
@@ -121,6 +124,18 @@ class QueryService:
         finally:
             if self.query_audit_repository is not None:
                 record = QueryAuditRecord(
+                    user_id=principal.auth.user_id,
+                    username=principal.auth.username,
+                    roles=tuple(sorted(principal.auth.roles)),
+                    policy_version=principal.permissions.policy_version,
+                    allowed_department_ids=tuple(
+                        sorted(principal.permissions.allowed_department_ids)
+                    ),
+                    authz_outcome=(
+                        "allowed"
+                        if principal.permissions.allowed_department_ids
+                        else "denied"
+                    ),
                     query_text=query,
                     query_mode=audit["query_mode"],
                     route_reason=audit["route_reason"],

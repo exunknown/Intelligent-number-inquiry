@@ -1,7 +1,8 @@
 """Cube 数据服务访问仓储。"""
 
+import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 
 import httpx
 import jwt
@@ -9,6 +10,8 @@ import jwt
 from app.conf.app_config import CubeConfig
 from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
+
+_DEPARTMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class CubeRepository:
@@ -28,17 +31,60 @@ class CubeRepository:
         """获取 Cube 元数据。"""
         return await self._request("GET", "/v1/meta")
 
-    async def load(self, query: dict) -> dict:
+    async def load(
+        self,
+        query: dict,
+        user_id: str,
+        department_ids: Collection[str],
+        policy_version: int,
+    ) -> dict:
         """执行 Cube 查询。"""
-        return await self._request("POST", "/v1/load", json={"query": query})
+        if isinstance(department_ids, (str, bytes)):
+            raise QueryExecutionError("invalid_data_scope", "数据权限范围无效", False)
+        departments = sorted(set(department_ids))
+        if not departments:
+            raise QueryExecutionError(
+                "no_data_scope", "当前用户没有可查询的数据范围", False
+            )
+        if any(
+            not isinstance(department_id, str)
+            or _DEPARTMENT_ID_PATTERN.fullmatch(department_id) is None
+            for department_id in departments
+        ):
+            raise QueryExecutionError("invalid_data_scope", "数据权限范围无效", False)
+        if not isinstance(user_id, str) or not user_id or len(user_id) > 255:
+            raise QueryExecutionError("invalid_identity", "用户身份无效", False)
+        if (
+            isinstance(policy_version, bool)
+            or not isinstance(policy_version, int)
+            or policy_version < 0
+        ):
+            raise QueryExecutionError("invalid_data_scope", "数据权限范围无效", False)
 
-    async def _request(self, method: str, path: str, **kwargs: object) -> dict:
+        return await self._request(
+            "POST",
+            "/v1/load",
+            token_claims={
+                "sub": user_id,
+                "department_ids": departments,
+                "policy_version": policy_version,
+            },
+            json={"query": query},
+        )
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        token_claims: dict | None = None,
+        **kwargs: object,
+    ) -> dict:
         started_at = time.monotonic()
         try:
             response = await self.client.request(
                 method,
                 path,
-                headers={"Authorization": self._create_token()},
+                headers={"Authorization": self._create_token(token_claims)},
                 **kwargs,
             )
         except httpx.TimeoutException:
@@ -71,10 +117,17 @@ class CubeRepository:
         self._log(method, path, response.status_code, started_at, "success")
         return data
 
-    def _create_token(self) -> str:
+    def _create_token(self, claims: dict | None = None) -> str:
         issued_at = int(self.clock())
+        payload = {
+            "sub": "shopkeeper-agent",
+            "iat": issued_at,
+            "exp": issued_at + 300,
+        }
+        if claims is not None:
+            payload.update(claims)
         return jwt.encode(
-            {"sub": "shopkeeper-agent", "iat": issued_at, "exp": issued_at + 300},
+            payload,
             self.config.api_secret,
             algorithm="HS256",
         )

@@ -23,7 +23,14 @@ async def execute_cube_query(state: DataAgentState, runtime: Runtime[DataAgentCo
     )
 
     try:
-        response = await runtime.context["cube_repository"].load(state["cube_query"])
+        auth = runtime.context["auth"]
+        permissions = runtime.context["permissions"]
+        response = await runtime.context["cube_repository"].load(
+            state["cube_query"],
+            auth.user_id,
+            permissions.allowed_department_ids,
+            permissions.policy_version,
+        )
         result = normalize_cube_result(response)
         logger.info("Cube query result: {}", result)
         writer({"type": "progress", "step": step, "status": "success"})

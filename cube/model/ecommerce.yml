@@ -19,3 +19,6 @@ views:
       - join_path: orders.dates
         prefix: false
         includes: [order_date]
+      - join_path: orders.departments
+        prefix: false
+        includes: [department_id, department_name]

@@ -5,11 +5,14 @@
 import {
     Eraser,
     ListChecks,
+    LogOut,
     MessageSquarePlus,
     ScrollText,
     Server,
+    UserRound,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { logout } from "./auth/keycloak";
 import { Composer } from "./components/Composer";
 import { EmptyState } from "./components/EmptyState";
 import { MessageBubble } from "./components/MessageBubble";
@@ -58,7 +61,11 @@ function Seal({ className }: { className?: string }) {
     );
 }
 
-export default function App() {
+type AppProps = {
+    username: string;
+};
+
+export default function App({ username }: AppProps) {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [draft, setDraft] = useState("");
     const [activeController, setActiveController] = useState<AbortController | null>(null);
@@ -195,6 +202,15 @@ export default function App() {
         setDraft("");
     };
 
+    const handleLogout = async () => {
+        activeController?.abort();
+        try {
+            await logout();
+        } catch {
+            window.location.reload();
+        }
+    };
+
     return (
         <div className="h-dvh overflow-hidden bg-paper text-ink">
             <div className="relative grid h-full min-h-0 overflow-hidden lg:grid-cols-[300px_minmax(0,1fr)]">
@@ -257,6 +273,15 @@ export default function App() {
                                 </span>
                                 <span className="tabular-nums">{completedCount}</span>
                             </div>
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="inline-flex items-center gap-2">
+                                    <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+                                    用户
+                                </span>
+                                <span className="truncate" title={username}>
+                                    {username}
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </aside>
@@ -274,6 +299,12 @@ export default function App() {
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
+                            <span
+                                className="max-w-20 truncate text-xs text-ink/60 sm:max-w-40"
+                                title={username}
+                            >
+                                {username}
+                            </span>
                             <span className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-white px-3 py-1.5 text-xs text-ink/60">
                                 <span
                                     className={cn(
@@ -292,6 +323,15 @@ export default function App() {
                                 aria-label="清空"
                             >
                                 <Eraser className="h-4 w-4" aria-hidden="true" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void handleLogout()}
+                                className="grid h-11 w-11 place-items-center rounded-full text-ink/55 transition hover:bg-ink/5 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
+                                title="退出登录"
+                                aria-label="退出登录"
+                            >
+                                <LogOut className="h-4 w-4" aria-hidden="true" />
                             </button>
                         </div>
                     </header>

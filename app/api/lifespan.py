@@ -17,6 +17,7 @@ from app.clients.mysql_client_manager import (
     dw_mysql_client_manager,
     meta_mysql_client_manager,
 )
+from app.clients.oidc_client_manager import get_oidc_client_manager
 from app.clients.qdrant_client_manager import get_qdrant_client_manager
 
 
@@ -29,6 +30,7 @@ async def lifespan(app: FastAPI):
     get_embedding_client_manager().init()
     get_es_client_manager().init()
     get_cube_client_manager().init()
+    get_oidc_client_manager().init()
     meta_mysql_client_manager.init()
     dw_mysql_client_manager.init()
 
@@ -39,5 +41,6 @@ async def lifespan(app: FastAPI):
     await get_qdrant_client_manager().close()
     await get_es_client_manager().close()
     await get_cube_client_manager().close()
+    await get_oidc_client_manager().close()
     await meta_mysql_client_manager.close()
     await dw_mysql_client_manager.close()

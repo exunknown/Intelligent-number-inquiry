@@ -62,5 +62,10 @@ cube:
   max_limit: 500
   semantic_view: ecommerce
 
-metric_governance:
-  api_key: ${oc.env:METRIC_GOVERNANCE_API_KEY,""}
+auth:
+  enabled: true
+  issuer: ${oc.env:OIDC_ISSUER,http://127.0.0.1:8180/realms/shopkeeper}
+  audience: ${oc.env:OIDC_AUDIENCE,shopkeeper-api}
+  jwks_url: ${oc.env:OIDC_JWKS_URL,http://127.0.0.1:8180/realms/shopkeeper/protocol/openid-connect/certs}
+  jwks_cache_seconds: 300
+  clock_skew_seconds: 30

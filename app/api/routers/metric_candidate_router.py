@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.dependencies import (
     get_metric_candidate_service,
-    require_metric_governance_key,
 )
 from app.api.schemas.metric_candidate_schema import (
     CandidateStatus,
@@ -14,9 +13,13 @@ from app.api.schemas.metric_candidate_schema import (
     MetricCandidateResponse,
     MetricCandidateReviewRequest,
 )
+from app.entities.auth import AuthContext
+from app.security.dependencies import require_api_permission
 from app.services.metric_candidate_service import MetricCandidateService
 
 metric_candidate_router = APIRouter()
+_require_candidate_read = require_api_permission("api:metric-candidates", "read")
+_require_candidate_review = require_api_permission("api:metric-candidates", "review")
 
 
 @metric_candidate_router.get(
@@ -29,9 +32,7 @@ async def metric_candidate_handler(
     metric_candidate_service: Annotated[
         MetricCandidateService, Depends(get_metric_candidate_service)
     ] = None,
-    _governance_authorized: Annotated[
-        bool, Depends(require_metric_governance_key)
-    ] = None,
+    _auth: Annotated[AuthContext, Depends(_require_candidate_read)] = None,
 ) -> MetricCandidateResponse:
     """Return recent questions that need metric governance."""
 
@@ -52,9 +53,7 @@ async def metric_candidate_review_handler(
     metric_candidate_service: Annotated[
         MetricCandidateService, Depends(get_metric_candidate_service)
     ] = None,
-    _governance_authorized: Annotated[
-        bool, Depends(require_metric_governance_key)
-    ] = None,
+    _auth: Annotated[AuthContext, Depends(_require_candidate_review)] = None,
 ) -> MetricCandidateItem:
     """Approve or reject one governance candidate."""
 

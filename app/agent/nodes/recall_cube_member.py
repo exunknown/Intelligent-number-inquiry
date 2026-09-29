@@ -6,6 +6,7 @@ from app.agent.context import DataAgentContext
 from app.agent.state import DataAgentState
 from app.core.log import logger
 from app.entities.cube_member import CubeMember
+from app.security.resource_filter import filter_cube_members
 
 
 def _append_unseen(target: dict[str, CubeMember], members: list[CubeMember]) -> None:
@@ -26,19 +27,27 @@ async def recall_cube_member(state: DataAgentState, runtime: Runtime[DataAgentCo
         terms = list(dict.fromkeys([state["query"], *state["keywords"]]))
         measures: dict[str, CubeMember] = {}
         dimensions: dict[str, CubeMember] = {}
+        permissions = runtime.context["permissions"]
 
         for term in terms:
             embedding = await embedding_client.aembed_query(term)
             _append_unseen(
                 measures,
-                await repository.search(embedding, {"measure"}),
+                filter_cube_members(
+                    await repository.search(embedding, {"measure"}), permissions
+                ),
             )
             _append_unseen(
                 dimensions,
-                await repository.search(embedding, {"dimension", "time_dimension"}),
+                filter_cube_members(
+                    await repository.search(embedding, {"dimension", "time_dimension"}),
+                    permissions,
+                ),
             )
 
-        catalog_members = await repository.list_members()
+        catalog_members = filter_cube_members(
+            await repository.list_members(), permissions
+        )
         _append_unseen(
             measures,
             [member for member in catalog_members if member.member_type == "measure"],

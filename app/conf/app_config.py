@@ -120,10 +120,15 @@ class CubeConfig:
 
 
 @dataclass
-class MetricGovernanceConfig:
-    """指标治理管理接口的鉴权配置"""
+class AuthConfig:
+    """OIDC 访问令牌校验配置"""
 
-    api_key: str
+    enabled: bool
+    issuer: str
+    audience: str
+    jwks_url: str
+    jwks_cache_seconds: int
+    clock_skew_seconds: int
 
 
 @dataclass
@@ -140,7 +145,7 @@ class AppConfig:
     ini: IniConfig
     selector: SelectorConfig
     cube: CubeConfig
-    metric_governance: MetricGovernanceConfig
+    auth: AuthConfig
 
 
 # 获取配置文件位置（为了不硬编码）：从当前文件位置回到项目根目录，再定位到 conf/app_config.yaml

@@ -10,9 +10,12 @@ from app.api.schemas.metric_catalog_schema import (
     MetricCatalogItem,
     MetricCatalogResponse,
 )
+from app.entities.auth import PermissionSnapshot
+from app.security.dependencies import require_permission_snapshot
 from app.services.metric_catalog_service import MetricCatalogService
 
 metric_catalog_router = APIRouter()
+_metric_permissions = require_permission_snapshot("api:metrics", "read")
 
 
 @metric_catalog_router.get(
@@ -25,9 +28,12 @@ async def metric_catalog_handler(
     metric_catalog_service: Annotated[
         MetricCatalogService, Depends(get_metric_catalog_service)
     ] = None,
+    permissions: Annotated[PermissionSnapshot, Depends(_metric_permissions)] = None,
 ) -> MetricCatalogResponse:
     """Return the governed Cube catalog used by Text to Metric."""
 
-    members = await metric_catalog_service.list_members(member_type=member_type, q=q)
+    members = await metric_catalog_service.list_members(
+        member_type=member_type, q=q, permissions=permissions
+    )
     items = [MetricCatalogItem.model_validate(member) for member in members]
     return MetricCatalogResponse(items=items, total=len(items))

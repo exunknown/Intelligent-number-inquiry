@@ -7,6 +7,12 @@ from dataclasses import dataclass
 class QueryAuditRecord:
     """Request-level audit data independent from the persistence model."""
 
+    user_id: str
+    username: str | None
+    roles: tuple[str, ...]
+    policy_version: int
+    allowed_department_ids: tuple[str, ...]
+    authz_outcome: str
     query_text: str
     query_mode: str | None
     route_reason: str | None

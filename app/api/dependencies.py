@@ -6,10 +6,9 @@ FastAPI 依赖组装
 都收敛在这里，避免 HTTP 处理函数直接感知底层基础设施。
 """
 
-from secrets import compare_digest
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +24,7 @@ from app.conf.app_config import app_config
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
+from app.repositories.mysql.meta.authz_policy_repository import AuthzPolicyRepository
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
 from app.repositories.mysql.meta.metric_candidate_repository import (
     MetricCandidateRepository,
@@ -35,25 +35,15 @@ from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
 )
 from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantRepository
+from app.services.authorization_service import (
+    AuthorizationCacheState,
+    AuthorizationService,
+)
 from app.services.metric_candidate_service import MetricCandidateService
 from app.services.metric_catalog_service import MetricCatalogService
 from app.services.query_service import QueryService
 
-
-async def require_metric_governance_key(
-    provided_key: Annotated[str | None, Header(alias="X-Metric-Governance-Key")] = None,
-) -> bool:
-    """Require the configured management key for governance endpoints."""
-
-    configured_key = app_config.metric_governance.api_key.strip()
-    if not configured_key:
-        raise HTTPException(
-            status_code=503,
-            detail="metric governance authentication is not configured",
-        )
-    if not provided_key or not compare_digest(provided_key, configured_key):
-        raise HTTPException(status_code=401, detail="invalid metric governance key")
-    return True
+_authorization_cache_state = AuthorizationCacheState()
 
 
 async def get_meta_session():
@@ -78,6 +68,22 @@ async def get_query_audit_repository(
     """Create the request-scoped query audit repository."""
 
     return QueryAuditRepository(session)
+
+
+async def get_authz_policy_repository(
+    session: Annotated[AsyncSession, Depends(get_meta_session)],
+) -> AuthzPolicyRepository:
+    """创建请求级授权策略仓储。"""
+
+    return AuthzPolicyRepository(session)
+
+
+async def get_authorization_service(
+    repository: Annotated[AuthzPolicyRepository, Depends(get_authz_policy_repository)],
+) -> AuthorizationService:
+    """使用请求级仓储和进程级不可变策略缓存组装授权服务。"""
+
+    return AuthorizationService(repository, cache_state=_authorization_cache_state)
 
 
 async def get_metric_candidate_repository(

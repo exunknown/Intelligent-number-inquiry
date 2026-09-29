@@ -6,6 +6,8 @@
 后续过滤节点不再关心信息来自哪个检索分支，只处理合并后的表上下文和指标上下文
 """
 
+from dataclasses import replace
+
 from langgraph.runtime import Runtime
 
 from app.agent.context import DataAgentContext
@@ -22,6 +24,7 @@ from app.core.log import logger
 from app.entities.column_info import ColumnInfo
 from app.entities.table_info import TableInfo
 from app.entities.value_info import ValueInfo
+from app.security.resource_filter import filter_columns, filter_tables
 
 
 async def merge_retrieved_info(
@@ -38,6 +41,7 @@ async def merge_retrieved_info(
         retrieved_value_infos: list[ValueInfo] = state["retrieved_value_infos"]
 
         meta_mysql_repository = runtime.context["meta_mysql_repository"]
+        permissions = runtime.context["permissions"]
 
         # 本节点的主线是：
         # 字段召回 + 字段真实取值 + 主外键补齐
@@ -47,7 +51,9 @@ async def merge_retrieved_info(
         # 三路召回可能命中同一个字段，用 dict 可以自然去重；
         # 后续字段取值也通过 column_id 合并进来。
         retrieved_column_infos_map: dict[str, ColumnInfo] = {
-            retrieved_column_info.id: retrieved_column_info
+            retrieved_column_info.id: replace(
+                retrieved_column_info, examples=list(retrieved_column_info.examples)
+            )
             for retrieved_column_info in retrieved_column_infos
         }
 
@@ -61,7 +67,12 @@ async def merge_retrieved_info(
                 column_info: ColumnInfo = (
                     await meta_mysql_repository.get_column_info_by_id(column_id)
                 )
-                retrieved_column_infos_map[column_id] = column_info
+                allowed = filter_columns([column_info], permissions)
+                if not allowed:
+                    continue
+                retrieved_column_infos_map[column_id] = replace(
+                    allowed[0], examples=list(allowed[0].examples)
+                )
             if value not in retrieved_column_infos_map[column_id].examples:
                 retrieved_column_infos_map[column_id].examples.append(value)
 
@@ -71,6 +82,8 @@ async def merge_retrieved_info(
         table_to_columns_map: dict[str, list[ColumnInfo]] = {}
         for column_info in retrieved_column_infos_map.values():
             table_id = column_info.table_id
+            if table_id not in permissions.allowed_tables:
+                continue
             if table_id not in table_to_columns_map:
                 table_to_columns_map[table_id] = []
             table_to_columns_map[table_id].append(column_info)
@@ -86,8 +99,13 @@ async def merge_retrieved_info(
                 column_info.id for column_info in table_to_columns_map[table_id]
             ]
             for key_column in key_columns:
-                if key_column.id not in column_ids:
-                    table_to_columns_map[table_id].append(key_column)
+                if (
+                    key_column.id not in column_ids
+                    and key_column.id in permissions.allowed_columns
+                ):
+                    table_to_columns_map[table_id].append(
+                        replace(key_column, examples=list(key_column.examples))
+                    )
 
         # 5. 生成表结构上下文
         # 数据库实体里可能包含入库和索引用字段，传给模型前只保留必要信息，
@@ -98,6 +116,8 @@ async def merge_retrieved_info(
             table_info: TableInfo = await meta_mysql_repository.get_table_info_by_id(
                 table_id
             )
+            if not filter_tables([table_info], permissions):
+                continue
             columns = [
                 ColumnInfoState(
                     name=column_info.name,

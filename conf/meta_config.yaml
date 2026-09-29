@@ -116,6 +116,28 @@ tables:
         alias: [日, 天]
         sync: false
 
+  - name: dim_department
+    role: dim
+    description: 部门维度表，用于描述订单的组织归属。
+    columns:
+      - name: department_id
+        role: primary_key
+        description: 部门唯一标识。
+        alias: [部门ID, 部门编号]
+        sync: false
+
+      - name: department_name
+        role: dimension
+        description: 部门名称。
+        alias: [部门, 部门名称, 归属部门]
+        sync: true
+
+      - name: status
+        role: dimension
+        description: 部门启用状态。
+        alias: [部门状态]
+        sync: false
+
   - name: fact_order
     role: fact
     description: 订单事实表，记录订单数量和金额等核心指标。
@@ -148,6 +170,12 @@ tables:
         role: foreign_key
         description: 关联地区维度的外键。
         alias: [地区ID, 区域ID]
+        sync: false
+
+      - name: department_id
+        role: foreign_key
+        description: 关联部门维度的外键。
+        alias: [部门ID, 归属部门ID]
         sync: false
 
       - name: order_quantity
