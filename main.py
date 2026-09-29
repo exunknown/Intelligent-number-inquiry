@@ -12,6 +12,7 @@ from fastapi import FastAPI, Request
 
 from app.api.lifespan import lifespan
 from app.api.routers.authz_router import authz_router
+from app.api.routers.health_router import health_router
 from app.api.routers.metric_candidate_router import metric_candidate_router
 from app.api.routers.metric_catalog_router import metric_catalog_router
 from app.api.routers.query_router import query_router
@@ -31,6 +32,7 @@ app.include_router(query_router)
 app.include_router(metric_catalog_router)
 app.include_router(metric_candidate_router)
 app.include_router(authz_router)
+app.include_router(health_router)
 
 
 @app.middleware("http")
