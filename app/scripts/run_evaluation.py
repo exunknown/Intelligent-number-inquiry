@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from app.evaluation.runner import (
+    EvaluationBaselinePolicy,
     EvaluationCase,
     EvaluationIdentity,
     EvaluationObservation,
@@ -84,6 +85,7 @@ def main() -> int:
     parser.add_argument("--cases", type=Path, required=True)
     parser.add_argument("--observations", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--baseline", type=Path)
     for name in (
         "dataset-version",
         "prompt-version",
@@ -99,6 +101,12 @@ def main() -> int:
         observations = [
             _observation(record) for record in _read_jsonl(args.observations)
         ]
+        baseline_report = None
+        if args.baseline is not None:
+            baseline_report = json.loads(args.baseline.read_text(encoding="utf-8"))
+            if not isinstance(baseline_report, dict):
+                raise ValueError("baseline 必须是 JSON 对象")
+            reject_sensitive_keys(baseline_report)
         versions = EvaluationVersions(
             dataset_version=args.dataset_version,
             prompt_version=args.prompt_version,
@@ -107,7 +115,13 @@ def main() -> int:
             metadata_release_version=args.metadata_release_version,
             code_version=args.code_version,
         )
-        report = EvaluationRunner().run(cases, observations, versions)
+        report = EvaluationRunner().run(
+            cases,
+            observations,
+            versions,
+            baseline_report=baseline_report,
+            baseline_policy=EvaluationBaselinePolicy(),
+        )
         args.output.write_text(
             json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )

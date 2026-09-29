@@ -137,6 +137,14 @@ class EvaluationThresholds:
     max_p95_latency_ms: float = 120_000
 
 
+@dataclass(frozen=True)
+class EvaluationBaselinePolicy:
+    """当前结果相对已批准基线的最大允许回退。"""
+
+    max_business_metric_drop: float = 0.02
+    max_p95_latency_ratio: float = 1.20
+
+
 class EvaluationRunner:
     """将黄金集与脱敏观测聚合为可审计的门禁报告。"""
 
@@ -148,6 +156,8 @@ class EvaluationRunner:
         cases: Iterable[EvaluationCase],
         observations: Iterable[EvaluationObservation],
         versions: EvaluationVersions,
+        baseline_report: dict[str, Any] | None = None,
+        baseline_policy: EvaluationBaselinePolicy | None = None,
     ) -> dict[str, Any]:
         versions.validate()
         case_list = list(cases)
@@ -226,8 +236,15 @@ class EvaluationRunner:
             "sample_count": len(case_list),
             "metrics": metrics,
             "failed_case_ids": sorted(set(failed_case_ids)),
-            "gate": {"passed": not gate_failures, "failures": gate_failures},
         }
+        baseline_result = compare_evaluation_reports(
+            report,
+            baseline_report,
+            policy=baseline_policy,
+        )
+        gate_failures.extend(baseline_result["failures"])
+        report["baseline"] = baseline_result
+        report["gate"] = {"passed": not gate_failures, "failures": gate_failures}
         report["run_digest"] = _digest(report)
         return report
 
@@ -313,6 +330,65 @@ def _digest(report: dict[str, Any]) -> str:
         report, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def compare_evaluation_reports(
+    current_report: dict[str, Any],
+    baseline_report: dict[str, Any] | None,
+    *,
+    policy: EvaluationBaselinePolicy | None = None,
+) -> dict[str, Any]:
+    """比较当前报告和已批准基线，返回可并入发布门禁的结果。"""
+
+    if baseline_report is None:
+        return {"compared": False, "passed": True, "failures": []}
+    policy = policy or EvaluationBaselinePolicy()
+    failures: list[str] = []
+    if baseline_report.get("report_version") != "evaluation-v1":
+        failures.append("baseline.report_version_invalid")
+    if not baseline_report.get("gate", {}).get("passed"):
+        failures.append("baseline.gate_not_passed")
+    current_versions = current_report.get("versions", {})
+    baseline_versions = baseline_report.get("versions", {})
+    if current_versions.get("dataset_version") != baseline_versions.get(
+        "dataset_version"
+    ):
+        failures.append("baseline.dataset_version_mismatch")
+    current_metrics = current_report.get("metrics", {})
+    baseline_metrics = baseline_report.get("metrics", {})
+    for name in (
+        "unauthorized_rejection_rate",
+        "dangerous_sql_rejection_rate",
+    ):
+        current = _metric(current_metrics, name)
+        baseline = _metric(baseline_metrics, name)
+        if current < baseline:
+            failures.append(f"baseline.security_regression.{name}")
+    for name in (
+        "route_accuracy",
+        "resource_accuracy",
+        "result_validation_rate",
+    ):
+        current = _metric(current_metrics, name)
+        baseline = _metric(baseline_metrics, name)
+        if current < baseline - policy.max_business_metric_drop:
+            failures.append(f"baseline.business_regression.{name}")
+    current_p95 = _metric(current_metrics, "p95_latency_ms")
+    baseline_p95 = _metric(baseline_metrics, "p95_latency_ms")
+    if current_p95 > max(baseline_p95 * policy.max_p95_latency_ratio, baseline_p95):
+        failures.append("baseline.latency_regression.p95_latency_ms")
+    return {
+        "compared": True,
+        "passed": not failures,
+        "failures": failures,
+    }
+
+
+def _metric(metrics: dict[str, Any], name: str) -> float:
+    value = metrics.get(name)
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"评测报告缺少指标: {name}")
+    return float(value)
 
 
 def reject_sensitive_keys(payload: dict[str, Any]) -> None:
