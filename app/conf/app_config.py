@@ -173,6 +173,8 @@ class ResourceConfig:
     retry_backoff_seconds: float
     max_llm_calls: int
     max_embedding_calls: int
+    circuit_failure_threshold: int
+    circuit_open_seconds: float
 
 
 @dataclass

@@ -17,6 +17,61 @@ class RequestBodyTooLarge(ValueError):
     """请求体超过接口配置的字节上限。"""
 
 
+class DependencyCircuitBreaker:
+    """单实例依赖熔断器，避免连续故障继续占用下游连接。"""
+
+    def __init__(
+        self,
+        failure_threshold: int = 3,
+        open_seconds: float = 30.0,
+        clock: Callable[[], float] = time.monotonic,
+    ):
+        if failure_threshold <= 0 or open_seconds <= 0:
+            raise ValueError("circuit breaker settings must be positive")
+        self.failure_threshold = failure_threshold
+        self.open_seconds = open_seconds
+        self.clock = clock
+        self._state = "closed"
+        self._failure_count = 0
+        self._opened_at = 0.0
+        self._probe_in_flight = False
+        self._lock = asyncio.Lock()
+
+    @property
+    def state(self) -> str:
+        return self._state
+
+    async def before_call(self) -> None:
+        async with self._lock:
+            if self._state == "closed":
+                return
+            if self._state == "open":
+                if self.clock() - self._opened_at < self.open_seconds:
+                    raise QueryExecutionError(
+                        "dependency_circuit_open", "下游服务暂时熔断，请稍后重试", True
+                    )
+                self._state = "half_open"
+            if self._probe_in_flight:
+                raise QueryExecutionError(
+                    "dependency_circuit_open", "下游服务正在恢复，请稍后重试", True
+                )
+            self._probe_in_flight = True
+
+    async def record_success(self) -> None:
+        async with self._lock:
+            self._state = "closed"
+            self._failure_count = 0
+            self._probe_in_flight = False
+
+    async def record_failure(self) -> None:
+        async with self._lock:
+            self._probe_in_flight = False
+            self._failure_count += 1
+            if self._failure_count >= self.failure_threshold:
+                self._state = "open"
+                self._opened_at = self.clock()
+
+
 def validate_content_length(content_length: str | None, max_bytes: int) -> int | None:
     """校验声明的请求体大小，缺少长度时交由 ASGI 接收器累计校验。"""
 

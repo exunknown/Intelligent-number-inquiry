@@ -202,6 +202,8 @@ async def get_cube_repository() -> CubeRepository:
         app_config.cube,
         max_retries=app_config.resource.dependency_max_retries,
         retry_backoff_seconds=app_config.resource.retry_backoff_seconds,
+        circuit_failure_threshold=app_config.resource.circuit_failure_threshold,
+        circuit_open_seconds=app_config.resource.circuit_open_seconds,
     )
 
 

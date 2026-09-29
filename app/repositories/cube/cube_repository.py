@@ -11,7 +11,7 @@ import jwt
 from app.conf.app_config import CubeConfig
 from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
-from app.core.resource_governance import RequestBudget
+from app.core.resource_governance import DependencyCircuitBreaker, RequestBudget
 
 _DEPARTMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -26,6 +26,9 @@ class CubeRepository:
         clock: Callable[[], float] = time.time,
         max_retries: int = 0,
         retry_backoff_seconds: float = 0,
+        circuit_failure_threshold: int = 3,
+        circuit_open_seconds: float = 30.0,
+        circuit_breaker: DependencyCircuitBreaker | None = None,
     ):
         if max_retries < 0 or retry_backoff_seconds < 0:
             raise ValueError("retry settings cannot be negative")
@@ -34,6 +37,10 @@ class CubeRepository:
         self.clock = clock
         self.max_retries = max_retries
         self.retry_backoff_seconds = retry_backoff_seconds
+        self.circuit_breaker = circuit_breaker or DependencyCircuitBreaker(
+            failure_threshold=circuit_failure_threshold,
+            open_seconds=circuit_open_seconds,
+        )
 
     async def get_metadata(self, budget: RequestBudget | None = None) -> dict:
         """获取 Cube 元数据。"""
@@ -92,14 +99,24 @@ class CubeRepository:
     ) -> dict:
         for attempt in range(self.max_retries + 1):
             try:
-                return await self._request_once(
+                await self.circuit_breaker.before_call()
+                result = await self._request_once(
                     method,
                     path,
                     budget=budget,
                     token_claims=token_claims,
                     **kwargs,
                 )
+                await self.circuit_breaker.record_success()
+                return result
             except QueryExecutionError as error:
+                if error.code == "dependency_circuit_open":
+                    raise
+                if error.retryable and error.code in {
+                    "cube_timeout",
+                    "cube_unavailable",
+                }:
+                    await self.circuit_breaker.record_failure()
                 if not error.retryable or attempt >= self.max_retries:
                     raise
                 if budget is not None:
