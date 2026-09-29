@@ -1,5 +1,6 @@
 """Cube 数据服务访问仓储。"""
 
+import asyncio
 import re
 import time
 from collections.abc import Callable, Collection
@@ -10,6 +11,7 @@ import jwt
 from app.conf.app_config import CubeConfig
 from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
+from app.core.resource_governance import RequestBudget
 
 _DEPARTMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -22,14 +24,20 @@ class CubeRepository:
         client: httpx.AsyncClient,
         config: CubeConfig,
         clock: Callable[[], float] = time.time,
+        max_retries: int = 0,
+        retry_backoff_seconds: float = 0,
     ):
+        if max_retries < 0 or retry_backoff_seconds < 0:
+            raise ValueError("retry settings cannot be negative")
         self.client = client
         self.config = config
         self.clock = clock
+        self.max_retries = max_retries
+        self.retry_backoff_seconds = retry_backoff_seconds
 
-    async def get_metadata(self) -> dict:
+    async def get_metadata(self, budget: RequestBudget | None = None) -> dict:
         """获取 Cube 元数据。"""
-        return await self._request("GET", "/v1/meta")
+        return await self._request("GET", "/v1/meta", budget=budget)
 
     async def load(
         self,
@@ -37,6 +45,7 @@ class CubeRepository:
         user_id: str,
         department_ids: Collection[str],
         policy_version: int,
+        budget: RequestBudget | None = None,
     ) -> dict:
         """执行 Cube 查询。"""
         if isinstance(department_ids, (str, bytes)):
@@ -64,6 +73,7 @@ class CubeRepository:
         return await self._request(
             "POST",
             "/v1/load",
+            budget=budget,
             token_claims={
                 "sub": user_id,
                 "department_ids": departments,
@@ -76,15 +86,56 @@ class CubeRepository:
         self,
         method: str,
         path: str,
+        budget: RequestBudget | None = None,
+        token_claims: dict | None = None,
+        **kwargs: object,
+    ) -> dict:
+        for attempt in range(self.max_retries + 1):
+            try:
+                return await self._request_once(
+                    method,
+                    path,
+                    budget=budget,
+                    token_claims=token_claims,
+                    **kwargs,
+                )
+            except QueryExecutionError as error:
+                if not error.retryable or attempt >= self.max_retries:
+                    raise
+                if budget is not None:
+                    budget.check()
+                logger.warning(
+                    "Cube request retry method={} path={} attempt={} code={}",
+                    method,
+                    path,
+                    attempt + 2,
+                    error.code,
+                )
+                if self.retry_backoff_seconds > 0:
+                    delay = self.retry_backoff_seconds
+                    if budget is not None:
+                        delay = budget.timeout_seconds(delay)
+                    await asyncio.sleep(delay)
+        raise RuntimeError("unreachable")
+
+    async def _request_once(
+        self,
+        method: str,
+        path: str,
+        budget: RequestBudget | None = None,
         token_claims: dict | None = None,
         **kwargs: object,
     ) -> dict:
         started_at = time.monotonic()
+        timeout_seconds = self.config.timeout_seconds
+        if budget is not None:
+            timeout_seconds = budget.timeout_seconds(timeout_seconds)
         try:
             response = await self.client.request(
                 method,
                 path,
                 headers={"Authorization": self._create_token(token_claims)},
+                timeout=timeout_seconds,
                 **kwargs,
             )
         except httpx.TimeoutException:

@@ -22,7 +22,10 @@ async def run_sql(state: DataAgentState, runtime: Runtime[DataAgentContext]):
         )
 
     try:
-        result = await repository.run(state["executable_sql"])
+        request_options = {}
+        if resource_budget := runtime.context.get("resource_budget"):
+            request_options["budget"] = resource_budget
+        result = await repository.run(state["executable_sql"], **request_options)
     except Exception:
         writer({"type": "progress", "step": step, "status": "error"})
         raise

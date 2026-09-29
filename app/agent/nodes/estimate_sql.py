@@ -24,7 +24,10 @@ async def estimate_sql(
         )
 
     try:
-        estimate = await repository.explain(state["executable_sql"])
+        request_options = {}
+        if resource_budget := runtime.context.get("resource_budget"):
+            request_options["budget"] = resource_budget
+        estimate = await repository.explain(state["executable_sql"], **request_options)
     except Exception:
         writer({"type": "progress", "step": step, "status": "error"})
         raise

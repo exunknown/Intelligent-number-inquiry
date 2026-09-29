@@ -112,6 +112,18 @@ class RequestBudget:
                 "resource_deadline_exceeded", "问数请求已超过时间预算", False
             )
 
+    def timeout_seconds(self, dependency_timeout_seconds: float) -> float:
+        """返回不超过请求剩余时间的依赖超时。"""
+
+        if dependency_timeout_seconds <= 0:
+            raise ValueError("dependency_timeout_seconds must be positive")
+        remaining = self.deadline - self.clock()
+        if remaining <= 0:
+            raise QueryExecutionError(
+                "resource_deadline_exceeded", "问数请求已超过时间预算", False
+            )
+        return min(dependency_timeout_seconds, remaining)
+
 
 class AdmissionLease:
     """一次请求准入占用的资源槽，允许重复释放。"""

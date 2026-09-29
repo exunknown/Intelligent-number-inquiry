@@ -102,3 +102,5 @@ resource:
   user_concurrency: ${oc.env:QUERY_USER_CONCURRENCY,2}
   rate_limit: ${oc.env:QUERY_RATE_LIMIT,30}
   rate_window_seconds: ${oc.env:QUERY_RATE_WINDOW_SECONDS,60}
+  dependency_max_retries: ${oc.env:QUERY_DEPENDENCY_MAX_RETRIES,1}
+  retry_backoff_seconds: ${oc.env:QUERY_RETRY_BACKOFF_SECONDS,0.1}

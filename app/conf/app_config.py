@@ -169,6 +169,8 @@ class ResourceConfig:
     user_concurrency: int
     rate_limit: int
     rate_window_seconds: float
+    dependency_max_retries: int
+    retry_backoff_seconds: float
 
 
 @dataclass

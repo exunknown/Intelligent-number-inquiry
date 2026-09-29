@@ -197,7 +197,12 @@ async def get_metric_candidate_service(
 async def get_cube_repository() -> CubeRepository:
     """创建 Cube 查询仓储"""
 
-    return CubeRepository(get_cube_client_manager().client, app_config.cube)
+    return CubeRepository(
+        get_cube_client_manager().client,
+        app_config.cube,
+        max_retries=app_config.resource.dependency_max_retries,
+        retry_backoff_seconds=app_config.resource.retry_backoff_seconds,
+    )
 
 
 async def get_value_es_repository() -> ValueESRepository:

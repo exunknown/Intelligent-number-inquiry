@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.conf.app_config import SQLSafetyConfig
 from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
+from app.core.resource_governance import RequestBudget
 from app.entities.sql_execution import SQLCostEstimate, SQLExecutionResult
 
 _MYSQL_QUERY_TIMEOUT_CODE = 3024
@@ -25,12 +26,17 @@ class SQLFallbackRepository:
         self.session = session
         self.config = config
 
-    async def explain(self, executable_sql: str) -> SQLCostEstimate:
+    async def explain(
+        self,
+        executable_sql: str,
+        budget: RequestBudget | None = None,
+    ) -> SQLCostEstimate:
         """解析 MySQL JSON 执行计划并拒绝超预算查询。"""
 
         try:
-            await self._set_server_timeout()
-            async with asyncio.timeout(self.config.max_execution_ms / 1000):
+            timeout_seconds = self._timeout_seconds(budget)
+            await self._set_server_timeout(timeout_seconds)
+            async with asyncio.timeout(timeout_seconds):
                 result = await self.session.execute(
                     text(f"EXPLAIN FORMAT=JSON {executable_sql}")
                 )
@@ -58,13 +64,18 @@ class SQLFallbackRepository:
             )
         return estimate
 
-    async def run(self, executable_sql: str) -> SQLExecutionResult:
+    async def run(
+        self,
+        executable_sql: str,
+        budget: RequestBudget | None = None,
+    ) -> SQLExecutionResult:
         """流式读取查询结果并强制行数、字节数与超时预算。"""
 
         started_at = perf_counter()
         try:
-            await self._set_server_timeout()
-            async with asyncio.timeout(self.config.max_execution_ms / 1000):
+            timeout_seconds = self._timeout_seconds(budget)
+            await self._set_server_timeout(timeout_seconds)
+            async with asyncio.timeout(timeout_seconds):
                 result = await self.session.stream(text(executable_sql))
                 rows, truncated = await self._read_rows(result.mappings())
         except TimeoutError:
@@ -88,10 +99,16 @@ class SQLFallbackRepository:
             duration_ms=max(0, round((perf_counter() - started_at) * 1000)),
         )
 
-    async def _set_server_timeout(self) -> None:
+    def _timeout_seconds(self, budget: RequestBudget | None) -> float:
+        configured_seconds = self.config.max_execution_ms / 1000
+        if budget is None:
+            return configured_seconds
+        return budget.timeout_seconds(configured_seconds)
+
+    async def _set_server_timeout(self, timeout_seconds: float) -> None:
         await self.session.execute(
             text("SET SESSION MAX_EXECUTION_TIME = :max_execution_ms"),
-            {"max_execution_ms": self.config.max_execution_ms},
+            {"max_execution_ms": max(1, math.floor(timeout_seconds * 1000))},
         )
 
     async def _read_rows(self, result: Any) -> tuple[list[dict[str, Any]], bool]:
