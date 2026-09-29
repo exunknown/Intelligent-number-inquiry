@@ -21,6 +21,7 @@ from app.agent.state import (
     TableInfoState,
 )
 from app.core.log import logger
+from app.core.resource_governance import await_with_budget
 from app.entities.column_info import ColumnInfo
 from app.entities.table_info import TableInfo
 from app.entities.value_info import ValueInfo
@@ -42,6 +43,8 @@ async def merge_retrieved_info(
 
         meta_mysql_repository = runtime.context["meta_mysql_repository"]
         permissions = runtime.context["permissions"]
+        resource_budget = runtime.context.get("resource_budget")
+        meta_breaker = runtime.context.get("dependency_breakers", {}).get("mysql_meta")
 
         # 本节点的主线是：
         # 字段召回 + 字段真实取值 + 主外键补齐
@@ -64,8 +67,11 @@ async def merge_retrieved_info(
             value = retrieved_value_info.value
             column_id = retrieved_value_info.column_id
             if column_id not in retrieved_column_infos_map:
-                column_info: ColumnInfo = (
-                    await meta_mysql_repository.get_column_info_by_id(column_id)
+                column_info: ColumnInfo = await await_with_budget(
+                    meta_mysql_repository.get_column_info_by_id(column_id),
+                    resource_budget,
+                    circuit_breaker=meta_breaker,
+                    dependency="mysql_meta",
                 )
                 allowed = filter_columns([column_info], permissions)
                 if not allowed:
@@ -92,9 +98,12 @@ async def merge_retrieved_info(
         # 主外键通常不会出现在用户问题里，单靠向量召回容易漏掉；
         # 但多表查询的 Join 路径必须依赖它们，所以每张候选表都要兜底补齐。
         for table_id in table_to_columns_map.keys():
-            key_columns: list[
-                ColumnInfo
-            ] = await meta_mysql_repository.get_key_columns_by_table_id(table_id)
+            key_columns: list[ColumnInfo] = await await_with_budget(
+                meta_mysql_repository.get_key_columns_by_table_id(table_id),
+                resource_budget,
+                circuit_breaker=meta_breaker,
+                dependency="mysql_meta",
+            )
             column_ids = [
                 column_info.id for column_info in table_to_columns_map[table_id]
             ]
@@ -113,8 +122,11 @@ async def merge_retrieved_info(
         table_infos: list[TableInfoState] = []
         selector_tables: list[SelectorTableState] = []
         for table_id, column_infos in table_to_columns_map.items():
-            table_info: TableInfo = await meta_mysql_repository.get_table_info_by_id(
-                table_id
+            table_info: TableInfo = await await_with_budget(
+                meta_mysql_repository.get_table_info_by_id(table_id),
+                resource_budget,
+                circuit_breaker=meta_breaker,
+                dependency="mysql_meta",
             )
             if not filter_tables([table_info], permissions):
                 continue

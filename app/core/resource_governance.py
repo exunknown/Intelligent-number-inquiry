@@ -87,7 +87,14 @@ class DependencyCircuitBreaker:
 def get_dependency_breakers() -> dict[str, DependencyCircuitBreaker]:
     """获取应用进程级依赖熔断器，单实例部署内共享状态。"""
 
-    names = ("llm", "embedding", "qdrant", "elasticsearch")
+    names = (
+        "llm",
+        "embedding",
+        "qdrant",
+        "elasticsearch",
+        "mysql_meta",
+        "mysql_dw",
+    )
     return {
         name: DependencyCircuitBreaker(
             failure_threshold=app_config.resource.circuit_failure_threshold,

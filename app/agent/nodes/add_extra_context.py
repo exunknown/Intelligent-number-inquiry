@@ -12,6 +12,7 @@ from langgraph.runtime import Runtime
 from app.agent.context import DataAgentContext
 from app.agent.state import DataAgentState, DateInfoState, DBInfoState
 from app.core.log import logger
+from app.core.resource_governance import await_with_budget
 
 
 async def add_extra_context(state: DataAgentState, runtime: Runtime[DataAgentContext]):
@@ -22,6 +23,8 @@ async def add_extra_context(state: DataAgentState, runtime: Runtime[DataAgentCon
     writer({"type": "progress", "step": step, "status": "running"})
     try:
         dw_mysql_repository = runtime.context["dw_mysql_repository"]
+        resource_budget = runtime.context.get("resource_budget")
+        dw_breaker = runtime.context.get("dependency_breakers", {}).get("mysql_dw")
 
         # 当前日期信息会帮助模型处理“今天 本月 本季度 最近 N 天”等相对时间表达
         today = date.today()
@@ -31,7 +34,12 @@ async def add_extra_context(state: DataAgentState, runtime: Runtime[DataAgentCon
         date_info = DateInfoState(date=date_str, weekday=weekday, quarter=quarter)
 
         # 数据库方言和版本会影响函数名 日期运算 limit 语法等 SQL 细节
-        db = await dw_mysql_repository.get_db_info()
+        db = await await_with_budget(
+            dw_mysql_repository.get_db_info(),
+            resource_budget,
+            circuit_breaker=dw_breaker,
+            dependency="mysql_dw",
+        )
         db_info = DBInfoState(**db)
         logger.info(f"数据库信息：{db_info}")
         logger.info(f"日期信息：{date_info}")

@@ -51,13 +51,20 @@ class MySQLClientManager:
             not self.config.user or not self.config.password
         ):
             raise RuntimeError("SQL fallback database credentials are required")
-        engine_options = {"pool_size": 10, "pool_pre_ping": True}
+        engine_options = {
+            "pool_size": 10,
+            "pool_pre_ping": True,
+            "connect_args": {"connect_timeout": 5},
+        }
         if isinstance(self.config, SQLFallbackDBConfig):
             engine_options.update(
                 pool_size=self.config.pool_size,
                 max_overflow=self.config.max_overflow,
                 pool_timeout=self.config.pool_timeout_seconds,
                 pool_recycle=self.config.pool_recycle_seconds,
+                connect_args={
+                    "connect_timeout": max(1, min(5, self.config.pool_timeout_seconds))
+                },
             )
         # 创建异步 Engine，相当于先把“数据库连接能力”准备好,pool_pre_ping长连接检测
         self.engine = create_async_engine(self._get_url(), **engine_options)
