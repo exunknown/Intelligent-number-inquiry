@@ -14,6 +14,7 @@ from app.agent.context import DataAgentContext
 from app.agent.llm import llm
 from app.agent.state import DataAgentState
 from app.core.log import logger
+from app.core.resource_governance import await_with_budget
 from app.entities.value_info import ValueInfo
 from app.prompt.prompt_loader import load_prompt
 from app.security.resource_filter import filter_values
@@ -32,6 +33,7 @@ async def recall_value(state: DataAgentState, runtime: Runtime[DataAgentContext]
         keywords = state["keywords"]
         # 字段取值更关注真实文本命中，因此这里走 Elasticsearch，而不是向量检索
         value_es_repository = runtime.context["value_es_repository"]
+        resource_budget = runtime.context.get("resource_budget")
 
         # 用 LLM 把用户问法扩展成“可能出现在字段值里的词”
         # 例如“华北地区”可以补充出“华北”，避免 SQL 条件值和真实存储值不一致
@@ -52,8 +54,8 @@ async def recall_value(state: DataAgentState, runtime: Runtime[DataAgentContext]
         # 用 ValueInfo.id 去重，避免多个关键词命中同一条字段值记录
         value_infos_map: dict[str, ValueInfo] = {}
         for keyword in keywords:
-            current_value_infos: list[ValueInfo] = await value_es_repository.search(
-                keyword
+            current_value_infos: list[ValueInfo] = await await_with_budget(
+                value_es_repository.search(keyword), resource_budget
             )
             for current_value_info in current_value_infos:
                 if current_value_info.id not in value_infos_map:

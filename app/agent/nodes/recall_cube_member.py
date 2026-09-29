@@ -5,6 +5,7 @@ from langgraph.runtime import Runtime
 from app.agent.context import DataAgentContext
 from app.agent.state import DataAgentState
 from app.core.log import logger
+from app.core.resource_governance import await_with_budget
 from app.entities.cube_member import CubeMember
 from app.security.resource_filter import filter_cube_members
 
@@ -28,25 +29,35 @@ async def recall_cube_member(state: DataAgentState, runtime: Runtime[DataAgentCo
         measures: dict[str, CubeMember] = {}
         dimensions: dict[str, CubeMember] = {}
         permissions = runtime.context["permissions"]
+        resource_budget = runtime.context.get("resource_budget")
 
         for term in terms:
-            embedding = await embedding_client.aembed_query(term)
+            embedding = await await_with_budget(
+                embedding_client.aembed_query(term), resource_budget
+            )
             _append_unseen(
                 measures,
                 filter_cube_members(
-                    await repository.search(embedding, {"measure"}), permissions
+                    await await_with_budget(
+                        repository.search(embedding, {"measure"}), resource_budget
+                    ),
+                    permissions,
                 ),
             )
             _append_unseen(
                 dimensions,
                 filter_cube_members(
-                    await repository.search(embedding, {"dimension", "time_dimension"}),
+                    await await_with_budget(
+                        repository.search(embedding, {"dimension", "time_dimension"}),
+                        resource_budget,
+                    ),
                     permissions,
                 ),
             )
 
         catalog_members = filter_cube_members(
-            await repository.list_members(), permissions
+            await await_with_budget(repository.list_members(), resource_budget),
+            permissions,
         )
         _append_unseen(
             measures,

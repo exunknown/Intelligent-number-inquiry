@@ -14,6 +14,7 @@ from app.agent.context import DataAgentContext
 from app.agent.llm import llm
 from app.agent.state import DataAgentState
 from app.core.log import logger
+from app.core.resource_governance import await_with_budget
 from app.entities.column_info import ColumnInfo
 from app.prompt.prompt_loader import load_prompt
 from app.security.resource_filter import filter_columns
@@ -33,6 +34,7 @@ async def recall_column(state: DataAgentState, runtime: Runtime[DataAgentContext
         # context 保存外部运行时工具：向量仓储和 Embedding 客户端
         column_qdrant_repository = runtime.context["column_qdrant_repository"]
         embedding_client = runtime.context["embedding_client"]
+        resource_budget = runtime.context.get("resource_budget")
 
         # 用 LLM 把用户问法扩展成“字段语义”列表，例如“销售总额”可扩展出“销售金额”
         prompt = PromptTemplate(
@@ -53,10 +55,12 @@ async def recall_column(state: DataAgentState, runtime: Runtime[DataAgentContext
         column_info_map: dict[str, ColumnInfo] = {}
         for keyword in keywords:
             # 查询词必须先转成向量，才能和第 9 章写入 Qdrant 的字段向量做相似度检索
-            embedding = await embedding_client.aembed_query(keyword)
-            current_column_infos: list[
-                ColumnInfo
-            ] = await column_qdrant_repository.search(embedding)
+            embedding = await await_with_budget(
+                embedding_client.aembed_query(keyword), resource_budget
+            )
+            current_column_infos: list[ColumnInfo] = await await_with_budget(
+                column_qdrant_repository.search(embedding), resource_budget
+            )
             for column_info in current_column_infos:
                 if column_info.id not in column_info_map:
                     column_info_map[column_info.id] = column_info

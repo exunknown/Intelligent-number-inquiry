@@ -5,10 +5,12 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Callable
+from typing import Awaitable, Callable, TypeVar
 
 from app.conf.app_config import app_config
 from app.core.query_errors import QueryExecutionError
+
+T = TypeVar("T")
 
 
 class RequestBodyTooLarge(ValueError):
@@ -123,6 +125,26 @@ class RequestBudget:
                 "resource_deadline_exceeded", "问数请求已超过时间预算", False
             )
         return min(dependency_timeout_seconds, remaining)
+
+
+async def await_with_budget(awaitable: Awaitable[T], budget: RequestBudget | None) -> T:
+    """等待一个下游调用，并把超时转换为稳定的资源错误。"""
+
+    if budget is None:
+        return await awaitable
+    try:
+        budget.check()
+        async with asyncio.timeout(budget.remaining_seconds()):
+            return await awaitable
+    except QueryExecutionError:
+        close = getattr(awaitable, "close", None)
+        if close is not None:
+            close()
+        raise
+    except TimeoutError:
+        raise QueryExecutionError(
+            "resource_deadline_exceeded", "问数请求已超过时间预算", False
+        ) from None
 
 
 class AdmissionLease:
