@@ -14,6 +14,7 @@ from app.agent.context import DataAgentContext
 from app.agent.llm import llm
 from app.agent.state import DataAgentState
 from app.core.log import logger
+from app.core.resource_governance import await_with_budget
 from app.prompt.prompt_loader import load_prompt
 
 
@@ -34,6 +35,7 @@ async def correct_sql(state: DataAgentState, runtime: Runtime[DataAgentContext])
 
         sql = state["raw_sql"]
         error_code = state["sql_validation_error"]
+        resource_budget = runtime.context.get("resource_budget")
 
         prompt = PromptTemplate(
             template=load_prompt("correct_sql"),
@@ -51,21 +53,27 @@ async def correct_sql(state: DataAgentState, runtime: Runtime[DataAgentContext])
         output_parser = StrOutputParser()
         chain = prompt | llm | output_parser
 
-        result = await chain.ainvoke(
-            {
-                # 与生成节点保持一致，用 YAML 向模型提供稳定 可读的结构化上下文
-                "table_infos": yaml.dump(
-                    table_infos, allow_unicode=True, sort_keys=False
-                ),
-                "metric_infos": yaml.dump(
-                    metric_infos, allow_unicode=True, sort_keys=False
-                ),
-                "date_info": yaml.dump(date_info, allow_unicode=True, sort_keys=False),
-                "db_info": yaml.dump(db_info, allow_unicode=True, sort_keys=False),
-                "query": query,
-                "sql": sql,
-                "error_code": error_code,
-            }
+        result = await await_with_budget(
+            chain.ainvoke(
+                {
+                    # 与生成节点保持一致，用 YAML 向模型提供稳定 可读的结构化上下文
+                    "table_infos": yaml.dump(
+                        table_infos, allow_unicode=True, sort_keys=False
+                    ),
+                    "metric_infos": yaml.dump(
+                        metric_infos, allow_unicode=True, sort_keys=False
+                    ),
+                    "date_info": yaml.dump(
+                        date_info, allow_unicode=True, sort_keys=False
+                    ),
+                    "db_info": yaml.dump(db_info, allow_unicode=True, sort_keys=False),
+                    "query": query,
+                    "sql": sql,
+                    "error_code": error_code,
+                }
+            ),
+            resource_budget,
+            resource="llm",
         )
 
         logger.info("SQL candidate corrected chars={}", len(result))

@@ -94,7 +94,9 @@ class QueryService:
             if lease is None:
                 lease = await get_resource_admission().acquire(principal.auth.user_id)
             budget = RequestBudget.from_timeout(
-                app_config.resource.request_timeout_seconds
+                app_config.resource.request_timeout_seconds,
+                max_llm_calls=app_config.resource.max_llm_calls,
+                max_embedding_calls=app_config.resource.max_embedding_calls,
             )
         except QueryExecutionError as e:
             error = {
@@ -231,6 +233,11 @@ class QueryService:
                     result_bytes=audit["result_bytes"],
                     result_truncated=audit["result_truncated"],
                     sql_execution_duration_ms=audit["sql_execution_duration_ms"],
+                    llm_call_count=budget.llm_calls,
+                    embedding_call_count=budget.embedding_calls,
+                    llm_input_tokens=None,
+                    llm_output_tokens=None,
+                    llm_cost_units=None,
                 )
                 try:
                     await self.query_audit_repository.save(record)

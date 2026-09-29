@@ -33,7 +33,9 @@ async def recall_cube_member(state: DataAgentState, runtime: Runtime[DataAgentCo
 
         for term in terms:
             embedding = await await_with_budget(
-                embedding_client.aembed_query(term), resource_budget
+                embedding_client.aembed_query(term),
+                resource_budget,
+                resource="embedding",
             )
             _append_unseen(
                 measures,

@@ -104,3 +104,5 @@ resource:
   rate_window_seconds: ${oc.env:QUERY_RATE_WINDOW_SECONDS,60}
   dependency_max_retries: ${oc.env:QUERY_DEPENDENCY_MAX_RETRIES,1}
   retry_backoff_seconds: ${oc.env:QUERY_RETRY_BACKOFF_SECONDS,0.1}
+  max_llm_calls: ${oc.env:QUERY_MAX_LLM_CALLS,32}
+  max_embedding_calls: ${oc.env:QUERY_MAX_EMBEDDING_CALLS,64}

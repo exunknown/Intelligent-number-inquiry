@@ -171,6 +171,8 @@ class ResourceConfig:
     rate_window_seconds: float
     dependency_max_retries: int
     retry_backoff_seconds: float
+    max_llm_calls: int
+    max_embedding_calls: int
 
 
 @dataclass

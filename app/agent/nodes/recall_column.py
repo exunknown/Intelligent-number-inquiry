@@ -46,7 +46,9 @@ async def recall_column(state: DataAgentState, runtime: Runtime[DataAgentContext
         # LCEL 管道：填充提示词 -> 调用模型 -> 解析 JSON
         chain = prompt | llm | output_parser
 
-        result = await chain.ainvoke({"query": query})
+        result = await await_with_budget(
+            chain.ainvoke({"query": query}), resource_budget, resource="llm"
+        )
 
         # 原始关键词和 LLM 扩展词一起参与召回；set 去重，避免重复请求同一关键词
         keywords = set(keywords + result)
@@ -56,7 +58,9 @@ async def recall_column(state: DataAgentState, runtime: Runtime[DataAgentContext
         for keyword in keywords:
             # 查询词必须先转成向量，才能和第 9 章写入 Qdrant 的字段向量做相似度检索
             embedding = await await_with_budget(
-                embedding_client.aembed_query(keyword), resource_budget
+                embedding_client.aembed_query(keyword),
+                resource_budget,
+                resource="embedding",
             )
             current_column_infos: list[ColumnInfo] = await await_with_budget(
                 column_qdrant_repository.search(embedding), resource_budget

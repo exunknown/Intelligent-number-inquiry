@@ -46,7 +46,9 @@ async def recall_value(state: DataAgentState, runtime: Runtime[DataAgentContext]
         # LCEL 管道：填充提示词 -> 调用模型 -> 解析 JSON
         chain = prompt | llm | output_parser
 
-        result = await chain.ainvoke({"query": query})
+        result = await await_with_budget(
+            chain.ainvoke({"query": query}), resource_budget, resource="llm"
+        )
 
         # 通用关键词和字段值扩展词一起检索 ES，尽量提高真实取值召回率
         keywords = set(keywords + result)

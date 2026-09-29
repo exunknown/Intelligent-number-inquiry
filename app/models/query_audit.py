@@ -54,6 +54,13 @@ class QueryAuditMySQL(Base):
     sql_execution_duration_ms: Mapped[int | None] = mapped_column(
         Integer, nullable=True
     )
+    llm_call_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    embedding_call_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    llm_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    llm_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    llm_cost_units: Mapped[float | None] = mapped_column(Float, nullable=True)
     outcome: Mapped[str] = mapped_column(String(32), nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     verified: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

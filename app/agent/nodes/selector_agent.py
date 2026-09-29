@@ -14,6 +14,7 @@ from app.agent.selector import (
 )
 from app.agent.state import DataAgentState
 from app.core.log import logger
+from app.core.resource_governance import await_with_budget
 from app.prompt.prompt_loader import load_prompt
 
 
@@ -25,16 +26,21 @@ async def selector_agent(state: DataAgentState, runtime: Runtime[DataAgentContex
     writer({"type": "progress", "step": step, "status": "running"})
     try:
         candidates = state["selector_candidates"]
+        resource_budget = runtime.context.get("resource_budget")
         prompt = PromptTemplate(
             template=load_prompt("select_schema"),
             input_variables=["query", "candidates"],
         )
         chain = prompt | llm | JsonOutputParser()
-        raw_result = await chain.ainvoke(
-            {
-                "query": state["query"],
-                "candidates": serialize_selector_candidates(candidates),
-            }
+        raw_result = await await_with_budget(
+            chain.ainvoke(
+                {
+                    "query": state["query"],
+                    "candidates": serialize_selector_candidates(candidates),
+                }
+            ),
+            resource_budget,
+            resource="llm",
         )
         candidate_tables = {table["id"] for table in candidates["tables"]}
         candidate_values = {

@@ -96,14 +96,30 @@ class RequestBudget:
 
     deadline: float
     clock: Callable[[], float] = time.monotonic
+    max_llm_calls: int = 32
+    max_embedding_calls: int = 64
+    llm_calls: int = 0
+    embedding_calls: int = 0
 
     @classmethod
     def from_timeout(
-        cls, timeout_seconds: float, clock: Callable[[], float] = time.monotonic
+        cls,
+        timeout_seconds: float,
+        clock: Callable[[], float] = time.monotonic,
+        *,
+        max_llm_calls: int = 32,
+        max_embedding_calls: int = 64,
     ) -> "RequestBudget":
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
-        return cls(deadline=clock() + timeout_seconds, clock=clock)
+        if min(max_llm_calls, max_embedding_calls) <= 0:
+            raise ValueError("resource call limits must be positive")
+        return cls(
+            deadline=clock() + timeout_seconds,
+            clock=clock,
+            max_llm_calls=max_llm_calls,
+            max_embedding_calls=max_embedding_calls,
+        )
 
     def remaining_seconds(self) -> float:
         return max(0.0, self.deadline - self.clock())
@@ -126,14 +142,34 @@ class RequestBudget:
             )
         return min(dependency_timeout_seconds, remaining)
 
+    def consume(self, resource: str) -> None:
+        if resource == "llm":
+            self.llm_calls += 1
+            used, allowed = self.llm_calls, self.max_llm_calls
+        elif resource == "embedding":
+            self.embedding_calls += 1
+            used, allowed = self.embedding_calls, self.max_embedding_calls
+        else:
+            raise ValueError(f"unsupported resource: {resource}")
+        if used > allowed:
+            raise QueryExecutionError(
+                "resource_budget_exceeded", "问数请求资源预算已用尽", False
+            )
 
-async def await_with_budget(awaitable: Awaitable[T], budget: RequestBudget | None) -> T:
+
+async def await_with_budget(
+    awaitable: Awaitable[T],
+    budget: RequestBudget | None,
+    resource: str | None = None,
+) -> T:
     """等待一个下游调用，并把超时转换为稳定的资源错误。"""
 
     if budget is None:
         return await awaitable
     try:
         budget.check()
+        if resource is not None:
+            budget.consume(resource)
         async with asyncio.timeout(budget.remaining_seconds()):
             return await awaitable
     except QueryExecutionError:

@@ -14,6 +14,7 @@ from app.agent.context import DataAgentContext
 from app.agent.llm import llm
 from app.agent.state import DataAgentState
 from app.core.log import logger
+from app.core.resource_governance import await_with_budget
 from app.prompt.prompt_loader import load_prompt
 
 
@@ -31,6 +32,7 @@ async def generate_sql(state: DataAgentState, runtime: Runtime[DataAgentContext]
         date_info = state["date_info"]
         db_info = state["db_info"]
         query = state["query"]
+        resource_budget = runtime.context.get("resource_budget")
 
         prompt = PromptTemplate(
             template=load_prompt("generate_sql"),
@@ -46,19 +48,25 @@ async def generate_sql(state: DataAgentState, runtime: Runtime[DataAgentContext]
         output_parser = StrOutputParser()
         chain = prompt | llm | output_parser
 
-        result = await chain.ainvoke(
-            {
-                # YAML 更适合放进提示词：保留嵌套结构 顺序和中文说明，方便模型理解表字段关系
-                "table_infos": yaml.dump(
-                    table_infos, allow_unicode=True, sort_keys=False
-                ),
-                "metric_infos": yaml.dump(
-                    metric_infos, allow_unicode=True, sort_keys=False
-                ),
-                "date_info": yaml.dump(date_info, allow_unicode=True, sort_keys=False),
-                "db_info": yaml.dump(db_info, allow_unicode=True, sort_keys=False),
-                "query": query,
-            }
+        result = await await_with_budget(
+            chain.ainvoke(
+                {
+                    # YAML 更适合放进提示词：保留嵌套结构 顺序和中文说明，方便模型理解表字段关系
+                    "table_infos": yaml.dump(
+                        table_infos, allow_unicode=True, sort_keys=False
+                    ),
+                    "metric_infos": yaml.dump(
+                        metric_infos, allow_unicode=True, sort_keys=False
+                    ),
+                    "date_info": yaml.dump(
+                        date_info, allow_unicode=True, sort_keys=False
+                    ),
+                    "db_info": yaml.dump(db_info, allow_unicode=True, sort_keys=False),
+                    "query": query,
+                }
+            ),
+            resource_budget,
+            resource="llm",
         )
         logger.info("SQL candidate generated chars={}", len(result))
         writer({"type": "progress", "step": step, "status": "success"})

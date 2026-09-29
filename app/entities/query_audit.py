@@ -33,3 +33,8 @@ class QueryAuditRecord:
     result_bytes: int | None = None
     result_truncated: bool | None = None
     sql_execution_duration_ms: int | None = None
+    llm_call_count: int = 0
+    embedding_call_count: int = 0
+    llm_input_tokens: int | None = None
+    llm_output_tokens: int | None = None
+    llm_cost_units: float | None = None

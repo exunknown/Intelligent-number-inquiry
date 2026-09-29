@@ -14,6 +14,7 @@ from app.agent.context import DataAgentContext
 from app.agent.llm import llm
 from app.agent.state import DataAgentState, MetricInfoState
 from app.core.log import logger
+from app.core.resource_governance import await_with_budget
 from app.prompt.prompt_loader import load_prompt
 
 
@@ -27,6 +28,7 @@ async def filter_metric(state: DataAgentState, runtime: Runtime[DataAgentContext
     try:
         query = state["query"]
         metric_infos: list[MetricInfoState] = state["metric_infos"]
+        resource_budget = runtime.context.get("resource_budget")
 
         # metric_infos 转成 YAML 后作为候选项交给模型，模型只需要返回被选中的指标名称
         prompt = PromptTemplate(
@@ -38,13 +40,17 @@ async def filter_metric(state: DataAgentState, runtime: Runtime[DataAgentContext
         # LCEL 管道：填充提示词 -> 调用模型 -> 解析 JSON
         chain = prompt | llm | output_parser
 
-        result = await chain.ainvoke(
-            {
-                "query": query,
-                "metric_infos": yaml.dump(
-                    metric_infos, allow_unicode=True, sort_keys=False
-                ),
-            }
+        result = await await_with_budget(
+            chain.ainvoke(
+                {
+                    "query": query,
+                    "metric_infos": yaml.dump(
+                        metric_infos, allow_unicode=True, sort_keys=False
+                    ),
+                }
+            ),
+            resource_budget,
+            resource="llm",
         )
         # 用模型返回的指标名称过滤原始结构，保留描述 依赖字段 别名等完整上下文
         filtered_metric_infos = [

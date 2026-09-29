@@ -14,6 +14,7 @@ from app.agent.state import DataAgentState
 from app.conf.app_config import app_config
 from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
+from app.core.resource_governance import await_with_budget
 from app.entities.cube_member import CubeMember
 from app.entities.metric_query import MetricQueryValidationError
 from app.prompt.prompt_loader import load_prompt
@@ -55,11 +56,13 @@ _UNMATCHED_REASONS = [
 ]
 
 
-async def invoke_metric_query_model(prompt_text: str) -> object:
+async def invoke_metric_query_model(prompt_text: str, resource_budget=None) -> object:
     """调用全局模型并把唯一 JSON 对象解析为 Python 值。"""
 
     chain = llm | JsonOutputParser()
-    return await chain.ainvoke(prompt_text)
+    return await await_with_budget(
+        chain.ainvoke(prompt_text), resource_budget, resource="llm"
+    )
 
 
 def _candidate_payload(member: CubeMember, state: DataAgentState) -> dict:
@@ -159,17 +162,20 @@ async def generate_metric_query(
     writer({"type": "progress", "step": step, "status": "running"})
     max_limit = app_config.cube.max_limit
     base_prompt = _build_prompt(state, max_limit)
+    resource_budget = getattr(runtime, "context", {}).get("resource_budget")
     invalid: object = "<unparseable>"
     try:
         try:
-            invalid = await invoke_metric_query_model(base_prompt)
+            invalid = await invoke_metric_query_model(base_prompt, resource_budget)
             validated = validate_metric_query_shape(invalid, max_limit=max_limit)
         except (OutputParserException, MetricQueryValidationError) as first_error:
             if isinstance(first_error, OutputParserException):
                 invalid = first_error.llm_output or invalid
             repair_prompt = _repair_prompt(base_prompt, invalid, str(first_error))
             try:
-                repaired = await invoke_metric_query_model(repair_prompt)
+                repaired = await invoke_metric_query_model(
+                    repair_prompt, resource_budget
+                )
                 validated = validate_metric_query_shape(repaired, max_limit=max_limit)
             except (
                 OutputParserException,
