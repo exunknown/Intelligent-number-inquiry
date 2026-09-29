@@ -43,10 +43,10 @@ async def add_extra_context(state: DataAgentState, runtime: Runtime[DataAgentCon
         db_info = DBInfoState(**db)
         logger.info(
             "额外上下文已补齐 db_dialect={} db_version={} date={} quarter={}",
-            db_info.dialect,
-            db_info.version,
-            date_info.date,
-            date_info.quarter,
+            db_info["dialect"],
+            db_info["version"],
+            date_info["date"],
+            date_info["quarter"],
         )
 
         writer({"type": "progress", "step": step, "status": "success"})
