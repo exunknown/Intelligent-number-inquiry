@@ -42,6 +42,6 @@ async def route_selector(state: DataAgentState, runtime: Runtime[DataAgentContex
             "schema_token_count": token_count,
         }
     except Exception as e:
-        logger.error(f"{step} failed: {e}")
+        logger.error("{} failed error_type={}", step, type(e).__name__)
         writer({"type": "progress", "step": step, "status": "error"})
         raise

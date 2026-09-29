@@ -75,10 +75,10 @@ async def recall_value(state: DataAgentState, runtime: Runtime[DataAgentContext]
         retrieved_value_infos = filter_values(
             list(value_infos_map.values()), runtime.context["permissions"]
         )
-        logger.info(f"检索到字段取值：{list(value_infos_map.keys())}")
+        logger.info("检索到字段取值数量={}", len(value_infos_map))
         writer({"type": "progress", "step": step, "status": "success"})
         return {"retrieved_value_infos": retrieved_value_infos}
     except Exception as e:
-        logger.error(f"{step} failed: {e}")
+        logger.error("{} failed error_type={}", step, type(e).__name__)
         writer({"type": "progress", "step": step, "status": "error"})
         raise

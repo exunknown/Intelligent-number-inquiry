@@ -47,9 +47,9 @@ async def extract_keywords(state: DataAgentState, runtime: Runtime[DataAgentCont
         keywords = list(set(keywords + [query]))
 
         writer({"type": "progress", "step": step, "status": "success"})
-        logger.info(f"抽取关键词成功: {keywords}")
+        logger.info("抽取关键词成功 count={}", len(keywords))
         return {"keywords": keywords}
     except Exception as e:
-        logger.error(f"抽取关键词失败: {e}")
+        logger.error("抽取关键词失败 error_type={}", type(e).__name__)
         writer({"type": "progress", "step": step, "status": "error"})
         raise

@@ -66,13 +66,11 @@ async def filter_table(state: DataAgentState, runtime: Runtime[DataAgentContext]
                 ]
                 filtered_table_infos.append(table_info)
 
-        logger.info(
-            f"过滤后的表信息：{[filtered_table_info['name'] for filtered_table_info in filtered_table_infos]}"
-        )
+        logger.info("过滤后的表数量={}", len(filtered_table_infos))
         writer({"type": "progress", "step": step, "status": "success"})
         return {"table_infos": filtered_table_infos}
 
     except Exception as e:
-        logger.error(f"{step} failed: {e}")
+        logger.error("{} failed error_type={}", step, type(e).__name__)
         writer({"type": "progress", "step": step, "status": "error"})
         raise

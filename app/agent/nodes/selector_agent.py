@@ -1,7 +1,5 @@
 """LLM Selector node with a strict, candidate-bound JSON contract."""
 
-import json
-
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 from langgraph.runtime import Runtime
@@ -61,12 +59,13 @@ async def selector_agent(state: DataAgentState, runtime: Runtime[DataAgentContex
             candidate_columns=candidate_columns,
         )
         logger.info(
-            "Selector 结果：%s",
-            json.dumps(decision, ensure_ascii=False, sort_keys=True),
+            "Selector 已完成表数量={} 值数量={}",
+            len(decision["keep_tables"]),
+            len(decision["keep_values"]),
         )
         writer({"type": "progress", "step": step, "status": "success"})
         return {"selector_decision": decision}
     except Exception as e:
-        logger.error(f"{step} failed: {e}")
+        logger.error("{} failed error_type={}", step, type(e).__name__)
         writer({"type": "progress", "step": step, "status": "error"})
         raise

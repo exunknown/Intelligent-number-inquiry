@@ -41,13 +41,18 @@ async def add_extra_context(state: DataAgentState, runtime: Runtime[DataAgentCon
             dependency="mysql_dw",
         )
         db_info = DBInfoState(**db)
-        logger.info(f"数据库信息：{db_info}")
-        logger.info(f"日期信息：{date_info}")
+        logger.info(
+            "额外上下文已补齐 db_dialect={} db_version={} date={} quarter={}",
+            db_info.dialect,
+            db_info.version,
+            date_info.date,
+            date_info.quarter,
+        )
 
         writer({"type": "progress", "step": step, "status": "success"})
         return {"date_info": date_info, "db_info": db_info}
 
     except Exception as e:
-        logger.error(f"{step} failed: {e}")
+        logger.error("{} failed error_type={}", step, type(e).__name__)
         writer({"type": "progress", "step": step, "status": "error"})
         raise

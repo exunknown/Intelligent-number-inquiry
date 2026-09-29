@@ -189,10 +189,9 @@ async def merge_retrieved_info(
         )
 
         logger.info(
-            f"合并后的表信息：{[table_info['name'] for table_info in table_infos]}"
-        )
-        logger.info(
-            f"合并后的指标信息：{[metric_info['name'] for metric_info in metric_infos]}"
+            "召回信息已合并 table_count={} metric_count={}",
+            len(table_infos),
+            len(metric_infos),
         )
 
         writer({"type": "progress", "step": step, "status": "success"})
@@ -202,6 +201,6 @@ async def merge_retrieved_info(
             "selector_candidates": selector_candidates,
         }
     except Exception as e:
-        logger.error(f"{step} failed: {e}")
+        logger.error("{} failed error_type={}", step, type(e).__name__)
         writer({"type": "progress", "step": step, "status": "error"})
         raise

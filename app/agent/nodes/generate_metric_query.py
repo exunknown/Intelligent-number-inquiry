@@ -199,6 +199,6 @@ async def generate_metric_query(
         writer({"type": "progress", "step": step, "status": "success"})
         return {"metric_query_raw": validated}
     except Exception as exc:
-        logger.error(f"{step} failed: {exc}")
+        logger.error("{} failed error_type={}", step, type(exc).__name__)
         writer({"type": "progress", "step": step, "status": "error"})
         raise

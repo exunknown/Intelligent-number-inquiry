@@ -74,9 +74,7 @@ async def apply_selector(state: DataAgentState, runtime: Runtime[DataAgentContex
             state["selector_candidates"],
             state["selector_decision"],
         )
-        logger.info(
-            f"Selector 保留的表信息：{[table_info['name'] for table_info in table_infos]}"
-        )
+        logger.info("Selector 已筛选表数量={}", len(table_infos))
         writer(
             {
                 "type": "metrics",
@@ -89,6 +87,6 @@ async def apply_selector(state: DataAgentState, runtime: Runtime[DataAgentContex
         writer({"type": "progress", "step": step, "status": "success"})
         return {"table_infos": table_infos}
     except Exception as e:
-        logger.error(f"{step} failed: {e}")
+        logger.error("{} failed error_type={}", step, type(e).__name__)
         writer({"type": "progress", "step": step, "status": "error"})
         raise

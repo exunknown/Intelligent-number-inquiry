@@ -94,6 +94,6 @@ async def recall_cube_member(state: DataAgentState, runtime: Runtime[DataAgentCo
         writer({"type": "progress", "step": step, "status": "success"})
         return result
     except Exception as exc:
-        logger.error(f"{step} failed: {exc}")
+        logger.error("{} failed error_type={}", step, type(exc).__name__)
         writer({"type": "progress", "step": step, "status": "error"})
         raise

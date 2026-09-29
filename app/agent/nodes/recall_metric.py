@@ -80,10 +80,10 @@ async def recall_metric(state: DataAgentState, runtime: Runtime[DataAgentContext
 
         # 写回 state 的是业务实体列表，后续过滤节点不需要关心 Qdrant 原始 point 结构
         retrieved_metric_infos: list[MetricInfo] = list(metric_info_map.values())
-        logger.info(f"检索到指标信息：{list(metric_info_map.keys())}")
+        logger.info("检索到指标数量={}", len(metric_info_map))
         writer({"type": "progress", "step": step, "status": "success"})
         return {"retrieved_metric_infos": retrieved_metric_infos}
     except Exception as e:
-        logger.error(f"{step} failed: {e}")
+        logger.error("{} failed error_type={}", step, type(e).__name__)
         writer({"type": "progress", "step": step, "status": "error"})
         raise

@@ -36,7 +36,7 @@ async def execute_cube_query(state: DataAgentState, runtime: Runtime[DataAgentCo
             **request_options,
         )
         result = normalize_cube_result(response)
-        logger.info("Cube query result: {}", result)
+        logger.info("Cube query completed rows={}", len(result))
         writer({"type": "progress", "step": step, "status": "success"})
         writer(
             {
@@ -48,6 +48,6 @@ async def execute_cube_query(state: DataAgentState, runtime: Runtime[DataAgentCo
             }
         )
     except Exception as e:
-        logger.error("{} failed: {}", step, e)
+        logger.error("{} failed error_type={}", step, type(e).__name__)
         writer({"type": "progress", "step": step, "status": "error"})
         raise

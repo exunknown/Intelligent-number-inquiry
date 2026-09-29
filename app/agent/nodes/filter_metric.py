@@ -60,9 +60,7 @@ async def filter_metric(state: DataAgentState, runtime: Runtime[DataAgentContext
             metric_info for metric_info in metric_infos if metric_info["name"] in result
         ]
 
-        logger.info(
-            f"过滤后的指标信息：{[filtered_metric_info['name'] for filtered_metric_info in filtered_metric_infos]}"
-        )
+        logger.info("过滤后的指标数量={}", len(filtered_metric_infos))
 
         # 把过滤后的指标名称同步给前端「分析过程」模块展示
         writer(
@@ -78,6 +76,6 @@ async def filter_metric(state: DataAgentState, runtime: Runtime[DataAgentContext
         return {"metric_infos": filtered_metric_infos}
 
     except Exception as e:
-        logger.error(f"{step} failed: {e}")
+        logger.error("{} failed error_type={}", step, type(e).__name__)
         writer({"type": "progress", "step": step, "status": "error"})
         raise
