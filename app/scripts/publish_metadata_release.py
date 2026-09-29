@@ -20,9 +20,11 @@ from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.mysql.meta.metadata_release_repository import (
     MetadataReleaseRepository,
 )
+from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
 )
+from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantRepository
 from app.services.metadata_release_service import MetadataReleaseService
 
 
@@ -70,15 +72,26 @@ async def publish(release_version: str, db_migration_version: str) -> None:
         cube_collection = await cube_qdrant.get_alias_target()
         if cube_collection is None:
             raise ValueError("Cube Qdrant alias is not active")
-        for collection in ("column_info_collection", "metric_info_collection"):
+        if not await qdrant.collection_exists(cube_collection):
+            raise ValueError(f"Cube Qdrant collection is missing: {cube_collection}")
+        column_repository = ColumnQdrantRepository(qdrant)
+        column_collection = await column_repository.get_alias_target()
+        if column_collection is None:
+            raise ValueError("Column Qdrant alias is not active")
+        metric_repository = MetricQdrantRepository(qdrant)
+        metric_collection = await metric_repository.get_alias_target()
+        if metric_collection is None:
+            raise ValueError("Metric Qdrant alias is not active")
+        for collection in (column_collection, metric_collection):
             if not await qdrant.collection_exists(collection):
                 raise ValueError(f"Qdrant collection is missing: {collection}")
 
         es_repository = ValueESRepository(get_es_client_manager().client)
-        if not await es_repository.client.indices.exists(
-            index=es_repository.index_name
-        ):
-            raise ValueError(f"ES index is missing: {es_repository.index_name}")
+        value_index = await es_repository.get_alias_target()
+        if value_index is None:
+            raise ValueError("Value ES alias is not active")
+        if not await es_repository.client.indices.exists(index=value_index):
+            raise ValueError(f"ES index is missing: {value_index}")
 
         async with meta_mysql_client_manager.session_factory() as session:
             repository = MetadataReleaseRepository(session)
@@ -97,10 +110,10 @@ async def publish(release_version: str, db_migration_version: str) -> None:
                 field_metadata_version=_sha256_bytes(
                     root / "conf" / "meta_config.yaml"
                 ),
-                qdrant_column_collection="column_info_collection",
-                qdrant_metric_collection="metric_info_collection",
+                qdrant_column_collection=column_collection,
+                qdrant_metric_collection=metric_collection,
                 qdrant_cube_collection=cube_collection,
-                es_value_index=es_repository.index_name,
+                es_value_index=value_index,
                 embedding_model=app_config.embedding.model,
                 embedding_dimension=app_config.qdrant.embedding_size,
                 prompt_version=_prompt_version(root),

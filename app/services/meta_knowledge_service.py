@@ -8,6 +8,7 @@
 以及指标入库和指标向量索引构建逻辑
 """
 
+import asyncio
 import uuid
 from dataclasses import asdict
 from pathlib import Path
@@ -62,6 +63,49 @@ class MetaKnowledgeService:
         self.value_es_repository: ValueESRepository = value_es_repository
         # 指标向量集合和字段向量集合分开管理，便于后续按对象类型独立召回
         self.metric_qdrant_repository: MetricQdrantRepository = metric_qdrant_repository
+        self._build_lock = asyncio.Lock()
+
+    async def _commit_staged_indexes(self, staged_indexes):
+        """依次切换 staging alias，部分成功时按相反顺序恢复旧 alias。"""
+        committed = []
+        attempted = []
+        try:
+            for label, repository, current, previous in staged_indexes:
+                attempted.append((label, repository, current, previous))
+                await repository.swap_alias(current, previous)
+                committed.append((label, repository, current, previous))
+        except Exception as error:
+            for label, repository, current, previous in reversed(attempted):
+                try:
+                    if (label, repository, current, previous) not in committed:
+                        get_alias_target = getattr(repository, "get_alias_target", None)
+                        if get_alias_target is None:
+                            continue
+                        if await get_alias_target() != current:
+                            continue
+                    await repository.swap_alias(previous, current)
+                except Exception as rollback_error:
+                    logger.error(
+                        "元数据 alias 回滚失败 label={} error_type={}",
+                        label,
+                        type(rollback_error).__name__,
+                    )
+            raise error
+
+    async def _cleanup_staging_resources(self, staging_resources) -> None:
+        """清理尚未切换的 staging 物理资源，失败只记录类型。"""
+        for repository, resource in staging_resources:
+            try:
+                cleanup = getattr(repository, "delete_collection", None)
+                if cleanup is None:
+                    cleanup = getattr(repository, "delete_index")
+                await cleanup(resource)
+            except Exception as cleanup_error:
+                logger.warning(
+                    "元数据 staging 清理失败 resource={} error_type={}",
+                    resource,
+                    type(cleanup_error).__name__,
+                )
 
     async def _save_tables_to_meta_db(
         self, meta_config: MetaConfig
@@ -107,9 +151,18 @@ class MetaKnowledgeService:
 
         return column_infos
 
-    async def _save_column_info_to_qdrant(self, column_infos: list[ColumnInfo]):
+    async def _save_column_info_to_qdrant(
+        self,
+        column_infos: list[ColumnInfo],
+        target_collection: str | None = None,
+    ):
         """把字段元数据继续推进成可语义检索的 Qdrant 向量点"""
-        await self.column_qdrant_repository.ensure_collection()
+        if target_collection is None:
+            await self.column_qdrant_repository.ensure_collection()
+        else:
+            await self.column_qdrant_repository.ensure_collection(
+                collection_name=target_collection
+            )
 
         points: list[dict] = []
         for column_info in column_infos:
@@ -163,13 +216,28 @@ class MetaKnowledgeService:
         ids = [point["id"] for point in points]
         payloads = [point["payload"] for point in points]
 
-        await self.column_qdrant_repository.upsert(ids, embeddings, payloads)
+        if target_collection is None:
+            await self.column_qdrant_repository.upsert(ids, embeddings, payloads)
+        else:
+            await self.column_qdrant_repository.upsert(
+                ids,
+                embeddings,
+                payloads,
+                collection_name=target_collection,
+            )
+        return len(points)
 
     async def _save_value_info_to_es(
-        self, meta_config: MetaConfig, column_infos: list[ColumnInfo]
+        self,
+        meta_config: MetaConfig,
+        column_infos: list[ColumnInfo],
+        target_index: str | None = None,
     ):
         """确保索引存储确实存在"""
-        await self.value_es_repository.ensure_index()
+        if target_index is None:
+            await self.value_es_repository.ensure_index()
+        else:
+            await self.value_es_repository.ensure_index(index_name=target_index)
 
         # 不是所有字段都要同步真实值，是否同步由配置里的 sync 显式控制
         column2sync: dict[str, bool] = {}
@@ -197,7 +265,11 @@ class MetaKnowledgeService:
                 ]
                 value_infos.extend(current_values_infos)
 
-        await self.value_es_repository.index(value_infos)
+        if target_index is None:
+            await self.value_es_repository.index(value_infos)
+        else:
+            await self.value_es_repository.index(value_infos, index_name=target_index)
+        return len(value_infos)
 
     async def _save_metrics_to_meta_db(
         self, meta_config: MetaConfig
@@ -228,9 +300,18 @@ class MetaKnowledgeService:
 
         return metric_infos
 
-    async def _save_metrics_to_qdrant(self, metric_infos: list[MetricInfo]):
+    async def _save_metrics_to_qdrant(
+        self,
+        metric_infos: list[MetricInfo],
+        target_collection: str | None = None,
+    ):
         """把指标元数据继续推进成可语义检索的 Qdrant 向量点"""
-        await self.metric_qdrant_repository.ensure_collection()
+        if target_collection is None:
+            await self.metric_qdrant_repository.ensure_collection()
+        else:
+            await self.metric_qdrant_repository.ensure_collection(
+                collection_name=target_collection
+            )
 
         points: list[dict] = []
         for metric_info in metric_infos:
@@ -284,34 +365,183 @@ class MetaKnowledgeService:
         ids = [point["id"] for point in points]
         payloads = [point["payload"] for point in points]
 
-        await self.metric_qdrant_repository.upsert(ids, embeddings, payloads)
+        if target_collection is None:
+            await self.metric_qdrant_repository.upsert(ids, embeddings, payloads)
+        else:
+            await self.metric_qdrant_repository.upsert(
+                ids,
+                embeddings,
+                payloads,
+                collection_name=target_collection,
+            )
+        return len(points)
 
-    async def build(self, config_path: Path):
-        """读取配置并依次构建 Meta MySQL Qdrant 和 ES 中的元数据索引"""
-        # config_path:配置文件路径
+    async def build(self, config_path: Path, release_version: str | None = None):
+        """串行执行当前进程内的元数据构建。"""
+        async with self._build_lock:
+            return await self._build_unlocked(config_path, release_version)
+
+    async def _build_unlocked(
+        self, config_path: Path, release_version: str | None = None
+    ):
+        """构建元数据索引；传入版本时先 staging，校验后切换 alias。"""
         context = OmegaConf.load(config_path)
         schema = OmegaConf.structured(MetaConfig)
-        # 组合成py类
         meta_config: MetaConfig = OmegaConf.to_object(OmegaConf.merge(schema, context))
 
-        # 根据配置文件判断后续要进入哪条构建链路
-        if meta_config.tables:
-            # 将表信息和字段信息保存到 Meta MySQL
-            column_infos = await self._save_tables_to_meta_db(meta_config)
-            logger.info("保存表信息和字段信息到 Meta MySQL")
-            # 对字段信息建立向量索引
-            await self._save_column_info_to_qdrant(column_infos)
-            logger.info("为字段信息建立向量索引")
-            # 对指定的维度字段取值建立全文索引
-            await self._save_value_info_to_es(meta_config, column_infos)
-            logger.info("为字段取值建立全文索引")
+        staged_indexes = []
+        staging_resources = []
+        commit_started = False
+        active_column_target = None
+        active_value_target = None
+        active_metric_target = None
+        try:
+            if release_version:
+                if meta_config.tables:
+                    column_staging = (
+                        await self.column_qdrant_repository.create_physical_collection(
+                            release_version
+                        )
+                    )
+                    staging_resources.append(
+                        (self.column_qdrant_repository, column_staging)
+                    )
+                    column_previous = await self.column_qdrant_repository.ensure_alias()
+                    if column_staging == column_previous:
+                        staging_resources.pop()
+                        raise ValueError(
+                            "release version already points to column alias"
+                        )
+                    value_staging = (
+                        await self.value_es_repository.create_physical_index(
+                            release_version
+                        )
+                    )
+                    staging_resources.append((self.value_es_repository, value_staging))
+                    value_previous = await self.value_es_repository.ensure_alias()
+                    if value_staging == value_previous:
+                        staging_resources.pop()
+                        raise ValueError(
+                            "release version already points to value alias"
+                        )
+                    staged_indexes.extend(
+                        [
+                            (
+                                "column",
+                                self.column_qdrant_repository,
+                                column_staging,
+                                column_previous,
+                            ),
+                            (
+                                "value",
+                                self.value_es_repository,
+                                value_staging,
+                                value_previous,
+                            ),
+                        ]
+                    )
+                if meta_config.metrics:
+                    metric_staging = (
+                        await self.metric_qdrant_repository.create_physical_collection(
+                            release_version
+                        )
+                    )
+                    staging_resources.append(
+                        (self.metric_qdrant_repository, metric_staging)
+                    )
+                    metric_previous = await self.metric_qdrant_repository.ensure_alias()
+                    if metric_staging == metric_previous:
+                        staging_resources.pop()
+                        raise ValueError(
+                            "release version already points to metric alias"
+                        )
+                    staged_indexes.append(
+                        (
+                            "metric",
+                            self.metric_qdrant_repository,
+                            metric_staging,
+                            metric_previous,
+                        )
+                    )
+            else:
+                if meta_config.tables:
+                    active_column_target = (
+                        await self.column_qdrant_repository.get_alias_target()
+                    )
+                    active_value_target = (
+                        await self.value_es_repository.get_alias_target()
+                    )
+                if meta_config.metrics:
+                    active_metric_target = (
+                        await self.metric_qdrant_repository.get_alias_target()
+                    )
 
-        # 根据配置文件同步指定的指标信息
-        if meta_config.metrics:
-            # 将指标信息和字段依赖关系保存到 Meta MySQL
-            metric_infos = await self._save_metrics_to_meta_db(meta_config)
-            logger.info("保存指标信息到数据库成功")
+            if meta_config.tables:
+                column_infos = await self._save_tables_to_meta_db(meta_config)
+                logger.info("保存表信息和字段信息到 Meta MySQL")
+                column_index = (
+                    next(item for item in staged_indexes if item[0] == "column")
+                    if release_version
+                    else None
+                )
+                column_count = await self._save_column_info_to_qdrant(
+                    column_infos,
+                    target_collection=(
+                        column_index[2] if column_index else active_column_target
+                    ),
+                )
+                logger.info("为字段信息建立向量索引")
+                if (
+                    column_index
+                    and column_count
+                    != await self.column_qdrant_repository.count_points(column_index[2])
+                ):
+                    raise ValueError("column staging point count mismatch")
 
-            # 对指标信息建立向量索引
-            await self._save_metrics_to_qdrant(metric_infos)
-            logger.info("为指标信息建立向量索引成功")
+                value_index = (
+                    next(item for item in staged_indexes if item[0] == "value")
+                    if release_version
+                    else None
+                )
+                value_count = await self._save_value_info_to_es(
+                    meta_config,
+                    column_infos,
+                    target_index=value_index[2] if value_index else active_value_target,
+                )
+                logger.info("为字段取值建立全文索引")
+                if (
+                    value_index
+                    and value_count
+                    != await self.value_es_repository.count_documents(value_index[2])
+                ):
+                    raise ValueError("value staging document count mismatch")
+
+            if meta_config.metrics:
+                metric_infos = await self._save_metrics_to_meta_db(meta_config)
+                logger.info("保存指标信息到数据库成功")
+                metric_index = (
+                    next(item for item in staged_indexes if item[0] == "metric")
+                    if release_version
+                    else None
+                )
+                metric_count = await self._save_metrics_to_qdrant(
+                    metric_infos,
+                    target_collection=(
+                        metric_index[2] if metric_index else active_metric_target
+                    ),
+                )
+                logger.info("为指标信息建立向量索引成功")
+                if (
+                    metric_index
+                    and metric_count
+                    != await self.metric_qdrant_repository.count_points(metric_index[2])
+                ):
+                    raise ValueError("metric staging point count mismatch")
+
+            if release_version and staged_indexes:
+                commit_started = True
+                await self._commit_staged_indexes(staged_indexes)
+        except Exception:
+            if not commit_started:
+                await self._cleanup_staging_resources(staging_resources)
+            raise
