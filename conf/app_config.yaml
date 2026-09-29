@@ -111,3 +111,6 @@ resource:
   max_embedding_calls: ${oc.env:QUERY_MAX_EMBEDDING_CALLS,64}
   circuit_failure_threshold: ${oc.env:QUERY_CIRCUIT_FAILURE_THRESHOLD,3}
   circuit_open_seconds: ${oc.env:QUERY_CIRCUIT_OPEN_SECONDS,30}
+
+sse:
+  heartbeat_seconds: ${oc.env:SSE_HEARTBEAT_SECONDS,15}

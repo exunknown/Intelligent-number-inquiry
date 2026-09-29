@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from datetime import datetime, timezone
 from time import perf_counter
 
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
@@ -10,6 +11,7 @@ from app.agent.context import DataAgentContext
 from app.agent.graph import graph
 from app.agent.state import DataAgentState
 from app.conf.app_config import app_config
+from app.core.context import request_id_ctx_var
 from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
 from app.core.query_metrics import QueryMetrics, get_query_metrics
@@ -57,6 +59,22 @@ _AUDIT_EVENT_FIELDS = (
     "result_truncated",
     "sql_execution_duration_ms",
 )
+_SSE_PROTOCOL_VERSION = 1
+
+
+def _serialize_sse_event(payload: dict, request_id: str, sequence: int) -> str:
+    """用标准 SSE id 和注释携带诊断元数据，保持 data JSON 向后兼容。"""
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    metadata = (
+        f": protocol_version={_SSE_PROTOCOL_VERSION} "
+        f"request_id={request_id} timestamp={timestamp}\n"
+    )
+    event_id = f"{request_id}:{sequence}"
+    return (
+        f"{metadata}id: {event_id}\n"
+        f"data: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+    )
 
 
 class QueryService:
@@ -168,14 +186,40 @@ class QueryService:
             "sql_execution_duration_ms": None,
         }
         node_started_at: dict[str, float] = {}
+        request_id = str(request_id_ctx_var.get())
+        event_sequence = 0
+        terminal_sent = False
+
+        def serialize(payload: dict) -> str:
+            nonlocal event_sequence
+            event_sequence += 1
+            return _serialize_sse_event(payload, request_id, event_sequence)
+
+        graph_stream = None
+        pending_chunk = None
         try:
             async with asyncio.timeout(budget.remaining_seconds()):
-                async for chunk in graph.astream(
+                graph_stream = graph.astream(
                     input=state,
                     context=context,
                     stream_mode="custom",
                     config={"callbacks": [usage_callback]},
-                ):
+                ).__aiter__()
+                pending_chunk = asyncio.create_task(graph_stream.__anext__())
+                while True:
+                    done, _ = await asyncio.wait(
+                        {pending_chunk},
+                        timeout=app_config.sse.heartbeat_seconds,
+                    )
+                    if not done:
+                        if not terminal_sent:
+                            yield serialize({"type": "heartbeat"})
+                        continue
+                    try:
+                        chunk = pending_chunk.result()
+                    except StopAsyncIteration:
+                        break
+                    pending_chunk = asyncio.create_task(graph_stream.__anext__())
                     budget.check()
                     if isinstance(chunk, dict) and chunk.get("type") == "audit":
                         for field in _AUDIT_EVENT_FIELDS:
@@ -195,13 +239,36 @@ class QueryService:
                                     (perf_counter() - node_started) * 1000,
                                     status,
                                 )
+                    if isinstance(chunk, dict) and chunk.get("type") in {
+                        "result",
+                        "error",
+                        "cancelled",
+                    }:
+                        if terminal_sent:
+                            logger.warning(
+                                "忽略重复 SSE 终态 event_type={}", chunk.get("type")
+                            )
+                            continue
+                        terminal_sent = True
                     if isinstance(chunk, dict) and chunk.get("type") == "route":
                         audit["query_mode"] = chunk.get("mode")
                         audit["route_reason"] = chunk.get("reason")
                     elif isinstance(chunk, dict) and chunk.get("type") == "result":
                         audit["outcome"] = "success"
                         audit["verified"] = chunk.get("verified")
-                    yield f"data: {json.dumps(chunk, ensure_ascii=False, default=str)}\n\n"
+                    yield serialize(chunk)
+                if not terminal_sent:
+                    terminal_sent = True
+                    audit["outcome"] = "error"
+                    audit["error_code"] = "missing_terminal_event"
+                    yield serialize(
+                        {
+                            "type": "error",
+                            "code": "missing_terminal_event",
+                            "message": "问数流程未返回最终状态",
+                            "retryable": False,
+                        }
+                    )
         except TimeoutError:
             logger.warning("Question execution exceeded resource deadline")
             audit["outcome"] = "error"
@@ -212,7 +279,9 @@ class QueryService:
                 "message": "问数请求已超过时间预算",
                 "retryable": False,
             }
-            yield f"data: {json.dumps(error, ensure_ascii=False)}\n\n"
+            if not terminal_sent:
+                terminal_sent = True
+                yield serialize(error)
         except asyncio.CancelledError:
             audit["outcome"] = "cancelled"
             raise
@@ -226,7 +295,9 @@ class QueryService:
                 "message": e.message,
                 "retryable": e.retryable,
             }
-            yield f"data: {json.dumps(error, ensure_ascii=False, default=str)}\n\n"
+            if not terminal_sent:
+                terminal_sent = True
+                yield serialize(error)
         except Exception:
             logger.error("Unexpected question execution error")
             audit["outcome"] = "error"
@@ -237,8 +308,15 @@ class QueryService:
                 "message": "服务内部错误，请稍后重试",
                 "retryable": False,
             }
-            yield f"data: {json.dumps(error, ensure_ascii=False, default=str)}\n\n"
+            if not terminal_sent:
+                terminal_sent = True
+                yield serialize(error)
         finally:
+            if pending_chunk is not None and not pending_chunk.done():
+                pending_chunk.cancel()
+                await asyncio.gather(pending_chunk, return_exceptions=True)
+            if graph_stream is not None:
+                await graph_stream.aclose()
             duration_ms = max(0, round((perf_counter() - started_at) * 1000))
             if node_started_at:
                 node_outcome = (

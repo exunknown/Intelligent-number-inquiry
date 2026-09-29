@@ -157,6 +157,8 @@ export default function App({ username }: AppProps) {
                                 errorCode: event.code,
                                 retryable: event.retryable,
                             };
+                        case "heartbeat":
+                            return message;
                         default:
                             return assertNever(event);
                     }

@@ -40,12 +40,17 @@ export type ErrorEvent = {
   retryable: boolean;
 };
 
+export type HeartbeatEvent = {
+  type: "heartbeat";
+};
+
 export type AgentEvent =
   | ProgressEvent
   | MetricsEvent
   | RouteEvent
   | ResultEvent
-  | ErrorEvent;
+  | ErrorEvent
+  | HeartbeatEvent;
 
 export type StepState = {
   step: string;
