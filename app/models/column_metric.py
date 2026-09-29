@@ -16,6 +16,10 @@ class ColumnMetricMySQL(Base):
 
     __tablename__ = "column_metric"
 
+    release_version: Mapped[str] = mapped_column(
+        String(64), primary_key=True, default="legacy", comment="元数据发布版本"
+    )
+
     # 这里采用联合主键
     # 表示同一对 字段 指标 关系只允许出现一次
     column_id: Mapped[str] = mapped_column(

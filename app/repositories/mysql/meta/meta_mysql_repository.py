@@ -8,7 +8,7 @@ Repository 自身只关心“如何写入”，而“哪些写操作要放在同
 问数链路运行时也会从这里读取元数据，用来把召回到的 id 补齐成完整实体
 """
 
-from sqlalchemy import text
+from sqlalchemy import delete, text
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
@@ -30,21 +30,32 @@ from app.repositories.mysql.meta.mappers.table_info_mapper import TableInfoMappe
 class MetaMySQLRepository:
     """负责把元数据业务实体持久化到 Meta MySQL"""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, release_version: str | None = None):
         self.session = session
+        self.release_version = release_version or "legacy"
+
+    def set_release_version(self, release_version: str | None) -> None:
+        """切换当前请求读取的元数据版本。"""
+        self.release_version = release_version or "legacy"
 
     async def _upsert_models(
-        self, model_type: type[DeclarativeBase], models: list[DeclarativeBase]
+        self,
+        model_type: type[DeclarativeBase],
+        models: list[DeclarativeBase],
+        release_version: str | None = None,
     ) -> None:
         """按模型主键批量写入，重复主键时更新当前配置内容。"""
 
         if not models:
             return
         columns = list(model_type.__table__.columns)
-        rows = [
-            {column.name: getattr(model, column.name) for column in columns}
-            for model in models
-        ]
+        version = release_version or self.release_version
+        rows = []
+        for model in models:
+            model.release_version = version
+            rows.append(
+                {column.name: getattr(model, column.name) for column in columns}
+            )
         statement = mysql_insert(model_type).values(rows)
         mutable_columns = [column.name for column in columns if not column.primary_key]
         if not mutable_columns:
@@ -55,28 +66,52 @@ class MetaMySQLRepository:
         }
         await self.session.execute(statement.on_duplicate_key_update(**updates))
 
-    async def save_table_infos(self, table_infos: list[TableInfo]):
+    async def clear_release(self, release_version: str | None = None) -> None:
+        """删除指定发布版本的旧 staging 行，保证同版本重建是完整替换。"""
+        version = release_version or self.release_version
+        for model_type in (
+            TableInfoMySQL,
+            ColumnInfoMySQL,
+            MetricInfoMySQL,
+            ColumnMetricMySQL,
+        ):
+            await self.session.execute(
+                delete(model_type).where(model_type.release_version == version)
+            )
+
+    async def save_table_infos(
+        self, table_infos: list[TableInfo], release_version: str | None = None
+    ):
         """批量保存表元数据。输入仍然是业务实体，而不是 ORM 模型"""
         await self._upsert_models(
             TableInfoMySQL,
             [TableInfoMapper.to_model(table_info) for table_info in table_infos],
+            release_version,
         )
 
-    async def save_column_infos(self, column_infos: list[ColumnInfo]):
+    async def save_column_infos(
+        self, column_infos: list[ColumnInfo], release_version: str | None = None
+    ):
         """批量保存字段元数据。实体到模型的转换统一通过 Mapper 完成"""
         await self._upsert_models(
             ColumnInfoMySQL,
             [ColumnInfoMapper.to_model(column_info) for column_info in column_infos],
+            release_version,
         )
 
-    async def save_metric_infos(self, metric_infos: list[MetricInfo]):
+    async def save_metric_infos(
+        self, metric_infos: list[MetricInfo], release_version: str | None = None
+    ):
         """批量保存指标元数据。指标本身和字段关联关系分开写入"""
         await self._upsert_models(
             MetricInfoMySQL,
             [MetricInfoMapper.to_model(metric_info) for metric_info in metric_infos],
+            release_version,
         )
 
-    async def save_column_metrics(self, column_metrics: list[ColumnMetric]):
+    async def save_column_metrics(
+        self, column_metrics: list[ColumnMetric], release_version: str | None = None
+    ):
         """批量保存字段与指标的关联关系"""
         await self._upsert_models(
             ColumnMetricMySQL,
@@ -84,13 +119,14 @@ class MetaMySQLRepository:
                 ColumnMetricMapper.to_model(column_metric)
                 for column_metric in column_metrics
             ],
+            release_version,
         )
 
     async def get_column_info_by_id(self, id: str) -> ColumnInfo | None:
         """按字段 id 查询字段元数据，供召回信息合并阶段补齐字段上下文"""
 
         column_info: ColumnInfoMySQL | None = await self.session.get(
-            ColumnInfoMySQL, id
+            ColumnInfoMySQL, {"release_version": self.release_version, "id": id}
         )
         if column_info:
             return ColumnInfoMapper.to_entity(column_info)
@@ -100,7 +136,10 @@ class MetaMySQLRepository:
     async def get_table_info_by_id(self, id: str) -> TableInfo | None:
         """按表 id 查询表元数据，最终组装成提示词里的表结构信息"""
 
-        table_info: TableInfoMySQL | None = await self.session.get(TableInfoMySQL, id)
+        table_info: TableInfoMySQL | None = await self.session.get(
+            TableInfoMySQL,
+            {"release_version": self.release_version, "id": id},
+        )
         if table_info:
             return TableInfoMapper.to_entity(table_info)
         else:
@@ -110,8 +149,17 @@ class MetaMySQLRepository:
         """查询指定表的主外键字段，避免 Join 关键字段被向量召回漏掉"""
 
         # 主外键字段用于后续生成 join 条件，不能完全依赖向量召回命中
-        sql = "select * from column_info where table_id = :table_id and role in ('primary_key','foreign_key')"
+        sql = """
+            select id, name, type, role, examples, description, alias, table_id
+            from column_info
+            where release_version = :release_version
+              and table_id = :table_id
+              and role in ('primary_key','foreign_key')
+        """
         # :table_id 是 SQLAlchemy text SQL 的占位符，实际值通过第二个参数传入
-        result = await self.session.execute(text(sql), {"table_id": table_id})
+        result = await self.session.execute(
+            text(sql),
+            {"release_version": self.release_version, "table_id": table_id},
+        )
         # mappings() 会把结果行转成类似字典的结构，便于解包成 ColumnInfo
         return [ColumnInfo(**dict(row)) for row in result.mappings().fetchall()]

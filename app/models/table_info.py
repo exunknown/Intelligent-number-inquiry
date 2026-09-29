@@ -15,6 +15,10 @@ class TableInfoMySQL(Base):
 
     __tablename__ = "table_info"
 
+    release_version: Mapped[str] = mapped_column(
+        String(64), primary_key=True, default="legacy", comment="元数据发布版本"
+    )
+
     # id 直接使用表名
     # 它既是主键 也是后续字段归属关系里的表标识
     id: Mapped[str] = mapped_column(String(64), primary_key=True, comment="表编号")

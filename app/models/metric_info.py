@@ -17,6 +17,10 @@ class MetricInfoMySQL(Base):
 
     __tablename__ = "metric_info"
 
+    release_version: Mapped[str] = mapped_column(
+        String(64), primary_key=True, default="legacy", comment="元数据发布版本"
+    )
+
     id: Mapped[str] = mapped_column(String(64), primary_key=True, comment="指标编码")
     name: Mapped[str | None] = mapped_column(String(128), comment="指标名称")
     description: Mapped[str | None] = mapped_column(Text, comment="指标描述")

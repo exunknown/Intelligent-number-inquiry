@@ -108,7 +108,7 @@ class MetaKnowledgeService:
                 )
 
     async def _save_tables_to_meta_db(
-        self, meta_config: MetaConfig
+        self, meta_config: MetaConfig, release_version: str | None = None
     ) -> list[ColumnInfo]:
         """把配置里的表字段信息补齐后写入 Meta MySQL"""
         table_infos: list[TableInfo] = []
@@ -146,8 +146,12 @@ class MetaKnowledgeService:
                 column_infos.append(column_info)
         # 入库
         async with self.meta_mysql_repository.session.begin():
-            await self.meta_mysql_repository.save_table_infos(table_infos)
-            await self.meta_mysql_repository.save_column_infos(column_infos)
+            await self.meta_mysql_repository.save_table_infos(
+                table_infos, release_version
+            )
+            await self.meta_mysql_repository.save_column_infos(
+                column_infos, release_version
+            )
 
         return column_infos
 
@@ -272,7 +276,7 @@ class MetaKnowledgeService:
         return len(value_infos)
 
     async def _save_metrics_to_meta_db(
-        self, meta_config: MetaConfig
+        self, meta_config: MetaConfig, release_version: str | None = None
     ) -> list[MetricInfo]:
         """把配置里的指标信息和字段依赖关系写入 Meta MySQL"""
         metric_infos: list[MetricInfo] = []
@@ -295,8 +299,12 @@ class MetaKnowledgeService:
 
         # 指标本身和字段关系要放在同一笔事务里，避免只写入其中一部分
         async with self.meta_mysql_repository.session.begin():
-            await self.meta_mysql_repository.save_metric_infos(metric_infos)
-            await self.meta_mysql_repository.save_column_metrics(column_metrics)
+            await self.meta_mysql_repository.save_metric_infos(
+                metric_infos, release_version
+            )
+            await self.meta_mysql_repository.save_column_metrics(
+                column_metrics, release_version
+            )
 
         return metric_infos
 
@@ -476,8 +484,14 @@ class MetaKnowledgeService:
                         await self.metric_qdrant_repository.get_alias_target()
                     )
 
+            if release_version and (meta_config.tables or meta_config.metrics):
+                async with self.meta_mysql_repository.session.begin():
+                    await self.meta_mysql_repository.clear_release(release_version)
+
             if meta_config.tables:
-                column_infos = await self._save_tables_to_meta_db(meta_config)
+                column_infos = await self._save_tables_to_meta_db(
+                    meta_config, release_version
+                )
                 logger.info("保存表信息和字段信息到 Meta MySQL")
                 column_index = (
                     next(item for item in staged_indexes if item[0] == "column")
@@ -517,7 +531,9 @@ class MetaKnowledgeService:
                     raise ValueError("value staging document count mismatch")
 
             if meta_config.metrics:
-                metric_infos = await self._save_metrics_to_meta_db(meta_config)
+                metric_infos = await self._save_metrics_to_meta_db(
+                    meta_config, release_version
+                )
                 logger.info("保存指标信息到数据库成功")
                 metric_index = (
                     next(item for item in staged_indexes if item[0] == "metric")

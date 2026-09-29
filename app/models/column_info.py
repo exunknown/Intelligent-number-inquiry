@@ -17,6 +17,10 @@ class ColumnInfoMySQL(Base):
 
     __tablename__ = "column_info"
 
+    release_version: Mapped[str] = mapped_column(
+        String(64), primary_key=True, default="legacy", comment="元数据发布版本"
+    )
+
     # id 采用 表名.字段名 的组合形式
     # 这样在整个数仓范围内更容易保证唯一性
     id: Mapped[str] = mapped_column(String(64), primary_key=True, comment="列编号")

@@ -126,6 +126,8 @@ class QueryService:
                 )
             except Exception:
                 logger.warning("Failed to read active metadata release")
+        if self.meta_mysql_repository is not None:
+            self.meta_mysql_repository.set_release_version(metadata_release_version)
 
         state = DataAgentState(query=query)
         context = DataAgentContext(
