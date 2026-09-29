@@ -1,7 +1,7 @@
 """SQL 安全执行阶段使用的不可变领域对象。"""
 
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Any, Mapping
 
 from app.entities.auth import PermissionSnapshot
 
@@ -37,3 +37,22 @@ class SQLPolicyResult:
     executable_sql: str
     referenced_tables: tuple[str, ...]
     referenced_columns: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SQLCostEstimate:
+    """MySQL 查询计划中的保守成本摘要。"""
+
+    estimated_rows: int
+    query_cost: float
+
+
+@dataclass(frozen=True)
+class SQLExecutionResult:
+    """受资源预算约束的 SQL 执行结果。"""
+
+    rows: tuple[dict[str, Any], ...]
+    row_count: int
+    result_bytes: int
+    truncated: bool
+    duration_ms: int

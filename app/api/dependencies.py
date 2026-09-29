@@ -18,12 +18,14 @@ from app.clients.es_client_manager import get_es_client_manager
 from app.clients.mysql_client_manager import (
     dw_mysql_client_manager,
     meta_mysql_client_manager,
+    sql_fallback_mysql_client_manager,
 )
 from app.clients.qdrant_client_manager import get_qdrant_client_manager
 from app.conf.app_config import app_config
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
+from app.repositories.mysql.dw.sql_fallback_repository import SQLFallbackRepository
 from app.repositories.mysql.meta.authz_policy_repository import AuthzPolicyRepository
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
 from app.repositories.mysql.meta.metric_candidate_repository import (
@@ -113,6 +115,23 @@ async def get_dw_mysql_repository(
     """基于请求级 Session 创建数仓仓储"""
 
     return DWMySQLRepository(session)
+
+
+async def get_sql_fallback_session():
+    """创建 SQL fallback 专用只读请求 Session。"""
+
+    if sql_fallback_mysql_client_manager.session_factory is None:
+        raise RuntimeError("SQL fallback database client is not initialized")
+    async with sql_fallback_mysql_client_manager.session_factory() as session:
+        yield session
+
+
+async def get_sql_fallback_repository(
+    session: Annotated[AsyncSession, Depends(get_sql_fallback_session)],
+) -> SQLFallbackRepository:
+    """使用专用只读 Session 创建受限 SQL 执行仓储。"""
+
+    return SQLFallbackRepository(session, app_config.sql_safety)
 
 
 async def get_column_qdrant_repository() -> ColumnQdrantRepository:

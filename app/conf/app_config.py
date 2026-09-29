@@ -53,6 +53,16 @@ class DBConfig:
 
 
 @dataclass
+class SQLFallbackDBConfig(DBConfig):
+    """SQL fallback 专用只读连接池配置。"""
+
+    pool_size: int
+    max_overflow: int
+    pool_timeout_seconds: int
+    pool_recycle_seconds: int
+
+
+@dataclass
 class QdrantConfig:
     """Qdrant 连接与向量维度配置"""
 
@@ -132,12 +142,31 @@ class AuthConfig:
 
 
 @dataclass
+class SQLSafetyConfig:
+    """模型 SQL 的策略与执行资源预算。"""
+
+    enabled: bool
+    dialect: str
+    max_sql_bytes: int
+    max_ast_nodes: int
+    max_nesting_depth: int
+    max_ctes: int
+    max_union_branches: int
+    max_rows: int
+    max_result_bytes: int
+    max_execution_ms: int
+    max_estimated_rows: int
+    max_query_cost: float
+
+
+@dataclass
 class AppConfig:
     """项目级总配置入口"""
 
     logging: LoggingConfig
     db_meta: DBConfig
     db_dw: DBConfig
+    db_sql_fallback: SQLFallbackDBConfig
     qdrant: QdrantConfig
     embedding: EmbeddingConfig
     es: ESConfig
@@ -146,6 +175,7 @@ class AppConfig:
     selector: SelectorConfig
     cube: CubeConfig
     auth: AuthConfig
+    sql_safety: SQLSafetyConfig
 
 
 # 获取配置文件位置（为了不硬编码）：从当前文件位置回到项目根目录，再定位到 conf/app_config.yaml

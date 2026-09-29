@@ -16,6 +16,7 @@ from app.entities.auth import AuthContext, PermissionSnapshot
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
+from app.repositories.mysql.dw.sql_fallback_repository import SQLFallbackRepository
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.cube_member_qdrant_repository import (
@@ -40,6 +41,8 @@ class DataAgentContext(TypedDict):
     meta_mysql_repository: MetaMySQLRepository
     # 数仓仓储，负责在额外上下文补全时读取数据库方言 版本等执行环境信息
     dw_mysql_repository: DWMySQLRepository
+    # SQL fallback 专用只读仓储，只接受策略引擎生成的最终执行 SQL
+    sql_fallback_repository: SQLFallbackRepository
     # 认证入口生成的一次请求权限快照，所有节点必须复用同一对象
     permissions: PermissionSnapshot
     # 已验证的用户身份，用于下游服务令牌的主体声明

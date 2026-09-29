@@ -9,14 +9,14 @@ MySQL 客户端管理器
 
 import asyncio
 
-from sqlalchemy import text
+from sqlalchemy import URL, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     async_sessionmaker,
     create_async_engine,
 )
 
-from app.conf.app_config import DBConfig, app_config
+from app.conf.app_config import DBConfig, SQLFallbackDBConfig, app_config
 
 
 class MySQLClientManager:
@@ -30,19 +30,37 @@ class MySQLClientManager:
         # 保存数据库配置，后面拼接连接地址要用
         self.config = config
 
-    def _get_url(self) -> str:
+    def _get_url(self) -> URL:
         """
         拼接 MySQL 异步连接地址
         mysql+asyncmy 表示：连接 MySQL，并使用 asyncmy 作为异步驱动
         """
-        return f"mysql+asyncmy://{self.config.user}:{self.config.password}@{self.config.host}:{self.config.port}/{self.config.database}?charset=utf8mb4"
+        return URL.create(
+            "mysql+asyncmy",
+            username=self.config.user,
+            password=self.config.password,
+            host=self.config.host,
+            port=self.config.port,
+            database=self.config.database,
+            query={"charset": "utf8mb4"},
+        )
 
     def init(self):
         """初始化 Engine 和 Session 工厂"""
+        if isinstance(self.config, SQLFallbackDBConfig) and (
+            not self.config.user or not self.config.password
+        ):
+            raise RuntimeError("SQL fallback database credentials are required")
+        engine_options = {"pool_size": 10, "pool_pre_ping": True}
+        if isinstance(self.config, SQLFallbackDBConfig):
+            engine_options.update(
+                pool_size=self.config.pool_size,
+                max_overflow=self.config.max_overflow,
+                pool_timeout=self.config.pool_timeout_seconds,
+                pool_recycle=self.config.pool_recycle_seconds,
+            )
         # 创建异步 Engine，相当于先把“数据库连接能力”准备好,pool_pre_ping长连接检测
-        self.engine = create_async_engine(
-            self._get_url(), pool_size=10, pool_pre_ping=True
-        )
+        self.engine = create_async_engine(self._get_url(), **engine_options)
         # 基于 Engine 创建 Session 工厂，后面真正查库时再拿 session
         self.session_factory = async_sessionmaker(
             self.engine, autoflush=True, expire_on_commit=False
@@ -50,13 +68,17 @@ class MySQLClientManager:
 
     async def close(self):
         """释放连接池资源"""
-        await self.engine.dispose()
+        if self.engine is not None:
+            await self.engine.dispose()
+        self.engine = None
+        self.session_factory = None
 
 
 # 一套连元数据库，一套连数仓模拟库
 # 后续由不同 repository 按职责分别使用
 meta_mysql_client_manager = MySQLClientManager(app_config.db_meta)
 dw_mysql_client_manager = MySQLClientManager(app_config.db_dw)
+sql_fallback_mysql_client_manager = MySQLClientManager(app_config.db_sql_fallback)
 
 if __name__ == "__main__":
     dw_mysql_client_manager.init()

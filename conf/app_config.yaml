@@ -23,6 +23,17 @@ db_dw:
   password: ${oc.env:MYSQL_PASSWORD}
   database: dw
 
+db_sql_fallback:
+  host: localhost
+  port: 3307
+  user: ${oc.env:SQL_FALLBACK_DB_USER,''}
+  password: ${oc.env:SQL_FALLBACK_DB_PASSWORD,''}
+  database: dw
+  pool_size: 5
+  max_overflow: 0
+  pool_timeout_seconds: 3
+  pool_recycle_seconds: 1800
+
 qdrant:
   host: localhost
   port: 6333
@@ -69,3 +80,17 @@ auth:
   jwks_url: ${oc.env:OIDC_JWKS_URL,http://127.0.0.1:8180/realms/shopkeeper/protocol/openid-connect/certs}
   jwks_cache_seconds: 300
   clock_skew_seconds: 30
+
+sql_safety:
+  enabled: ${oc.env:SQL_FALLBACK_ENABLED,false}
+  dialect: mysql
+  max_sql_bytes: 32768
+  max_ast_nodes: 2000
+  max_nesting_depth: 12
+  max_ctes: 16
+  max_union_branches: 16
+  max_rows: 500
+  max_result_bytes: 1048576
+  max_execution_ms: 5000
+  max_estimated_rows: 100000
+  max_query_cost: 100000
