@@ -140,6 +140,12 @@ class DataAgentState(TypedDict):
     query_mode: Literal["metric", "sql"]  # 当前请求最终执行模式
     route_reason: SemanticMissReason | Literal["governed_measure_matched"]
 
-    sql: str  # 生成或校正后的SQL
-
-    error: str | None  # 校验SQL时出现的错误信息
+    sql: str  # 兼容旧审计字段，后续执行不得读取
+    error: str | None  # 兼容旧状态字段，后续路由不得读取
+    raw_sql: str  # 模型生成或修正后的不可信 SQL
+    normalized_sql: str  # AST 校验通过但未加入系统约束的 SQL
+    executable_sql: str  # 注入全部系统约束后的唯一可执行 SQL
+    sql_validation_error: str | None  # 可修正的稳定错误分类
+    sql_correction_attempts: int  # 当前自动修正次数，最多一次
+    sql_cost_estimate: dict  # estimated_rows 与 query_cost
+    sql_result_stats: dict  # 行数、字节数、截断标记和耗时

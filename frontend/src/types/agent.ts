@@ -29,6 +29,8 @@ export type ResultEvent = {
   source: QueryMode;
   verified: boolean;
   warning: string | null;
+  row_count?: number;
+  truncated?: boolean;
 };
 
 export type ErrorEvent = {

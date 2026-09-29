@@ -60,11 +60,17 @@ async def generate_sql(state: DataAgentState, runtime: Runtime[DataAgentContext]
                 "query": query,
             }
         )
-        logger.info(f"生成的SQL：{result}")
+        logger.info("SQL candidate generated chars={}", len(result))
         writer({"type": "progress", "step": step, "status": "success"})
-        return {"sql": result}
+        writer({"type": "audit", "sql": result, "query_mode": "sql"})
+        return {
+            "sql": result,
+            "raw_sql": result,
+            "sql_correction_attempts": 0,
+            "sql_validation_error": None,
+        }
 
-    except Exception as e:
-        logger.error(f"{step} failed: {e}")
+    except Exception:
+        logger.error("SQL candidate generation failed")
         writer({"type": "progress", "step": step, "status": "error"})
         raise

@@ -32,9 +32,8 @@ async def correct_sql(state: DataAgentState, runtime: Runtime[DataAgentContext])
         db_info = state["db_info"]
         query = state["query"]
 
-        # sql 是待修正的候选 SQL，error 是数据库 explain 返回的具体错误信息
-        sql = state["sql"]
-        error = state["error"]
+        sql = state["raw_sql"]
+        error_code = state["sql_validation_error"]
 
         prompt = PromptTemplate(
             template=load_prompt("correct_sql"),
@@ -45,7 +44,7 @@ async def correct_sql(state: DataAgentState, runtime: Runtime[DataAgentContext])
                 "db_info",
                 "query",
                 "sql",
-                "error",
+                "error_code",
             ],
         )
         # 修正后的输出仍然是一条纯 SQL 文本，用来覆盖 state["sql"]
@@ -65,14 +64,20 @@ async def correct_sql(state: DataAgentState, runtime: Runtime[DataAgentContext])
                 "db_info": yaml.dump(db_info, allow_unicode=True, sort_keys=False),
                 "query": query,
                 "sql": sql,
-                "error": error,
+                "error_code": error_code,
             }
         )
 
-        logger.info(f"校正后的SQL：{result}")
+        logger.info("SQL candidate corrected chars={}", len(result))
         writer({"type": "progress", "step": step, "status": "success"})
-        return {"sql": result}
-    except Exception as e:
-        logger.error(f"{step} failed: {e}")
+        writer({"type": "audit", "sql_correction_candidate": result})
+        return {
+            "sql": result,
+            "raw_sql": result,
+            "sql_correction_attempts": state.get("sql_correction_attempts", 0) + 1,
+            "sql_validation_error": None,
+        }
+    except Exception:
+        logger.error("SQL candidate correction failed")
         writer({"type": "progress", "step": step, "status": "error"})
         raise

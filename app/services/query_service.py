@@ -15,6 +15,7 @@ from app.entities.query_audit import QueryAuditRecord
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
+from app.repositories.mysql.dw.sql_fallback_repository import SQLFallbackRepository
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
 from app.repositories.mysql.meta.metric_candidate_repository import (
     MetricCandidateRepository,
@@ -24,6 +25,7 @@ from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantReposit
 from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
 )
+from app.security.sql_policy import SQLPolicyEngine
 
 
 class QueryService:
@@ -40,6 +42,8 @@ class QueryService:
         value_es_repository: ValueESRepository,
         query_audit_repository: QueryAuditRepository | None = None,
         metric_candidate_repository: MetricCandidateRepository | None = None,
+        sql_fallback_repository: SQLFallbackRepository | None = None,
+        sql_policy_engine: SQLPolicyEngine | None = None,
     ):
         self.meta_mysql_repository = meta_mysql_repository
         self.dw_mysql_repository = dw_mysql_repository
@@ -50,6 +54,8 @@ class QueryService:
         self.value_es_repository = value_es_repository
         self.query_audit_repository = query_audit_repository
         self.metric_candidate_repository = metric_candidate_repository
+        self.sql_fallback_repository = sql_fallback_repository
+        self.sql_policy_engine = sql_policy_engine
 
     async def query(self, query: str, principal: QueryPrincipal):
         """Execute one graph run and yield SSE-formatted events."""
@@ -63,6 +69,8 @@ class QueryService:
             value_es_repository=self.value_es_repository,
             meta_mysql_repository=self.meta_mysql_repository,
             dw_mysql_repository=self.dw_mysql_repository,
+            sql_fallback_repository=self.sql_fallback_repository,
+            sql_policy_engine=self.sql_policy_engine,
             permissions=principal.permissions,
             auth=principal.auth,
         )

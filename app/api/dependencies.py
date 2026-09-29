@@ -37,6 +37,7 @@ from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
 )
 from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantRepository
+from app.security.sql_policy import SQLPolicyEngine, SQLPolicyLimits
 from app.services.authorization_service import (
     AuthorizationCacheState,
     AuthorizationService,
@@ -46,6 +47,16 @@ from app.services.metric_catalog_service import MetricCatalogService
 from app.services.query_service import QueryService
 
 _authorization_cache_state = AuthorizationCacheState()
+_sql_policy_engine = SQLPolicyEngine(
+    SQLPolicyLimits(
+        max_sql_bytes=app_config.sql_safety.max_sql_bytes,
+        max_ast_nodes=app_config.sql_safety.max_ast_nodes,
+        max_nesting_depth=app_config.sql_safety.max_nesting_depth,
+        max_ctes=app_config.sql_safety.max_ctes,
+        max_union_branches=app_config.sql_safety.max_union_branches,
+        max_rows=app_config.sql_safety.max_rows,
+    )
+)
 
 
 async def get_meta_session():
@@ -120,6 +131,9 @@ async def get_dw_mysql_repository(
 async def get_sql_fallback_session():
     """创建 SQL fallback 专用只读请求 Session。"""
 
+    if not app_config.sql_safety.enabled:
+        yield None
+        return
     if sql_fallback_mysql_client_manager.session_factory is None:
         raise RuntimeError("SQL fallback database client is not initialized")
     async with sql_fallback_mysql_client_manager.session_factory() as session:
@@ -127,11 +141,19 @@ async def get_sql_fallback_session():
 
 
 async def get_sql_fallback_repository(
-    session: Annotated[AsyncSession, Depends(get_sql_fallback_session)],
-) -> SQLFallbackRepository:
+    session: Annotated[AsyncSession | None, Depends(get_sql_fallback_session)],
+) -> SQLFallbackRepository | None:
     """使用专用只读 Session 创建受限 SQL 执行仓储。"""
 
+    if session is None:
+        return None
     return SQLFallbackRepository(session, app_config.sql_safety)
+
+
+async def get_sql_policy_engine() -> SQLPolicyEngine:
+    """获取进程内无状态 SQL AST 策略引擎。"""
+
+    return _sql_policy_engine
 
 
 async def get_column_qdrant_repository() -> ColumnQdrantRepository:
@@ -206,6 +228,10 @@ async def get_query_service(
     metric_candidate_repository: Annotated[
         MetricCandidateRepository, Depends(get_metric_candidate_repository)
     ],
+    sql_fallback_repository: Annotated[
+        SQLFallbackRepository | None, Depends(get_sql_fallback_repository)
+    ],
+    sql_policy_engine: Annotated[SQLPolicyEngine, Depends(get_sql_policy_engine)],
 ) -> QueryService:
     """组装一次查询所需的业务服务"""
 
@@ -220,4 +246,6 @@ async def get_query_service(
         value_es_repository=value_es_repository,
         query_audit_repository=query_audit_repository,
         metric_candidate_repository=metric_candidate_repository,
+        sql_fallback_repository=sql_fallback_repository,
+        sql_policy_engine=sql_policy_engine,
     )

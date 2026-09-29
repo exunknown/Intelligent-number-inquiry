@@ -22,6 +22,7 @@ from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantReposit
 from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
 )
+from app.security.sql_policy import SQLPolicyEngine
 
 
 class DataAgentContext(TypedDict):
@@ -43,6 +44,8 @@ class DataAgentContext(TypedDict):
     dw_mysql_repository: DWMySQLRepository
     # SQL fallback 专用只读仓储，只接受策略引擎生成的最终执行 SQL
     sql_fallback_repository: SQLFallbackRepository
+    # SQL AST 安全策略引擎，不访问外部服务
+    sql_policy_engine: SQLPolicyEngine
     # 认证入口生成的一次请求权限快照，所有节点必须复用同一对象
     permissions: PermissionSnapshot
     # 已验证的用户身份，用于下游服务令牌的主体声明

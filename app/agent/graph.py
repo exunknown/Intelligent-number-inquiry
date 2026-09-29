@@ -3,7 +3,7 @@
 
 使用 LangGraph 把问数智能体的各个节点串成一条可观测的执行链路
 当前链路先并行召回字段 字段取值和 Cube 受治理成员，优先执行指标查询，
-语义未覆盖时由安全门禁拒绝执行，阶段 1 不开放 Text-to-SQL 兜底链路
+语义未覆盖时进入受控 Text-to-SQL 兜底链路
 """
 
 import asyncio
@@ -15,6 +15,7 @@ from app.agent.context import DataAgentContext
 from app.agent.nodes.add_extra_context import add_extra_context
 from app.agent.nodes.apply_selector import apply_selector
 from app.agent.nodes.correct_sql import correct_sql
+from app.agent.nodes.estimate_sql import estimate_sql
 from app.agent.nodes.execute_cube_query import execute_cube_query
 from app.agent.nodes.extract_keywords import extract_keywords
 from app.agent.nodes.generate_metric_query import generate_metric_query
@@ -78,6 +79,7 @@ graph_builder.add_node("add_extra_context", add_extra_context)
 graph_builder.add_node("generate_sql", generate_sql)
 graph_builder.add_node("validate_sql", validate_sql)
 graph_builder.add_node("correct_sql", correct_sql)
+graph_builder.add_node("estimate_sql", estimate_sql)
 graph_builder.add_node("run_sql", run_sql)
 
 # 从用户问题开始，先抽取关键词作为后续检索的基础
@@ -107,7 +109,7 @@ graph_builder.add_conditional_edges(
     path_map={"metric": "execute_cube_query", "sql": "sql_security_gate"},
 )
 graph_builder.add_edge("execute_cube_query", END)
-graph_builder.add_edge("sql_security_gate", END)
+graph_builder.add_edge("sql_security_gate", "route_selector")
 
 # SQL 兜底先经过 Token Gate，小 Schema 跳过 Selector
 graph_builder.add_conditional_edges(
@@ -127,13 +129,16 @@ graph_builder.add_edge("apply_selector", "add_extra_context")
 graph_builder.add_edge("add_extra_context", "generate_sql")
 graph_builder.add_edge("generate_sql", "validate_sql")
 
-# SQL 校验通过就直接执行，校验失败则先进入修正节点
+# SQL 校验通过后先做数据库成本检查；首次可修正错误回到校正节点
 graph_builder.add_conditional_edges(
     source="validate_sql",
-    path=lambda state: "run_sql" if state["error"] is None else "correct_sql",
-    path_map={"run_sql": "run_sql", "correct_sql": "correct_sql"},
+    path=lambda state: (
+        "estimate_sql" if state["sql_validation_error"] is None else "correct_sql"
+    ),
+    path_map={"estimate_sql": "estimate_sql", "correct_sql": "correct_sql"},
 )
-graph_builder.add_edge("correct_sql", "run_sql")
+graph_builder.add_edge("correct_sql", "validate_sql")
+graph_builder.add_edge("estimate_sql", "run_sql")
 graph_builder.add_edge("run_sql", END)
 
 # 编译后的 graph 是对外使用的 Agent 执行入口
