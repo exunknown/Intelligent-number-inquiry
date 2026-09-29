@@ -8,7 +8,10 @@
 
 import argparse
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
+
+from sqlalchemy import text
 
 from app.clients.embedding_client_manager import get_embedding_client_manager
 from app.clients.es_client_manager import get_es_client_manager
@@ -23,6 +26,26 @@ from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepositor
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantRepository
 from app.services.meta_knowledge_service import MetaKnowledgeService
+
+
+@asynccontextmanager
+async def metadata_build_lock(engine, release_version: str | None = None):
+    """通过 MySQL 命名锁串行化跨进程元数据构建。"""
+    lock_name = "shopkeeper:metadata-build"
+    async with engine.connect() as connection:
+        result = await connection.execute(
+            text("SELECT GET_LOCK(:lock_name, 0)"), {"lock_name": lock_name}
+        )
+        if result.scalar_one() != 1:
+            raise RuntimeError(
+                f"metadata build already running release_version={release_version or 'legacy'}"
+            )
+        try:
+            yield
+        finally:
+            await connection.execute(
+                text("SELECT RELEASE_LOCK(:lock_name)"), {"lock_name": lock_name}
+            )
 
 
 async def build(config_path: Path, release_version: str | None = None):
@@ -42,6 +65,7 @@ async def build(config_path: Path, release_version: str | None = None):
     async with (
         meta_mysql_client_manager.session_factory() as meta_session,
         dw_mysql_client_manager.session_factory() as dw_session,
+        metadata_build_lock(meta_mysql_client_manager.engine, release_version),
     ):
         # 创建 repository 对象
         meta_mysql_repository = MetaMySQLRepository(meta_session)
