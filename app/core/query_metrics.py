@@ -13,6 +13,16 @@ from typing import Deque
 
 _OUTCOMES = {"success", "error", "cancelled", "aborted"}
 _ROUTES = {"metric", "sql"}
+_DEPENDENCIES = {
+    "llm",
+    "embedding",
+    "qdrant",
+    "elasticsearch",
+    "mysql_meta",
+    "mysql_dw",
+    "cube",
+    "sql_fallback",
+}
 _NODE_NAMES = {
     "抽取关键词",
     "召回字段信息",
@@ -39,6 +49,7 @@ _NODE_NAMES = {
 _ERROR_CODES = {
     "capacity_exhausted",
     "cube_unauthorized",
+    "cube_timeout",
     "cube_unavailable",
     "dependency_circuit_open",
     "forbidden_resource",
@@ -93,6 +104,10 @@ class QueryMetrics:
         self._node_counts: Counter[str] = Counter()
         self._node_errors: Counter[str] = Counter()
         self._node_latencies: dict[str, Deque[float]] = {}
+        self._dependency_counts: Counter[str] = Counter()
+        self._dependency_errors: Counter[str] = Counter()
+        self._dependency_error_codes: dict[str, Counter[str]] = {}
+        self._dependency_latencies: dict[str, Deque[float]] = {}
 
     def record_node(self, node: str | None, duration_ms: float, outcome: str) -> None:
         """记录固定图步骤的耗时，不保存原始步骤文本。"""
@@ -105,6 +120,29 @@ class QueryMetrics:
             ).append(max(0.0, float(duration_ms)))
             if _label(outcome, _OUTCOMES) in {"error", "cancelled", "aborted", "other"}:
                 self._node_errors[normalized_node] += 1
+
+    def record_dependency(
+        self,
+        dependency: str | None,
+        duration_ms: float,
+        outcome: str,
+        error_code: str | None = None,
+    ) -> None:
+        """记录依赖调用耗时和稳定错误码，不保存 URL、参数或异常原文。"""
+
+        with self._lock:
+            normalized_dependency = _label(dependency, _DEPENDENCIES)
+            normalized_outcome = _label(outcome, _OUTCOMES)
+            self._dependency_counts[normalized_dependency] += 1
+            self._dependency_latencies.setdefault(
+                normalized_dependency, deque(maxlen=self._latencies.maxlen)
+            ).append(max(0.0, float(duration_ms)))
+            if normalized_outcome != "success":
+                self._dependency_errors[normalized_dependency] += 1
+            if error_code is not None:
+                self._dependency_error_codes.setdefault(
+                    normalized_dependency, Counter()
+                )[_label(error_code, _ERROR_CODES)] += 1
 
     def record_request(
         self,
@@ -146,6 +184,25 @@ class QueryMetrics:
                 }
                 for node in self._node_counts
             }
+            dependencies = {
+                dependency: {
+                    "count": self._dependency_counts[dependency],
+                    "errors": self._dependency_errors[dependency],
+                    "p50_ms": _percentile(
+                        list(self._dependency_latencies[dependency]), 0.50
+                    ),
+                    "p95_ms": _percentile(
+                        list(self._dependency_latencies[dependency]), 0.95
+                    ),
+                    "p99_ms": _percentile(
+                        list(self._dependency_latencies[dependency]), 0.99
+                    ),
+                    "errors_by_code": dict(
+                        self._dependency_error_codes.get(dependency, {})
+                    ),
+                }
+                for dependency in self._dependency_counts
+            }
             return {
                 "requests_total": self._requests_total,
                 "successes_total": self._successes_total,
@@ -155,6 +212,7 @@ class QueryMetrics:
                 "routes": dict(self._routes),
                 "errors_by_code": dict(self._errors_by_code),
                 "nodes": nodes,
+                "dependencies": dependencies,
                 "latency_ms": {
                     "p50": _percentile(latencies, 0.50),
                     "p95": _percentile(latencies, 0.95),

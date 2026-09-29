@@ -13,6 +13,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from app.conf.app_config import app_config
 from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
+from app.core.query_metrics import get_query_metrics
 
 T = TypeVar("T")
 
@@ -309,10 +310,22 @@ async def await_with_budget(
 ) -> T:
     """等待一个下游调用，并把超时转换为稳定的资源错误。"""
 
+    started_at = time.perf_counter()
+
+    def record_dependency(outcome: str, error_code: str | None = None) -> None:
+        if dependency is not None:
+            get_query_metrics().record_dependency(
+                dependency,
+                (time.perf_counter() - started_at) * 1000,
+                outcome,
+                error_code,
+            )
+
     if circuit_breaker is not None:
         try:
             await circuit_breaker.before_call()
-        except QueryExecutionError:
+        except QueryExecutionError as error:
+            record_dependency("error", error.code)
             close = getattr(awaitable, "close", None)
             if close is not None:
                 close()
@@ -327,8 +340,10 @@ async def await_with_budget(
             async with asyncio.timeout(budget.remaining_seconds()):
                 result = await awaitable
     except asyncio.CancelledError:
+        record_dependency("cancelled")
         raise
     except QueryExecutionError as error:
+        record_dependency("error", error.code)
         if (
             circuit_breaker is not None
             and _counts_as_dependency_failure(dependency, error)
@@ -352,6 +367,7 @@ async def await_with_budget(
             close()
         raise
     except TimeoutError:
+        record_dependency("error", "resource_deadline_exceeded")
         if circuit_breaker is not None and _counts_as_dependency_failure(
             dependency, TimeoutError()
         ):
@@ -367,12 +383,14 @@ async def await_with_budget(
             "resource_deadline_exceeded", "问数请求已超过时间预算", False
         ) from None
     except Exception:
+        record_dependency("error", "internal_error")
         if circuit_breaker is not None and _counts_as_dependency_failure(
             dependency, RuntimeError()
         ):
             await circuit_breaker.record_failure()
         raise
     else:
+        record_dependency("success")
         if circuit_breaker is not None:
             await circuit_breaker.record_success()
         return result
