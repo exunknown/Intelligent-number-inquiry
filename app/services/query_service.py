@@ -12,6 +12,7 @@ from app.agent.state import DataAgentState
 from app.conf.app_config import app_config
 from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
+from app.core.query_metrics import QueryMetrics, get_query_metrics
 from app.core.resource_governance import (
     AdmissionLease,
     LLMUsageCallbackHandler,
@@ -71,6 +72,7 @@ class QueryService:
         metric_candidate_repository: MetricCandidateRepository | None = None,
         sql_fallback_repository: SQLFallbackRepository | None = None,
         sql_policy_engine: SQLPolicyEngine | None = None,
+        metrics: QueryMetrics | None = None,
     ):
         self.meta_mysql_repository = meta_mysql_repository
         self.dw_mysql_repository = dw_mysql_repository
@@ -83,6 +85,7 @@ class QueryService:
         self.metric_candidate_repository = metric_candidate_repository
         self.sql_fallback_repository = sql_fallback_repository
         self.sql_policy_engine = sql_policy_engine
+        self.metrics = metrics or get_query_metrics()
 
     async def query(
         self,
@@ -206,6 +209,13 @@ class QueryService:
             }
             yield f"data: {json.dumps(error, ensure_ascii=False, default=str)}\n\n"
         finally:
+            duration_ms = max(0, round((perf_counter() - started_at) * 1000))
+            self.metrics.record_request(
+                duration_ms=duration_ms,
+                outcome=audit["outcome"],
+                route=audit["query_mode"],
+                error_code=audit["error_code"],
+            )
             if self.query_audit_repository is not None:
                 llm_input_tokens, llm_output_tokens = usage_callback.totals()
                 record = QueryAuditRecord(
@@ -230,7 +240,7 @@ class QueryService:
                     outcome=audit["outcome"],
                     error_code=audit["error_code"],
                     verified=audit["verified"],
-                    duration_ms=max(0, round((perf_counter() - started_at) * 1000)),
+                    duration_ms=duration_ms,
                     normalized_sql=audit["normalized_sql"],
                     executed_sql=audit["executed_sql"],
                     sql_policy_outcome=audit["sql_policy_outcome"],
