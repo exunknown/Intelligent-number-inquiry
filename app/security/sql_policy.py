@@ -49,6 +49,7 @@ class SQLPolicyReason(StrEnum):
     COLUMN_NOT_ALLOWED = "column_not_allowed"
     IDENTIFIER_UNRESOLVED = "identifier_unresolved"
     WILDCARD_NOT_ALLOWED = "wildcard_not_allowed"
+    NO_DATA_SCOPE = "no_data_scope"
 
 
 class SQLPolicyViolation(ValueError):
@@ -138,10 +139,14 @@ class SQLPolicyEngine:
         )
 
         normalized_sql = expression.sql(dialect=policy_input.dialect)
+        executable_expression = self._inject_department_scope(
+            expression.copy(), policy_input
+        )
+        executable_expression = self._wrap_with_row_limit(executable_expression)
         return SQLPolicyResult(
             raw_sql=policy_input.raw_sql,
             normalized_sql=normalized_sql,
-            executable_sql=normalized_sql,
+            executable_sql=executable_expression.sql(dialect=policy_input.dialect),
             referenced_tables=referenced_tables,
             referenced_columns=referenced_columns,
         )
@@ -190,6 +195,10 @@ class SQLPolicyEngine:
     @staticmethod
     def _validate_functions(expression: exp.Expression) -> None:
         for function in expression.find_all(exp.Func):
+            # SQLGlot 的 AND/OR 节点也继承 Func，但它们是语法连接器，
+            # 不应按可调用数据库函数参与白名单判断。
+            if isinstance(function, exp.Connector):
+                continue
             if not isinstance(function, _ALLOWED_FUNCTION_TYPES):
                 raise SQLPolicyViolation(SQLPolicyReason.FORBIDDEN_FUNCTION)
 
@@ -283,6 +292,64 @@ class SQLPolicyEngine:
                 return source
             current = current.parent
         return None
+
+    def _inject_department_scope(
+        self,
+        expression: exp.Expression,
+        policy_input: SQLPolicyInput,
+    ) -> exp.Expression:
+        department_ids = tuple(sorted(policy_input.permissions.allowed_department_ids))
+        if not department_ids:
+            raise SQLPolicyViolation(SQLPolicyReason.NO_DATA_SCOPE)
+
+        fact_columns = {
+            column.casefold()
+            for column in policy_input.schema.get("fact_order", frozenset())
+        }
+        for scope in traverse_scope(expression):
+            if not isinstance(scope.expression, exp.Select):
+                continue
+            aliases = sorted(
+                alias
+                for alias, source in scope.sources.items()
+                if isinstance(source, exp.Table)
+                and source.name.casefold() == "fact_order"
+            )
+            if not aliases:
+                continue
+            if "department_id" not in fact_columns:
+                raise SQLPolicyViolation(SQLPolicyReason.IDENTIFIER_UNRESOLVED)
+
+            predicate: exp.Expression | None = None
+            for alias in aliases:
+                alias_predicate = exp.In(
+                    this=exp.column("department_id", table=alias),
+                    expressions=[
+                        exp.Literal.string(department_id)
+                        for department_id in department_ids
+                    ],
+                )
+                predicate = (
+                    alias_predicate
+                    if predicate is None
+                    else exp.and_(predicate, alias_predicate)
+                )
+
+            existing_where = scope.expression.args.get("where")
+            if existing_where is not None:
+                predicate = exp.and_(existing_where.this.copy(), predicate)
+            scope.expression.set("where", exp.Where(this=predicate))
+
+        return expression
+
+    def _wrap_with_row_limit(self, expression: exp.Expression) -> exp.Select:
+        if self.limits.max_rows < 1:
+            raise SQLPolicyViolation(SQLPolicyReason.QUERY_TOO_COMPLEX)
+        subquery = exp.Subquery(
+            this=expression,
+            alias=exp.TableAlias(this=exp.to_identifier("_authorized_query")),
+        )
+        return exp.select("*").from_(subquery).limit(self.limits.max_rows + 1)
 
     @classmethod
     def _depth(cls, expression: exp.Expression) -> int:

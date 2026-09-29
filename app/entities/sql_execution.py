@@ -15,6 +15,7 @@ class SQLPolicyLimits:
     max_nesting_depth: int = 12
     max_ctes: int = 16
     max_union_branches: int = 16
+    max_rows: int = 500
 
 
 @dataclass(frozen=True)
