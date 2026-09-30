@@ -134,10 +134,20 @@ class ApplicationUserAdminService:
         if target is None:
             return None
         candidates = await self.repository.lock_active_platform_admin_candidates()
-        locked_target = self._locked_target(target, candidates)
+        current_target = await self.repository.get_for_update(user_id)
+        previous = await self.repository.replay_status(
+            user_id=user_id,
+            status=status,
+            request_key=request_key,
+            for_update=True,
+        )
+        if previous is not None:
+            return previous
+        if current_target is None:
+            return None
         if (
             status == "disabled"
-            and self._is_effective_platform_admin(locked_target)
+            and self._is_effective_platform_admin(current_target)
             and len(candidates) <= 1
         ):
             raise LastPlatformAdminError(
@@ -174,10 +184,20 @@ class ApplicationUserAdminService:
         if target is None:
             return None
         candidates = await self.repository.lock_active_platform_admin_candidates()
-        locked_target = self._locked_target(target, candidates)
-        current_effective_admin = self._is_effective_platform_admin(locked_target)
-        projected_effective_admin = locked_target.status == "active" and (
-            "platform_admin" in locked_target.observed_roles
+        current_target = await self.repository.get_for_update(user_id)
+        previous = await self.repository.replay_roles(
+            user_id=user_id,
+            roles=desired_roles,
+            request_key=request_key,
+            for_update=True,
+        )
+        if previous is not None:
+            return previous
+        if current_target is None:
+            return None
+        current_effective_admin = self._is_effective_platform_admin(current_target)
+        projected_effective_admin = current_target.status == "active" and (
+            "platform_admin" in current_target.observed_roles
             or "platform_admin" in desired_roles
         )
         if (
@@ -209,12 +229,3 @@ class ApplicationUserAdminService:
             "platform_admin" in user.observed_roles
             or "platform_admin" in user.application_roles
         )
-
-    @staticmethod
-    def _locked_target(
-        target: ApplicationUser, candidates: Collection[ApplicationUser]
-    ) -> ApplicationUser:
-        for candidate in candidates:
-            if candidate.user_id == target.user_id:
-                return candidate
-        return target

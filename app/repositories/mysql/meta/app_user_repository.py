@@ -99,6 +99,11 @@ class AppUserRepository:
         model, roles = await self._load_user_with_roles(user_id)
         return self._to_entity(model, roles) if model is not None else None
 
+    async def get_for_update(self, user_id: str) -> ApplicationUser | None:
+        """在当前事务中锁定并刷新目标用户与活动角色。"""
+        model, roles = await self._load_user_with_roles(user_id, for_update=True)
+        return self._to_entity(model, roles) if model is not None else None
+
     async def list_users(
         self,
         query: str | None,
@@ -225,6 +230,7 @@ class AppUserRepository:
         user_id: str,
         status: Literal["active", "disabled"],
         request_key: str,
+        for_update: bool = False,
     ) -> ApplicationUser | None:
         if status not in {"active", "disabled"}:
             raise ValueError("unsupported application user status")
@@ -234,6 +240,7 @@ class AppUserRepository:
                 user_id=user_id,
                 expected_operations="enable" if status == "active" else "disable",
                 expected_status=status,
+                for_update=for_update,
             )
         except Exception:
             await self.session.rollback()
@@ -248,6 +255,7 @@ class AppUserRepository:
         user_id: str,
         roles: Collection[str],
         request_key: str,
+        for_update: bool = False,
     ) -> ApplicationUser | None:
         desired_roles = self._validate_roles(roles)
         try:
@@ -256,6 +264,7 @@ class AppUserRepository:
                 user_id=user_id,
                 expected_operations={"assign_role", "revoke_role", "replace_roles"},
                 expected_application_roles=desired_roles,
+                for_update=for_update,
             )
         except Exception:
             await self.session.rollback()
@@ -431,12 +440,14 @@ class AppUserRepository:
         expected_operations: str | Collection[str],
         expected_status: str | None = None,
         expected_application_roles: Collection[str] | None = None,
+        for_update: bool = False,
     ) -> ApplicationUser | None:
-        result = await self.session.execute(
-            select(AppUserChangeMySQL).where(
-                AppUserChangeMySQL.request_key == request_key
-            )
+        statement = select(AppUserChangeMySQL).where(
+            AppUserChangeMySQL.request_key == request_key
         )
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self.session.execute(statement)
         change = result.scalar_one_or_none()
         if change is None:
             return None
@@ -467,8 +478,12 @@ class AppUserRepository:
             AppUserRoleMySQL.revoked_at.is_(None),
         )
         if for_update:
-            user_statement = user_statement.with_for_update()
-            role_statement = role_statement.with_for_update()
+            user_statement = user_statement.with_for_update().execution_options(
+                populate_existing=True
+            )
+            role_statement = role_statement.with_for_update().execution_options(
+                populate_existing=True
+            )
         user_result = await self.session.execute(user_statement)
         model = user_result.scalar_one_or_none()
         if model is None:
