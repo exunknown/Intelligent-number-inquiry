@@ -36,6 +36,13 @@ function seenAt(value: string): string {
     return Number.isNaN(date.getTime()) ? "未知" : date.toLocaleString("zh-CN");
 }
 
+type UserSelection = { userId: string | null; generation: number };
+
+export function nextSelection(current: UserSelection, requestedUserId: string | null): UserSelection {
+    if (current.userId === requestedUserId) return current;
+    return { userId: requestedUserId, generation: current.generation + 1 };
+}
+
 export function UserManagementPanel({ onClose }: { onClose: () => void }) {
     const closeButtonRef = useRef<HTMLButtonElement | null>(null);
     const selectedUserRef = useRef<string | null>(null);
@@ -112,9 +119,15 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
     }, [selectedId, refreshKey]);
 
     const selectUser = (userId: string | null) => {
-        selectedUserRef.current = userId;
-        selectionGenerationRef.current += 1;
-        setSelectedId(userId);
+        const current = {
+            userId: selectedUserRef.current,
+            generation: selectionGenerationRef.current,
+        };
+        const next = nextSelection(current, userId);
+        if (next === current) return;
+        selectedUserRef.current = next.userId;
+        selectionGenerationRef.current = next.generation;
+        setSelectedId(next.userId);
     };
 
     const changeFilters = () => {
