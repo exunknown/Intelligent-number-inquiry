@@ -13,6 +13,10 @@ class AuthContext:
     token_id: str | None
     issued_at: int
     expires_at: int
+    keycloak_roles: frozenset[str] = frozenset()
+    application_roles: frozenset[str] = frozenset()
+    display_name: str | None = None
+    email: str | None = None
 
 
 @dataclass(frozen=True)

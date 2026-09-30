@@ -29,6 +29,7 @@ from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.minio.result_object_store import ResultObjectStore
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
 from app.repositories.mysql.dw.sql_fallback_repository import SQLFallbackRepository
+from app.repositories.mysql.meta.app_user_repository import AppUserRepository
 from app.repositories.mysql.meta.authz_policy_repository import AuthzPolicyRepository
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
 from app.repositories.mysql.meta.metadata_release_repository import (
@@ -47,6 +48,7 @@ from app.repositories.qdrant.cube_member_qdrant_repository import (
 from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantRepository
 from app.repositories.redis.sse_event_repository import SSEEventRepository
 from app.security.sql_policy import SQLPolicyEngine, SQLPolicyLimits
+from app.services.application_user_service import ApplicationUserService
 from app.services.authorization_service import (
     AuthorizationCacheState,
     AuthorizationService,
@@ -74,6 +76,22 @@ async def get_meta_session():
     # yield 之后的清理逻辑由 async with 负责，FastAPI 会在请求结束后继续执行退出流程
     async with meta_mysql_client_manager.session_factory() as meta_session:
         yield meta_session
+
+
+async def get_app_user_repository(
+    session: Annotated[AsyncSession, Depends(get_meta_session)],
+) -> AppUserRepository:
+    """创建请求级应用用户仓储。"""
+
+    return AppUserRepository(session)
+
+
+async def get_application_user_service(
+    repository: Annotated[AppUserRepository, Depends(get_app_user_repository)],
+) -> ApplicationUserService:
+    """创建请求级应用用户服务。"""
+
+    return ApplicationUserService(repository)
 
 
 async def get_meta_mysql_repository(

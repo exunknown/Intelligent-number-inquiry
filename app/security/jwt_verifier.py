@@ -113,6 +113,8 @@ class OIDCJWTVerifier:
         )
         roles = frozenset(role for role in raw_roles if isinstance(role, str))
         username = claims.get("preferred_username")
+        display_name = claims.get("name")
+        email = claims.get("email")
         token_id = claims.get("jti")
         return AuthContext(
             user_id=user_id,
@@ -121,4 +123,7 @@ class OIDCJWTVerifier:
             token_id=token_id if isinstance(token_id, str) else None,
             issued_at=issued_at,
             expires_at=expires_at,
+            keycloak_roles=roles,
+            display_name=display_name if isinstance(display_name, str) else None,
+            email=email if isinstance(email, str) else None,
         )
