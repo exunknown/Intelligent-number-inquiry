@@ -84,7 +84,7 @@ export function SessionList({
                                 }}
                                 aria-pressed={selected}
                                 className={cn(
-                                    "flex w-full min-w-0 items-start gap-2 border px-3 py-2.5 pr-10 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/45 disabled:cursor-not-allowed disabled:opacity-55",
+                                    "flex min-h-11 w-full min-w-0 items-start gap-2 border px-3 py-2.5 pr-10 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/45 disabled:cursor-not-allowed disabled:opacity-55",
                                     selected
                                         ? "border-indigo/30 bg-indigo/10"
                                         : "border-transparent hover:border-ink/10 hover:bg-white/70",
@@ -112,7 +112,7 @@ export function SessionList({
                                     event.stopPropagation();
                                     setOpenMenuId(menuOpen ? null : session.session_id);
                                 }}
-                                className="absolute right-1.5 top-1.5 grid h-8 w-8 place-items-center text-ink/45 transition hover:bg-ink/5 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 disabled:cursor-not-allowed disabled:opacity-35"
+                                className="absolute right-1.5 top-1 grid h-11 w-11 place-items-center text-ink/45 transition hover:bg-ink/5 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 disabled:cursor-not-allowed disabled:opacity-35"
                                 title="会话操作"
                                 aria-label={`${session.title} 会话操作`}
                                 aria-expanded={menuOpen}
@@ -121,14 +121,14 @@ export function SessionList({
                             </button>
 
                             {menuOpen && (
-                                <div className="absolute right-2 top-10 z-20 w-32 border border-ink/15 bg-white py-1 shadow-panel">
+                                <div className="absolute right-2 top-12 z-20 w-32 border border-ink/15 bg-white py-1 shadow-panel">
                                     <button
                                         type="button"
                                         onClick={() => {
                                             setOpenMenuId(null);
                                             onRename(session);
                                         }}
-                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-ink/75 hover:bg-paper"
+                                        className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-xs text-ink/75 hover:bg-paper focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cinnabar/40"
                                     >
                                         <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                                         重命名
@@ -139,7 +139,7 @@ export function SessionList({
                                             setOpenMenuId(null);
                                             onArchive(session);
                                         }}
-                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-ink/75 hover:bg-paper"
+                                        className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-xs text-ink/75 hover:bg-paper focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cinnabar/40"
                                     >
                                         <Archive className="h-3.5 w-3.5" aria-hidden="true" />
                                         归档
@@ -150,7 +150,7 @@ export function SessionList({
                                             setOpenMenuId(null);
                                             onDelete(session);
                                         }}
-                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-oxide hover:bg-oxide/5"
+                                        className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-xs text-oxide hover:bg-oxide/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cinnabar/40"
                                     >
                                         <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                                         删除

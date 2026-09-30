@@ -88,6 +88,7 @@ export default function App({ username }: AppProps) {
     const [sessions, setSessions] = useState<QuerySessionSummary[]>([]);
     const [sessionsLoading, setSessionsLoading] = useState(true);
     const [sessionsError, setSessionsError] = useState<string | null>(null);
+    const [mobileSessionError, setMobileSessionError] = useState<string | null>(null);
     const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
     const [draft, setDraft] = useState("");
     const [activeController, setActiveController] = useState<AbortController | null>(null);
@@ -96,6 +97,8 @@ export default function App({ username }: AppProps) {
     const [managementOpen, setManagementOpen] = useState(false);
     const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
     const scrollRef = useRef<HTMLDivElement | null>(null);
+    const desktopNewSessionRef = useRef<HTMLButtonElement | null>(null);
+    const desktopLogoutRef = useRef<HTMLButtonElement | null>(null);
     const desktopManagementRef = useRef<HTMLButtonElement | null>(null);
     const mobileManagementRef = useRef<HTMLButtonElement | null>(null);
     const mobileSessionTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -124,7 +127,16 @@ export default function App({ username }: AppProps) {
     useEffect(() => {
         const desktopMediaQuery = window.matchMedia("(min-width: 1024px)");
         const closeMobileSessionsOnDesktop = () => {
-            if (desktopMediaQuery.matches) setMobileSessionsOpen(false);
+            if (desktopMediaQuery.matches && mobileSessionsOpen) {
+                setMobileSessionsOpen(false);
+                requestAnimationFrame(() => {
+                    if (!desktopNewSessionRef.current?.disabled) {
+                        desktopNewSessionRef.current?.focus();
+                        return;
+                    }
+                    desktopLogoutRef.current?.focus();
+                });
+            }
         };
 
         closeMobileSessionsOnDesktop();
@@ -135,7 +147,7 @@ export default function App({ username }: AppProps) {
             desktopMediaQuery.removeEventListener("change", closeMobileSessionsOnDesktop);
             window.removeEventListener("resize", closeMobileSessionsOnDesktop);
         };
-    }, []);
+    }, [mobileSessionsOpen]);
 
     useEffect(() => {
         if (capabilityLoadedRef.current) return;
@@ -160,7 +172,9 @@ export default function App({ username }: AppProps) {
 
     const openSession = async (targetSessionId: string) => {
         if (isStreaming || loadingSessionId === targetSessionId) return;
+        const openedFromMobile = mobileSessionsOpen;
         setMobileSessionsOpen(false);
+        setMobileSessionError(null);
         setLoadingSessionId(targetSessionId);
         setSessionsError(null);
         try {
@@ -169,7 +183,9 @@ export default function App({ username }: AppProps) {
             setSessionId(detail.session.session_id);
             setDraft("");
         } catch (error) {
-            setSessionsError(error instanceof Error ? error.message : "会话详情加载失败");
+            const message = error instanceof Error ? error.message : "会话详情加载失败";
+            setSessionsError(message);
+            if (openedFromMobile) setMobileSessionError(message);
         } finally {
             setLoadingSessionId(null);
         }
@@ -393,6 +409,7 @@ export default function App({ username }: AppProps) {
     const clearConversation = () => {
         if (isStreaming) return;
         setMobileSessionsOpen(false);
+        setMobileSessionError(null);
         setMessages([]);
         setDraft("");
         setSessionId(null);
@@ -421,16 +438,17 @@ export default function App({ username }: AppProps) {
                         </div>
                     </div>
 
-                    <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-4">
-                        <button
-                            type="button"
-                            onClick={clearConversation}
-                            disabled={isStreaming}
-                            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-cinnabar text-sm font-semibold text-paper transition hover:bg-[#ad3a26] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/60 focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:bg-cinnabar/40"
-                        >
-                            <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
-                            新会话
-                        </button>
+                        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-4">
+                            <button
+                                ref={desktopNewSessionRef}
+                                type="button"
+                                onClick={clearConversation}
+                                disabled={isStreaming}
+                                className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-cinnabar text-sm font-semibold text-paper transition hover:bg-[#ad3a26] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/60 focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:bg-cinnabar/40"
+                            >
+                                <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
+                                新会话
+                            </button>
 
                         <SessionList
                             sessions={sessions}
@@ -571,6 +589,7 @@ export default function App({ username }: AppProps) {
                                 <Eraser className="h-4 w-4" aria-hidden="true" />
                             </button>
                             <button
+                                ref={desktopLogoutRef}
                                 type="button"
                                 onClick={() => void handleLogout()}
                                 className="grid h-11 w-11 place-items-center rounded-full text-ink/55 transition hover:bg-ink/5 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
@@ -585,6 +604,12 @@ export default function App({ username }: AppProps) {
                     {managementCapability.hint && (
                         <p role="status" aria-live="polite" className="border-b border-ink/10 bg-paper px-4 py-2 text-sm text-oxide">
                             {managementCapability.hint} 聊天仍可继续使用。
+                        </p>
+                    )}
+
+                    {mobileSessionError && (
+                        <p role="alert" aria-live="assertive" className="border-b border-ink/10 bg-paper px-4 py-2 text-sm text-oxide lg:hidden">
+                            {mobileSessionError}
                         </p>
                     )}
 
