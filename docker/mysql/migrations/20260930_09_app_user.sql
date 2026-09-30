@@ -42,3 +42,16 @@ CREATE TABLE IF NOT EXISTS app_user_change
     created_at    DATETIME(6) NOT NULL,
     INDEX idx_app_user_change_user_created (user_id, created_at)
 );
+
+INSERT IGNORE INTO authz_policy
+    (id, subject, resource, action, effect, version, active, created_by, created_at)
+VALUES
+    ('00000000-0000-4000-8000-000000000007',
+     'role:platform_admin',
+     'api:users',
+     'manage',
+     'allow',
+     1,
+     TRUE,
+     'bootstrap',
+     UTC_TIMESTAMP(6));

@@ -48,6 +48,7 @@ from app.repositories.qdrant.cube_member_qdrant_repository import (
 from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantRepository
 from app.repositories.redis.sse_event_repository import SSEEventRepository
 from app.security.sql_policy import SQLPolicyEngine, SQLPolicyLimits
+from app.services.application_user_admin_service import ApplicationUserAdminService
 from app.services.application_user_service import ApplicationUserService
 from app.services.authorization_service import (
     AuthorizationCacheState,
@@ -163,6 +164,22 @@ async def get_authorization_service(
     """使用请求级仓储和进程级不可变策略缓存组装授权服务。"""
 
     return AuthorizationService(repository, cache_state=_authorization_cache_state)
+
+
+async def get_application_user_admin_service(
+    repository: Annotated[AppUserRepository, Depends(get_app_user_repository)],
+    policy_repository: Annotated[
+        AuthzPolicyRepository, Depends(get_authz_policy_repository)
+    ],
+    authorization_service: Annotated[
+        AuthorizationService, Depends(get_authorization_service)
+    ],
+) -> ApplicationUserAdminService:
+    """组装请求级应用用户管理服务。"""
+
+    return ApplicationUserAdminService(
+        repository, policy_repository, authorization_service
+    )
 
 
 async def get_metric_candidate_repository(

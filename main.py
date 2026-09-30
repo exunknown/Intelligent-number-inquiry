@@ -12,14 +12,15 @@ from fastapi import FastAPI, Request
 
 from app.api.lifespan import lifespan
 from app.api.routers.authz_router import authz_router
+from app.api.routers.export_router import export_router
 from app.api.routers.health_router import health_router
 from app.api.routers.metric_candidate_router import metric_candidate_router
 from app.api.routers.metric_catalog_router import metric_catalog_router
 from app.api.routers.metrics_router import metrics_handler
 from app.api.routers.query_router import query_router
-from app.api.routers.export_router import export_router
 from app.api.routers.session_router import session_router
 from app.api.routers.sse_replay_router import sse_replay_router
+from app.api.routers.user_router import user_router
 from app.conf.app_config import app_config
 from app.core.context import request_id_ctx_var
 from app.core.resource_governance import QueryBodyLimitMiddleware
@@ -39,6 +40,7 @@ app.include_router(sse_replay_router)
 app.include_router(metric_catalog_router)
 app.include_router(metric_candidate_router)
 app.include_router(authz_router)
+app.include_router(user_router)
 app.include_router(health_router)
 app.add_api_route(
     app_config.metrics.path,

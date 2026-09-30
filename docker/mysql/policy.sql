@@ -49,4 +49,5 @@ VALUES
     ('00000000-0000-4000-8000-000000000003', 'role:metric_governor', 'api:metric-candidates', 'read', 'allow', 1, TRUE, 'bootstrap', UTC_TIMESTAMP(6)),
     ('00000000-0000-4000-8000-000000000004', 'role:metric_governor', 'api:metric-candidates', 'review', 'allow', 1, TRUE, 'bootstrap', UTC_TIMESTAMP(6)),
     ('00000000-0000-4000-8000-000000000005', 'role:analyst', 'api:query', 'execute', 'allow', 1, TRUE, 'bootstrap', UTC_TIMESTAMP(6)),
-    ('00000000-0000-4000-8000-000000000006', 'role:analyst', 'api:metrics', 'read', 'allow', 1, TRUE, 'bootstrap', UTC_TIMESTAMP(6));
+    ('00000000-0000-4000-8000-000000000006', 'role:analyst', 'api:metrics', 'read', 'allow', 1, TRUE, 'bootstrap', UTC_TIMESTAMP(6)),
+    ('00000000-0000-4000-8000-000000000007', 'role:platform_admin', 'api:users', 'manage', 'allow', 1, TRUE, 'bootstrap', UTC_TIMESTAMP(6));
