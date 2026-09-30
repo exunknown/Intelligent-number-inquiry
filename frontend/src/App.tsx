@@ -6,6 +6,7 @@ import {
     Eraser,
     ListChecks,
     LogOut,
+    MessageCircle,
     MessageSquarePlus,
     ScrollText,
     Server,
@@ -17,6 +18,7 @@ import { logout } from "./auth/keycloak";
 import { Composer } from "./components/Composer";
 import { EmptyState } from "./components/EmptyState";
 import { MessageBubble } from "./components/MessageBubble";
+import { MobileSessionDrawer } from "./components/MobileSessionDrawer";
 import { SessionList } from "./components/SessionList";
 import { UserManagementPanel } from "./components/UserManagementPanel";
 import {
@@ -92,9 +94,11 @@ export default function App({ username }: AppProps) {
     const [canManageUsers, setCanManageUsers] = useState<boolean | null>(null);
     const [capabilityError, setCapabilityError] = useState<unknown>(null);
     const [managementOpen, setManagementOpen] = useState(false);
+    const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const desktopManagementRef = useRef<HTMLButtonElement | null>(null);
     const mobileManagementRef = useRef<HTMLButtonElement | null>(null);
+    const mobileSessionTriggerRef = useRef<HTMLButtonElement | null>(null);
     const initialSessionLoadedRef = useRef(false);
     const capabilityLoadedRef = useRef(false);
 
@@ -109,6 +113,29 @@ export default function App({ username }: AppProps) {
             trigger.current?.focus();
         });
     };
+
+    const closeMobileSessions = () => {
+        setMobileSessionsOpen(false);
+        requestAnimationFrame(() => {
+            mobileSessionTriggerRef.current?.focus();
+        });
+    };
+
+    useEffect(() => {
+        const desktopMediaQuery = window.matchMedia("(min-width: 1024px)");
+        const closeMobileSessionsOnDesktop = () => {
+            if (desktopMediaQuery.matches) setMobileSessionsOpen(false);
+        };
+
+        closeMobileSessionsOnDesktop();
+        desktopMediaQuery.addEventListener("change", closeMobileSessionsOnDesktop);
+        window.addEventListener("resize", closeMobileSessionsOnDesktop);
+
+        return () => {
+            desktopMediaQuery.removeEventListener("change", closeMobileSessionsOnDesktop);
+            window.removeEventListener("resize", closeMobileSessionsOnDesktop);
+        };
+    }, []);
 
     useEffect(() => {
         if (capabilityLoadedRef.current) return;
@@ -133,6 +160,7 @@ export default function App({ username }: AppProps) {
 
     const openSession = async (targetSessionId: string) => {
         if (isStreaming || loadingSessionId === targetSessionId) return;
+        setMobileSessionsOpen(false);
         setLoadingSessionId(targetSessionId);
         setSessionsError(null);
         try {
@@ -364,6 +392,7 @@ export default function App({ username }: AppProps) {
 
     const clearConversation = () => {
         if (isStreaming) return;
+        setMobileSessionsOpen(false);
         setMessages([]);
         setDraft("");
         setSessionId(null);
@@ -381,7 +410,7 @@ export default function App({ username }: AppProps) {
     return (
         <div className="h-dvh overflow-hidden bg-paper text-ink">
             <div className="relative grid h-full min-h-0 overflow-hidden lg:grid-cols-[300px_minmax(0,1fr)]">
-                <aside inert={managementOpen} className="hidden min-h-0 border-r border-ink/10 bg-paper text-ink lg:flex lg:flex-col">
+                <aside inert={managementOpen || mobileSessionsOpen} className="hidden min-h-0 border-r border-ink/10 bg-paper text-ink lg:flex lg:flex-col">
                     <div className="border-b border-ink/10 px-5 py-5">
                         <div className="flex items-center gap-3">
                             <Seal className="h-10 w-10 text-xl" />
@@ -480,7 +509,7 @@ export default function App({ username }: AppProps) {
                 </aside>
 
                 <main className="relative flex min-h-0 min-w-0 flex-col overflow-hidden">
-                    <header inert={managementOpen} className="flex h-16 shrink-0 items-center justify-between border-b border-ink/10 bg-paper px-4 lg:px-6">
+                    <header inert={managementOpen || mobileSessionsOpen} className="flex h-16 shrink-0 items-center justify-between border-b border-ink/10 bg-paper px-4 lg:px-6">
                         <div className="flex min-w-0 items-center gap-3">
                             <Seal className="h-9 w-9 text-lg lg:hidden" />
                             <div className="min-w-0">
@@ -505,6 +534,17 @@ export default function App({ username }: AppProps) {
                                     <UsersRound className="h-4 w-4" aria-hidden="true" />
                                 </button>
                             )}
+                            <button
+                                ref={mobileSessionTriggerRef}
+                                type="button"
+                                onClick={() => setMobileSessionsOpen(true)}
+                                aria-label="会话"
+                                aria-expanded={mobileSessionsOpen}
+                                title="会话"
+                                className="grid h-11 w-11 place-items-center rounded-full text-ink/70 hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50 lg:hidden"
+                            >
+                                <MessageCircle className="h-4 w-4" aria-hidden="true" />
+                            </button>
                             <span
                                 className="hidden max-w-20 truncate text-xs text-ink/60 sm:block sm:max-w-40"
                                 title={username}
@@ -548,7 +588,7 @@ export default function App({ username }: AppProps) {
                         </p>
                     )}
 
-                    <div inert={managementOpen} ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#dfe0d8]">
+                    <div inert={managementOpen || mobileSessionsOpen} ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#dfe0d8]">
                         {messages.length === 0 ? (
                             <EmptyState examples={examples} onUseExample={(example) => setDraft(example)} />
                         ) : (
@@ -560,7 +600,7 @@ export default function App({ username }: AppProps) {
                         )}
                     </div>
 
-                    <div inert={managementOpen} className="shrink-0">
+                    <div inert={managementOpen || mobileSessionsOpen} className="shrink-0">
                         <Composer
                             value={draft}
                             disabled={!canSubmit}
@@ -572,6 +612,21 @@ export default function App({ username }: AppProps) {
                     </div>
                     {managementOpen && managementCapability.showEntry && (
                         <UserManagementPanel onClose={closeManagement} />
+                    )}
+                    {mobileSessionsOpen && (
+                        <MobileSessionDrawer
+                            sessions={sessions}
+                            selectedSessionId={sessionId}
+                            loading={sessionsLoading || loadingSessionId !== null}
+                            disabled={isStreaming}
+                            error={sessionsError}
+                            onNewSession={clearConversation}
+                            onSelect={(targetSessionId) => void openSession(targetSessionId)}
+                            onRename={(session) => void renameSession(session)}
+                            onArchive={(session) => void archiveSession(session)}
+                            onDelete={(session) => void removeSession(session)}
+                            onClose={closeMobileSessions}
+                        />
                     )}
                 </main>
             </div>
