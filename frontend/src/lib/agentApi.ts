@@ -19,12 +19,65 @@ export type QuerySessionSummary = {
   last_query_mode: string | null;
   last_error_code: string | null;
   last_metadata_release_version: string | null;
+  archived_at?: string | null;
 };
 
-type QueryOptions = {
+export type QueryMessageResponse = {
+  message_id: string;
+  session_id: string;
+  request_id: string | null;
+  sequence_no: number;
+  role: "user" | "assistant";
+  content: string;
+  status: "done" | "error" | "cancelled" | "streaming";
+  steps: Record<string, string> | null;
+  metrics: string[] | null;
+  query_mode: string | null;
+  route_reason: string | null;
+  result_preview: unknown;
+  verified: boolean | null;
+  warning: string | null;
+  row_count: number | null;
+  truncated: boolean | null;
+  export_id: string | null;
+  error: string | null;
+  error_code: string | null;
+  retryable: boolean | null;
+  created_at: string;
+};
+
+export type QuerySessionAuditMessage = {
+  request_id: string | null;
+  created_at: string;
+  query_text: string;
+  outcome: string;
+  query_mode: string | null;
+  route_reason: string | null;
+  verified: boolean | null;
+  error_code: string | null;
+  duration_ms: number;
+  metadata_release_version: string | null;
+  result_row_count: number | null;
+  result_bytes: number | null;
+  result_truncated: boolean | null;
+};
+
+export type QuerySessionMessage = QueryMessageResponse | QuerySessionAuditMessage;
+
+export type QuerySessionDetail = {
+  session: QuerySessionSummary;
+  messages: QuerySessionMessage[];
+};
+
+export type QueryOptions = {
   signal?: AbortSignal;
   onEvent: (event: AgentEvent) => void;
+  onEventId?: (eventId: string) => void;
   sessionId?: string;
+};
+
+type ReplayQueryOptions = QueryOptions & {
+  onReplayAttempt?: () => void;
 };
 
 export async function streamQuery(query: string, options: QueryOptions) {
@@ -40,62 +93,60 @@ export async function streamQuery(query: string, options: QueryOptions) {
     signal: options.signal,
   });
 
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error("登录已失效，请重新登录");
-    }
-    if (response.status === 403) {
-      throw new Error("没有执行该操作的权限");
-    }
-    throw new Error(`接口请求失败：HTTP ${response.status}`);
-  }
+  ensureStreamResponse(response, "接口请求失败");
+  await consumeSseResponse(response, options);
+}
 
-  if (!response.body) {
-    throw new Error("浏览器未返回可读取的流式响应。");
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder("utf-8");
-  let buffer = "";
-  let cancelPromise: Promise<void> | undefined;
-  const cancelReader = () => {
-    cancelPromise ??= reader.cancel().catch(() => undefined);
+export async function replayQueryEvents(
+  requestId: string,
+  lastEventId: string | null,
+  options: QueryOptions,
+) {
+  const accessToken = await getAccessToken();
+  const headers: HeadersInit = {
+    Authorization: `Bearer ${accessToken}`,
   };
-  options.signal?.addEventListener("abort", cancelReader, { once: true });
+  if (lastEventId) {
+    headers["Last-Event-ID"] = lastEventId;
+  }
+  const response = await fetch(
+    `${API_BASE_URL}/api/query/events/${encodeURIComponent(requestId)}`,
+    {
+      headers,
+      signal: options.signal,
+    },
+  );
+
+  ensureStreamResponse(response, "重放查询事件失败");
+  await consumeSseResponse(response, options);
+}
+
+export async function streamQueryWithReplay(
+  query: string,
+  options: ReplayQueryOptions,
+) {
+  let requestId: string | null = null;
+  let lastEventId: string | null = null;
+
+  const onEventId = (eventId: string) => {
+    const separator = eventId.lastIndexOf(":");
+    if (separator > 0 && separator < eventId.length - 1) {
+      requestId = eventId.slice(0, separator);
+      lastEventId = eventId;
+    }
+    options.onEventId?.(eventId);
+  };
+  const streamOptions = { ...options, onEventId };
 
   try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const chunks = buffer.split(/\n\n/);
-      buffer = chunks.pop() ?? "";
-
-      for (const chunk of chunks) {
-        const event = parseSseChunk(chunk);
-        if (event) {
-          options.onEvent(event);
-        }
-      }
+    await streamQuery(query, streamOptions);
+  } catch (error) {
+    const isAbort = error instanceof DOMException && error.name === "AbortError";
+    if (isAbort || !requestId || !lastEventId) {
+      throw error;
     }
-
-    if (options.signal?.aborted) {
-      throw new DOMException("The operation was aborted.", "AbortError");
-    }
-
-    buffer += decoder.decode();
-    const tail = parseSseChunk(buffer);
-    if (tail) {
-      options.onEvent(tail);
-    }
-  } finally {
-    options.signal?.removeEventListener("abort", cancelReader);
-    if (cancelPromise) {
-      await cancelPromise;
-    } else {
-      await reader.cancel().catch(() => undefined);
-    }
+    options.onReplayAttempt?.();
+    await replayQueryEvents(requestId, lastEventId, streamOptions);
   }
 }
 
@@ -115,6 +166,104 @@ export async function createQuerySession(title?: string): Promise<QuerySessionSu
   return (await response.json()) as QuerySessionSummary;
 }
 
+async function getJson<T>(
+  path: string,
+  init: RequestInit,
+  action: string,
+): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, init);
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("登录已失效，请重新登录");
+    }
+    if (response.status === 403) {
+      throw new Error("没有执行该操作的权限");
+    }
+    throw new Error(`${action}：HTTP ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
+export async function listQuerySessions(
+  limit = 50,
+  offset = 0,
+): Promise<QuerySessionSummary[]> {
+  const accessToken = await getAccessToken();
+  return getJson<QuerySessionSummary[]>(
+    `/api/sessions?limit=${limit}&offset=${offset}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+    "会话列表加载失败",
+  );
+}
+
+export async function getQuerySession(
+  sessionId: string,
+  limit = 100,
+  offset = 0,
+): Promise<QuerySessionDetail> {
+  const accessToken = await getAccessToken();
+  return getJson<QuerySessionDetail>(
+    `/api/sessions/${encodeURIComponent(sessionId)}?limit=${limit}&offset=${offset}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+    "会话详情加载失败",
+  );
+}
+
+export async function updateQuerySessionTitle(
+  sessionId: string,
+  title: string,
+): Promise<QuerySessionSummary> {
+  const accessToken = await getAccessToken();
+  return getJson<QuerySessionSummary>(
+    `/api/sessions/${encodeURIComponent(sessionId)}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title }),
+    },
+    "会话重命名失败",
+  );
+}
+
+export async function archiveQuerySession(sessionId: string): Promise<QuerySessionSummary> {
+  const accessToken = await getAccessToken();
+  return getJson<QuerySessionSummary>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/archive`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+    "会话归档失败",
+  );
+}
+
+export async function deleteQuerySession(sessionId: string): Promise<void> {
+  const accessToken = await getAccessToken();
+  const response = await fetch(
+    `${API_BASE_URL}/api/sessions/${encodeURIComponent(sessionId)}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("登录已失效，请重新登录");
+    }
+    if (response.status === 403) {
+      throw new Error("没有执行该操作的权限");
+    }
+    throw new Error(`会话删除失败：HTTP ${response.status}`);
+  }
+}
+
 export async function downloadQueryExport(exportId: string): Promise<Blob> {
   const accessToken = await getAccessToken();
   const response = await fetch(`${API_BASE_URL}/api/exports/${exportId}`, {
@@ -128,7 +277,89 @@ export async function downloadQueryExport(exportId: string): Promise<Blob> {
   return response.blob();
 }
 
-function parseSseChunk(chunk: string): AgentEvent | null {
+function ensureStreamResponse(response: Response, action: string): asserts response is Response {
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("登录已失效，请重新登录");
+    }
+    if (response.status === 403) {
+      throw new Error("没有执行该操作的权限");
+    }
+    if (response.status === 409) {
+      throw new Error("查询事件已断档，无法恢复本次查询");
+    }
+    if (response.status === 404) {
+      throw new Error("查询事件已过期，无法恢复本次查询");
+    }
+    throw new Error(`${action}：HTTP ${response.status}`);
+  }
+  if (!response.body) {
+    throw new Error("浏览器未返回可读取的流式响应。");
+  }
+}
+
+async function consumeSseResponse(response: Response, options: QueryOptions) {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let cancelPromise: Promise<void> | undefined;
+  const cancelReader = () => {
+    cancelPromise ??= reader.cancel().catch(() => undefined);
+  };
+  options.signal?.addEventListener("abort", cancelReader, { once: true });
+
+  const consumeChunk = (chunk: string) => {
+    const parsed = parseSseChunk(chunk);
+    if (parsed.eventId) {
+      options.onEventId?.(parsed.eventId);
+    }
+    if (parsed.event) {
+      options.onEvent(parsed.event);
+    }
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split(/\n\n/);
+      buffer = chunks.pop() ?? "";
+
+      for (const chunk of chunks) {
+        consumeChunk(chunk);
+      }
+    }
+
+    if (options.signal?.aborted) {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    }
+
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      consumeChunk(buffer);
+    }
+  } finally {
+    options.signal?.removeEventListener("abort", cancelReader);
+    if (cancelPromise) {
+      await cancelPromise;
+    } else {
+      await reader.cancel().catch(() => undefined);
+    }
+  }
+}
+
+function parseSseChunk(chunk: string): {
+  event: AgentEvent | null;
+  eventId: string | null;
+} {
+  const eventId =
+    chunk
+      .split("\n")
+      .find((line) => line.startsWith("id:"))
+      ?.replace(/^id:\s?/, "")
+      .trim() || null;
   const payload = chunk
     .split("\n")
     .filter((line) => line.startsWith("data:"))
@@ -136,16 +367,19 @@ function parseSseChunk(chunk: string): AgentEvent | null {
     .join("\n")
     .trim();
 
-  if (!payload) return null;
+  if (!payload) return { event: null, eventId };
 
   try {
-    return JSON.parse(payload) as AgentEvent;
+    return { event: JSON.parse(payload) as AgentEvent, eventId };
   } catch {
     return {
-      type: "error",
-      code: "sse_parse_error",
-      message: `无法解析后端事件：${payload}`,
-      retryable: false,
+      event: {
+        type: "error",
+        code: "sse_parse_error",
+        message: `无法解析后端事件：${payload}`,
+        retryable: false,
+      },
+      eventId,
     };
   }
 }

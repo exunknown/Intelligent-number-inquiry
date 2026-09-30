@@ -37,6 +37,8 @@ class QuerySessionRepository:
             last_query_mode=model.last_query_mode,
             last_error_code=model.last_error_code,
             last_metadata_release_version=model.last_metadata_release_version,
+            archived_at=model.archived_at,
+            deleted_at=model.deleted_at,
         )
 
     async def create(
@@ -66,19 +68,104 @@ class QuerySessionRepository:
             select(QuerySessionMySQL).where(
                 QuerySessionMySQL.id == session_id,
                 QuerySessionMySQL.user_id == user_id,
+                QuerySessionMySQL.deleted_at.is_(None),
             )
         )
         model = result.scalar_one_or_none()
         return self._to_session(model) if model is not None else None
 
-    async def list_owned(self, user_id: str, limit: int = 50) -> list[QuerySession]:
+    async def list_owned(
+        self,
+        user_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        include_archived: bool = False,
+    ) -> list[QuerySession]:
+        filters = [
+            QuerySessionMySQL.user_id == user_id,
+            QuerySessionMySQL.deleted_at.is_(None),
+        ]
+        if not include_archived:
+            filters.append(QuerySessionMySQL.archived_at.is_(None))
         result = await self.session.execute(
             select(QuerySessionMySQL)
-            .where(QuerySessionMySQL.user_id == user_id)
-            .order_by(QuerySessionMySQL.updated_at.desc())
+            .where(*filters)
+            .order_by(
+                QuerySessionMySQL.updated_at.desc(),
+                QuerySessionMySQL.id.desc(),
+            )
+            .offset(offset)
             .limit(limit)
         )
         return [self._to_session(model) for model in result.scalars().all()]
+
+    @staticmethod
+    def _normalize_title(title: str) -> str:
+        return " ".join(title.split())[:200]
+
+    async def update_title(
+        self, session_id: str, user_id: str, title: str
+    ) -> QuerySession | None:
+        clean_title = self._normalize_title(title)
+        if not clean_title:
+            raise ValueError("session title must not be blank")
+        model = await self.session.scalar(
+            select(QuerySessionMySQL).where(
+                QuerySessionMySQL.id == session_id,
+                QuerySessionMySQL.user_id == user_id,
+                QuerySessionMySQL.deleted_at.is_(None),
+            )
+        )
+        if model is None:
+            return None
+        model.title = clean_title
+        model.updated_at = self._now()
+        try:
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        return self._to_session(model)
+
+    async def set_archived(
+        self, session_id: str, user_id: str, archived: bool
+    ) -> QuerySession | None:
+        model = await self.session.scalar(
+            select(QuerySessionMySQL).where(
+                QuerySessionMySQL.id == session_id,
+                QuerySessionMySQL.user_id == user_id,
+                QuerySessionMySQL.deleted_at.is_(None),
+            )
+        )
+        if model is None:
+            return None
+        model.archived_at = self._now() if archived else None
+        model.updated_at = self._now()
+        try:
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        return self._to_session(model)
+
+    async def soft_delete(self, session_id: str, user_id: str) -> bool:
+        model = await self.session.scalar(
+            select(QuerySessionMySQL).where(
+                QuerySessionMySQL.id == session_id,
+                QuerySessionMySQL.user_id == user_id,
+                QuerySessionMySQL.deleted_at.is_(None),
+            )
+        )
+        if model is None:
+            return False
+        model.deleted_at = self._now()
+        model.updated_at = self._now()
+        try:
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        return True
 
     async def touch(
         self,
@@ -112,7 +199,7 @@ class QuerySessionRepository:
             raise
 
     async def list_messages(
-        self, session_id: str, user_id: str, limit: int = 100
+        self, session_id: str, user_id: str, limit: int = 100, offset: int = 0
     ) -> list[QuerySessionMessage] | None:
         owned = await self.get_owned(session_id, user_id)
         if owned is None:
@@ -124,6 +211,7 @@ class QuerySessionRepository:
                 QueryAuditMySQL.user_id == user_id,
             )
             .order_by(QueryAuditMySQL.created_at.asc())
+            .offset(offset)
             .limit(limit)
         )
         return [

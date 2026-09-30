@@ -55,3 +55,19 @@ class SSEEventRepository:
             if sequence > after_sequence and isinstance(frame, str):
                 frames.append((sequence, frame))
         return frames
+
+    async def first_sequence(self, request_id: str) -> int | None:
+        """返回当前仍保留的最早事件序号。"""
+
+        if self.client is None:
+            return None
+        values = await self.client.lrange(self._key(request_id), 0, -1)
+        sequences: list[int] = []
+        for value in values:
+            try:
+                item = json.loads(value)
+                sequence = int(item["sequence"])
+            except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+                continue
+            sequences.append(sequence)
+        return min(sequences) if sequences else None

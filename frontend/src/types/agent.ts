@@ -66,7 +66,7 @@ export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   createdAt: number;
-  status?: "streaming" | "done" | "error";
+  status?: "streaming" | "done" | "error" | "cancelled";
   steps?: StepState[];
   metrics?: string[];
   queryMode?: QueryMode;

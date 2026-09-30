@@ -17,10 +17,21 @@ import { logout } from "./auth/keycloak";
 import { Composer } from "./components/Composer";
 import { EmptyState } from "./components/EmptyState";
 import { MessageBubble } from "./components/MessageBubble";
+import { SessionList } from "./components/SessionList";
 import { UserManagementPanel } from "./components/UserManagementPanel";
-import { createQuerySession, streamQuery } from "./lib/agentApi";
-import { getCurrentUserCapability } from "./lib/agentApi";
+import {
+    archiveQuerySession,
+    createQuerySession,
+    deleteQuerySession,
+    getQuerySession,
+    getCurrentUserCapability,
+    listQuerySessions,
+    streamQueryWithReplay,
+    updateQuerySessionTitle,
+    type QuerySessionSummary,
+} from "./lib/agentApi";
 import { cn, summarizeResult } from "./lib/format";
+import { hydrateSessionMessages } from "./lib/sessionHydration";
 import { capabilityPresentation, shouldAutoScrollChat } from "./lib/userManagement";
 import type { AgentEvent, ChatMessage, StepState } from "./types/agent";
 
@@ -72,6 +83,10 @@ type AppProps = {
 export default function App({ username }: AppProps) {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [sessionId, setSessionId] = useState<string | null>(null);
+    const [sessions, setSessions] = useState<QuerySessionSummary[]>([]);
+    const [sessionsLoading, setSessionsLoading] = useState(true);
+    const [sessionsError, setSessionsError] = useState<string | null>(null);
+    const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
     const [draft, setDraft] = useState("");
     const [activeController, setActiveController] = useState<AbortController | null>(null);
     const [canManageUsers, setCanManageUsers] = useState<boolean | null>(null);
@@ -80,6 +95,7 @@ export default function App({ username }: AppProps) {
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const desktopManagementRef = useRef<HTMLButtonElement | null>(null);
     const mobileManagementRef = useRef<HTMLButtonElement | null>(null);
+    const initialSessionLoadedRef = useRef(false);
     const capabilityLoadedRef = useRef(false);
 
     const isStreaming = Boolean(activeController);
@@ -115,6 +131,95 @@ export default function App({ username }: AppProps) {
         });
     }, [messages]);
 
+    const openSession = async (targetSessionId: string) => {
+        if (isStreaming || loadingSessionId === targetSessionId) return;
+        setLoadingSessionId(targetSessionId);
+        setSessionsError(null);
+        try {
+            const detail = await getQuerySession(targetSessionId, 200, 0);
+            setMessages(hydrateSessionMessages(detail));
+            setSessionId(detail.session.session_id);
+            setDraft("");
+        } catch (error) {
+            setSessionsError(error instanceof Error ? error.message : "会话详情加载失败");
+        } finally {
+            setLoadingSessionId(null);
+        }
+    };
+
+    const refreshSessions = async (openLatest = false) => {
+        setSessionsLoading(true);
+        setSessionsError(null);
+        try {
+            const nextSessions = await listQuerySessions(50, 0);
+            setSessions(nextSessions);
+            if (openLatest && !sessionId && nextSessions[0]) {
+                await openSession(nextSessions[0].session_id);
+            }
+        } catch (error) {
+            setSessionsError(error instanceof Error ? error.message : "会话列表加载失败");
+        } finally {
+            setSessionsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (initialSessionLoadedRef.current) return;
+        initialSessionLoadedRef.current = true;
+        void refreshSessions(true);
+    }, []);
+
+    const updateSessionSummary = (updated: QuerySessionSummary) => {
+        setSessions((current) =>
+            current.map((session) =>
+                session.session_id === updated.session_id ? updated : session,
+            ),
+        );
+    };
+
+    const renameSession = async (session: QuerySessionSummary) => {
+        const title = window.prompt("会话标题", session.title)?.trim();
+        if (!title || title === session.title) return;
+        try {
+            const updated = await updateQuerySessionTitle(session.session_id, title);
+            updateSessionSummary(updated);
+        } catch (error) {
+            setSessionsError(error instanceof Error ? error.message : "会话重命名失败");
+        }
+    };
+
+    const archiveSession = async (session: QuerySessionSummary) => {
+        if (!window.confirm(`归档“${session.title}”？`)) return;
+        try {
+            await archiveQuerySession(session.session_id);
+            setSessions((current) =>
+                current.filter((item) => item.session_id !== session.session_id),
+            );
+            if (session.session_id === sessionId) {
+                setMessages([]);
+                setSessionId(null);
+            }
+        } catch (error) {
+            setSessionsError(error instanceof Error ? error.message : "会话归档失败");
+        }
+    };
+
+    const removeSession = async (session: QuerySessionSummary) => {
+        if (!window.confirm(`删除“${session.title}”？`)) return;
+        try {
+            await deleteQuerySession(session.session_id);
+            setSessions((current) =>
+                current.filter((item) => item.session_id !== session.session_id),
+            );
+            if (session.session_id === sessionId) {
+                setMessages([]);
+                setSessionId(null);
+            }
+        } catch (error) {
+            setSessionsError(error instanceof Error ? error.message : "会话删除失败");
+        }
+    };
+
     const startQuery = async (rawQuery = draft) => {
         const query = rawQuery.trim();
         if (!query || isStreaming) return;
@@ -137,6 +242,7 @@ export default function App({ username }: AppProps) {
         };
 
         const controller = new AbortController();
+        let replayAttempted = false;
         setActiveController(controller);
         setDraft("");
         setMessages((current) => [...current, userMessage, assistantMessage]);
@@ -205,10 +311,13 @@ export default function App({ username }: AppProps) {
                 currentSessionId = session.session_id;
                 setSessionId(currentSessionId);
             }
-            await streamQuery(query, {
+            await streamQueryWithReplay(query, {
                 signal: controller.signal,
                 onEvent,
                 sessionId: currentSessionId,
+                onReplayAttempt: () => {
+                    replayAttempted = true;
+                },
             });
             setMessages((current) =>
                 current.map((message) =>
@@ -225,14 +334,27 @@ export default function App({ username }: AppProps) {
                         ? {
                               ...message,
                               status: isAbort ? "done" : "error",
-                              content: isAbort ? "已停止本次查询。" : "无法连接问数接口。",
-                              error: isAbort ? undefined : error instanceof Error ? error.message : String(error),
+                              content: isAbort
+                                  ? "已停止本次查询。"
+                                  : replayAttempted
+                                    ? "查询连接已中断，无法恢复本次查询。"
+                                    : "无法连接问数接口。",
+                              error: isAbort
+                                  ? undefined
+                                  : replayAttempted
+                                    ? "请重新发起查询。"
+                                    : error instanceof Error
+                                      ? error.message
+                                      : String(error),
+                              errorCode: replayAttempted ? "sse_replay_failed" : undefined,
+                              retryable: replayAttempted ? true : undefined,
                           }
                         : message,
                 ),
             );
         } finally {
             setActiveController(null);
+            void refreshSessions(false);
         }
     };
 
@@ -280,6 +402,18 @@ export default function App({ username }: AppProps) {
                             <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
                             新会话
                         </button>
+
+                        <SessionList
+                            sessions={sessions}
+                            selectedSessionId={sessionId}
+                            loading={sessionsLoading || loadingSessionId !== null}
+                            disabled={isStreaming}
+                            error={sessionsError}
+                            onSelect={(targetSessionId) => void openSession(targetSessionId)}
+                            onRename={(session) => void renameSession(session)}
+                            onArchive={(session) => void archiveSession(session)}
+                            onDelete={(session) => void removeSession(session)}
+                        />
 
                         <section>
                             <div className="mb-2 flex items-center gap-2 px-1 text-xs font-semibold text-ink/45">

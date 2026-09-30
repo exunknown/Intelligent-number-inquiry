@@ -20,6 +20,8 @@ class QuerySession:
     last_query_mode: str | None
     last_error_code: str | None
     last_metadata_release_version: str | None
+    archived_at: datetime | None = None
+    deleted_at: datetime | None = None
 
 
 @dataclass(frozen=True)

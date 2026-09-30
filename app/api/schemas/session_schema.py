@@ -4,9 +4,15 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.api.schemas.query_message_schema import QueryMessageResponse
+
 
 class QuerySessionCreateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=200)
+
+
+class QuerySessionUpdateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
 
 
 class QuerySessionSummary(BaseModel):
@@ -22,6 +28,7 @@ class QuerySessionSummary(BaseModel):
     last_query_mode: str | None
     last_error_code: str | None
     last_metadata_release_version: str | None
+    archived_at: datetime | None = None
 
 
 class QuerySessionMessageResponse(BaseModel):
@@ -44,4 +51,4 @@ class QuerySessionMessageResponse(BaseModel):
 
 class QuerySessionDetail(BaseModel):
     session: QuerySessionSummary
-    messages: list[QuerySessionMessageResponse]
+    messages: list[QueryMessageResponse | QuerySessionMessageResponse]

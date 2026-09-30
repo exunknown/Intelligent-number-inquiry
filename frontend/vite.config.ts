@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
       host: "0.0.0.0",
       // 5173 落在 Windows Hyper-V/WSL2 端口排除范围，使用本地开发白名单中的 3000。
       port: 3000,
+      strictPort: true,
       proxy: {
         "/api": {
           target: backend,

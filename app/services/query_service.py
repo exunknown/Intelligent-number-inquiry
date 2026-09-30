@@ -25,6 +25,7 @@ from app.core.resource_governance import (
 )
 from app.entities.auth import QueryPrincipal
 from app.entities.query_audit import QueryAuditRecord
+from app.entities.query_message import QueryMessageSnapshot
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.minio.result_object_store import ResultObjectStore
@@ -39,6 +40,7 @@ from app.repositories.mysql.meta.metric_candidate_repository import (
 )
 from app.repositories.mysql.meta.query_audit_repository import QueryAuditRepository
 from app.repositories.mysql.meta.query_export_repository import QueryExportRepository
+from app.repositories.mysql.meta.query_message_repository import QueryMessageRepository
 from app.repositories.mysql.meta.query_session_repository import QuerySessionRepository
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.cube_member_qdrant_repository import (
@@ -65,6 +67,101 @@ _AUDIT_EVENT_FIELDS = (
     "sql_execution_duration_ms",
 )
 _SSE_PROTOCOL_VERSION = 1
+
+
+def build_query_message_snapshot(
+    events: list[dict], terminal_event: dict
+) -> QueryMessageSnapshot:
+    """把允许展示的 SSE 事件转换成安全的会话消息快照。"""
+
+    steps: dict[str, str] = {}
+    metrics: list[str] = []
+    query_mode = None
+    route_reason = None
+
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        event_type = event.get("type")
+        if event_type == "progress":
+            step = event.get("step")
+            status = event.get("status")
+            if (
+                isinstance(step, str)
+                and isinstance(status, str)
+                and status in {"running", "success", "error"}
+            ):
+                steps[step] = status
+        elif event_type == "metrics":
+            data = event.get("data")
+            if isinstance(data, list):
+                metrics = [item for item in data if isinstance(item, str)]
+        elif event_type == "route":
+            if isinstance(event.get("mode"), str):
+                query_mode = event["mode"]
+            if isinstance(event.get("reason"), str):
+                route_reason = event["reason"]
+
+    event_type = terminal_event.get("type")
+    if event_type == "result":
+        data = terminal_event.get("data")
+        row_count = terminal_event.get("row_count")
+        if row_count is None and isinstance(data, list):
+            row_count = len(data)
+        if isinstance(row_count, bool) or not isinstance(row_count, (int, type(None))):
+            row_count = None
+        content = (
+            f"查询完成，共返回 {row_count} 条结果。"
+            if row_count is not None
+            else "查询已完成。"
+        )
+        return QueryMessageSnapshot(
+            status="done",
+            content=content,
+            steps=steps,
+            metrics=metrics,
+            query_mode=terminal_event.get("source") or query_mode,
+            route_reason=route_reason,
+            result_preview=data,
+            verified=terminal_event.get("verified"),
+            warning=terminal_event.get("warning"),
+            row_count=row_count,
+            truncated=terminal_event.get("truncated"),
+            export_id=terminal_event.get("export_id"),
+        )
+    if event_type == "cancelled":
+        return QueryMessageSnapshot(
+            status="cancelled",
+            content="已停止本次查询。",
+            steps=steps,
+            metrics=metrics,
+            query_mode=query_mode,
+            route_reason=route_reason,
+        )
+
+    return QueryMessageSnapshot(
+        status="error",
+        content="这次查询没有成功。",
+        steps=steps,
+        metrics=metrics,
+        query_mode=query_mode,
+        route_reason=route_reason,
+        error=(
+            terminal_event.get("message")
+            if isinstance(terminal_event.get("message"), str)
+            else None
+        ),
+        error_code=(
+            terminal_event.get("code")
+            if isinstance(terminal_event.get("code"), str)
+            else None
+        ),
+        retryable=(
+            terminal_event.get("retryable")
+            if isinstance(terminal_event.get("retryable"), bool)
+            else None
+        ),
+    )
 
 
 def _serialize_sse_event(payload: dict, request_id: str, sequence: int) -> str:
@@ -96,6 +193,7 @@ class QueryService:
         value_es_repository: ValueESRepository,
         query_audit_repository: QueryAuditRepository | None = None,
         query_session_repository: QuerySessionRepository | None = None,
+        query_message_repository: QueryMessageRepository | None = None,
         sse_event_repository: SSEEventRepository | None = None,
         query_export_repository: QueryExportRepository | None = None,
         result_object_store: ResultObjectStore | None = None,
@@ -114,6 +212,7 @@ class QueryService:
         self.value_es_repository = value_es_repository
         self.query_audit_repository = query_audit_repository
         self.query_session_repository = query_session_repository
+        self.query_message_repository = query_message_repository
         self.sse_event_repository = sse_event_repository
         self.query_export_repository = query_export_repository
         self.result_object_store = result_object_store
@@ -240,6 +339,20 @@ class QueryService:
         if self.meta_mysql_repository is not None:
             self.meta_mysql_repository.set_release_version(metadata_release_version)
 
+        request_id = str(request_id_ctx_var.get())
+        user_message_persisted = False
+        if self.query_message_repository is not None and session_id is not None:
+            try:
+                user_message = await self.query_message_repository.append_user_message(
+                    session_id,
+                    principal.auth.user_id,
+                    request_id,
+                    query,
+                )
+                user_message_persisted = user_message is not None
+            except Exception:
+                logger.warning("Failed to save query user message")
+
         state = DataAgentState(query=query)
         context = DataAgentContext(
             column_qdrant_repository=self.column_qdrant_repository,
@@ -279,9 +392,10 @@ class QueryService:
             "sql_execution_duration_ms": None,
         }
         node_started_at: dict[str, float] = {}
-        request_id = str(request_id_ctx_var.get())
         event_sequence = 0
         terminal_sent = False
+        snapshot_events: list[dict] = []
+        terminal_event: dict = {"type": "error", "code": "internal_error"}
 
         async def serialize(payload: dict) -> str:
             nonlocal event_sequence
@@ -359,6 +473,13 @@ class QueryService:
                             )
                             continue
                         terminal_sent = True
+                        terminal_event = dict(chunk)
+                    elif isinstance(chunk, dict) and chunk.get("type") in {
+                        "progress",
+                        "metrics",
+                        "route",
+                    }:
+                        snapshot_events.append(dict(chunk))
                     if isinstance(chunk, dict) and chunk.get("type") == "route":
                         audit["query_mode"] = chunk.get("mode")
                         audit["route_reason"] = chunk.get("reason")
@@ -370,14 +491,13 @@ class QueryService:
                     terminal_sent = True
                     audit["outcome"] = "error"
                     audit["error_code"] = "missing_terminal_event"
-                    yield await serialize(
-                        {
-                            "type": "error",
-                            "code": "missing_terminal_event",
-                            "message": "问数流程未返回最终状态",
-                            "retryable": False,
-                        }
-                    )
+                    terminal_event = {
+                        "type": "error",
+                        "code": "missing_terminal_event",
+                        "message": "问数流程未返回最终状态",
+                        "retryable": False,
+                    }
+                    yield await serialize(terminal_event)
         except TimeoutError:
             logger.warning("Question execution exceeded resource deadline")
             audit["outcome"] = "error"
@@ -390,9 +510,11 @@ class QueryService:
             }
             if not terminal_sent:
                 terminal_sent = True
+                terminal_event = error
                 yield await serialize(error)
         except asyncio.CancelledError:
             audit["outcome"] = "cancelled"
+            terminal_event = {"type": "cancelled"}
             raise
         except QueryExecutionError as e:
             logger.error("Question execution failed code={}", e.code)
@@ -406,6 +528,7 @@ class QueryService:
             }
             if not terminal_sent:
                 terminal_sent = True
+                terminal_event = error
                 yield await serialize(error)
         except Exception:
             logger.error("Unexpected question execution error")
@@ -419,6 +542,7 @@ class QueryService:
             }
             if not terminal_sent:
                 terminal_sent = True
+                terminal_event = error
                 yield await serialize(error)
         finally:
             if pending_chunk is not None and not pending_chunk.done():
@@ -494,7 +618,26 @@ class QueryService:
                     await self.query_audit_repository.save(record)
                 except Exception:
                     logger.warning("Failed to save query audit record")
-            if self.query_session_repository is not None and session_id is not None:
+            if (
+                self.query_message_repository is not None
+                and session_id is not None
+                and user_message_persisted
+            ):
+                try:
+                    snapshot = build_query_message_snapshot(
+                        snapshot_events,
+                        terminal_event,
+                    )
+                    await self.query_message_repository.append_assistant_message(
+                        session_id,
+                        principal.auth.user_id,
+                        request_id,
+                        snapshot,
+                        metadata_release_version=metadata_release_version,
+                    )
+                except Exception:
+                    logger.warning("Failed to save query assistant message")
+            elif self.query_session_repository is not None and session_id is not None:
                 try:
                     await self.query_session_repository.touch(
                         session_id,

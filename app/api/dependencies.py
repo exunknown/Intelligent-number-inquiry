@@ -40,6 +40,7 @@ from app.repositories.mysql.meta.metric_candidate_repository import (
 )
 from app.repositories.mysql.meta.query_audit_repository import QueryAuditRepository
 from app.repositories.mysql.meta.query_export_repository import QueryExportRepository
+from app.repositories.mysql.meta.query_message_repository import QueryMessageRepository
 from app.repositories.mysql.meta.query_session_repository import QuerySessionRepository
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.cube_member_qdrant_repository import (
@@ -117,6 +118,14 @@ async def get_query_session_repository(
     """创建请求级查询会话仓储。"""
 
     return QuerySessionRepository(session)
+
+
+async def get_query_message_repository(
+    session: Annotated[AsyncSession, Depends(get_meta_session)],
+) -> QueryMessageRepository:
+    """创建请求级查询消息仓储。"""
+
+    return QueryMessageRepository(session)
 
 
 async def get_sse_event_repository() -> SSEEventRepository:
@@ -318,6 +327,9 @@ async def get_query_service(
     query_session_repository: Annotated[
         QuerySessionRepository, Depends(get_query_session_repository)
     ],
+    query_message_repository: Annotated[
+        QueryMessageRepository, Depends(get_query_message_repository)
+    ],
     sse_event_repository: Annotated[
         SSEEventRepository, Depends(get_sse_event_repository)
     ],
@@ -349,6 +361,7 @@ async def get_query_service(
         value_es_repository=value_es_repository,
         query_audit_repository=query_audit_repository,
         query_session_repository=query_session_repository,
+        query_message_repository=query_message_repository,
         sse_event_repository=sse_event_repository,
         query_export_repository=query_export_repository,
         result_object_store=result_object_store,

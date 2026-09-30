@@ -48,9 +48,13 @@ async def replay_query_events_handler(
 
     if not await audit_repository.has_owned_request(request_id, principal.auth.user_id):
         raise HTTPException(status_code=404, detail="query events not found")
-    frames = await event_repository.read_frames(
-        request_id, _after_sequence(request_id, last_event_id)
-    )
+    after_sequence = _after_sequence(request_id, last_event_id)
+    earliest_sequence = await event_repository.first_sequence(request_id)
+    if earliest_sequence is None:
+        raise HTTPException(status_code=404, detail="query events expired")
+    if after_sequence < earliest_sequence - 1:
+        raise HTTPException(status_code=409, detail="sse_replay_gap")
+    frames = await event_repository.read_frames(request_id, after_sequence)
     if not frames:
         raise HTTPException(status_code=404, detail="query events expired")
 

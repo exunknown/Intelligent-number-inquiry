@@ -12,7 +12,16 @@ class QuerySessionMySQL(Base):
     """Persisted user-owned query session metadata."""
 
     __tablename__ = "query_session"
-    __table_args__ = (Index("idx_query_session_user_updated", "user_id", "updated_at"),)
+    __table_args__ = (
+        Index("idx_query_session_user_updated", "user_id", "updated_at"),
+        Index(
+            "idx_query_session_user_state_updated",
+            "user_id",
+            "archived_at",
+            "deleted_at",
+            "updated_at",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -28,3 +37,5 @@ class QuerySessionMySQL(Base):
     last_metadata_release_version: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

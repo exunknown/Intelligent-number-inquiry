@@ -38,14 +38,14 @@ async def query_handler(
     """接收用户自然语言问题，并流式返回 LangGraph 工作流输出"""
 
     try:
-        if (
-            query.session_id is not None
-            and await session_repository.get_owned(
+        if query.session_id is not None:
+            session = await session_repository.get_owned(
                 query.session_id, principal.auth.user_id
             )
-            is None
-        ):
-            raise HTTPException(status_code=404, detail="query session not found")
+            if session is None:
+                raise HTTPException(status_code=404, detail="query session not found")
+            if session.archived_at is not None:
+                raise HTTPException(status_code=409, detail="session_archived")
         lease = await get_resource_admission().acquire(principal.auth.user_id)
     except HTTPException:
         raise
