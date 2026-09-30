@@ -56,27 +56,45 @@ export async function streamQuery(query: string, options: QueryOptions) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
+  let cancelPromise: Promise<void> | undefined;
+  const cancelReader = () => {
+    cancelPromise ??= reader.cancel().catch(() => undefined);
+  };
+  options.signal?.addEventListener("abort", cancelReader, { once: true });
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split(/\n\n/);
-    buffer = chunks.pop() ?? "";
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split(/\n\n/);
+      buffer = chunks.pop() ?? "";
 
-    for (const chunk of chunks) {
-      const event = parseSseChunk(chunk);
-      if (event) {
-        options.onEvent(event);
+      for (const chunk of chunks) {
+        const event = parseSseChunk(chunk);
+        if (event) {
+          options.onEvent(event);
+        }
       }
     }
-  }
 
-  buffer += decoder.decode();
-  const tail = parseSseChunk(buffer);
-  if (tail) {
-    options.onEvent(tail);
+    if (options.signal?.aborted) {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    }
+
+    buffer += decoder.decode();
+    const tail = parseSseChunk(buffer);
+    if (tail) {
+      options.onEvent(tail);
+    }
+  } finally {
+    options.signal?.removeEventListener("abort", cancelReader);
+    if (cancelPromise) {
+      await cancelPromise;
+    } else {
+      await reader.cancel().catch(() => undefined);
+    }
   }
 }
 
