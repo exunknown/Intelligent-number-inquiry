@@ -62,13 +62,19 @@ async def query_handler(
         )
         raise HTTPException(status_code=status_code, detail=error.message) from error
 
-    return StreamingResponse(
-        # query.query 是用户问题字符串；QueryService.query 返回异步生成器供响应逐段消费
-        query_service.query(
-            query.query,
-            principal=principal,
-            lease=lease,
-            session_id=query.session_id,
-        ),
-        media_type="text/event-stream",
-    )
+    async def stream_events():
+        try:
+            # query.query 是用户问题字符串；QueryService.query 返回异步生成器供响应逐段消费
+            async for chunk in query_service.query(
+                query.query,
+                principal=principal,
+                lease=lease,
+                session_id=query.session_id,
+            ):
+                yield chunk
+        finally:
+            # 响应在生成器首次迭代前就断开时，QueryService 的 finally 尚未执行，
+            # 路由层必须兜底释放已经取得的准入槽。
+            await lease.release()
+
+    return StreamingResponse(stream_events(), media_type="text/event-stream")
