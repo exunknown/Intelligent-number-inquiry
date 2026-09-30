@@ -10,14 +10,18 @@ import {
     ScrollText,
     Server,
     UserRound,
+    UsersRound,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { logout } from "./auth/keycloak";
 import { Composer } from "./components/Composer";
 import { EmptyState } from "./components/EmptyState";
 import { MessageBubble } from "./components/MessageBubble";
+import { UserManagementPanel } from "./components/UserManagementPanel";
 import { createQuerySession, streamQuery } from "./lib/agentApi";
+import { getCurrentUserCapability } from "./lib/agentApi";
 import { cn, summarizeResult } from "./lib/format";
+import { capabilityPresentation, shouldAutoScrollChat } from "./lib/userManagement";
 import type { AgentEvent, ChatMessage, StepState } from "./types/agent";
 
 const examples = [
@@ -70,10 +74,33 @@ export default function App({ username }: AppProps) {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [draft, setDraft] = useState("");
     const [activeController, setActiveController] = useState<AbortController | null>(null);
+    const [canManageUsers, setCanManageUsers] = useState<boolean | null>(null);
+    const [capabilityError, setCapabilityError] = useState<unknown>(null);
+    const [managementOpen, setManagementOpen] = useState(false);
     const scrollRef = useRef<HTMLDivElement | null>(null);
+    const desktopManagementRef = useRef<HTMLButtonElement | null>(null);
+    const mobileManagementRef = useRef<HTMLButtonElement | null>(null);
+    const capabilityLoadedRef = useRef(false);
 
     const isStreaming = Boolean(activeController);
     const canSubmit = draft.trim().length > 0 && !isStreaming;
+    const managementCapability = capabilityPresentation(canManageUsers, capabilityError);
+
+    const closeManagement = () => {
+        setManagementOpen(false);
+        requestAnimationFrame(() => {
+            const trigger = window.innerWidth >= 1024 ? desktopManagementRef : mobileManagementRef;
+            trigger.current?.focus();
+        });
+    };
+
+    useEffect(() => {
+        if (capabilityLoadedRef.current) return;
+        capabilityLoadedRef.current = true;
+        void getCurrentUserCapability()
+            .then((response) => setCanManageUsers(response.can_manage_users))
+            .catch((error: unknown) => setCapabilityError(error));
+    }, []);
 
     const completedCount = useMemo(
         () => messages.filter((message) => message.role === "assistant" && message.status === "done").length,
@@ -81,6 +108,7 @@ export default function App({ username }: AppProps) {
     );
 
     useEffect(() => {
+        if (!shouldAutoScrollChat(managementOpen)) return;
         scrollRef.current?.scrollTo({
             top: scrollRef.current.scrollHeight,
             behavior: "smooth",
@@ -231,7 +259,7 @@ export default function App({ username }: AppProps) {
     return (
         <div className="h-dvh overflow-hidden bg-paper text-ink">
             <div className="relative grid h-full min-h-0 overflow-hidden lg:grid-cols-[300px_minmax(0,1fr)]">
-                <aside className="hidden min-h-0 border-r border-ink/10 bg-paper text-ink lg:flex lg:flex-col">
+                <aside inert={managementOpen} className="hidden min-h-0 border-r border-ink/10 bg-paper text-ink lg:flex lg:flex-col">
                     <div className="border-b border-ink/10 px-5 py-5">
                         <div className="flex items-center gap-3">
                             <Seal className="h-10 w-10 text-xl" />
@@ -301,10 +329,24 @@ export default function App({ username }: AppProps) {
                             </div>
                         </div>
                     </div>
+                    {managementCapability.showEntry && (
+                        <div className="border-t border-ink/10 p-4">
+                            <button
+                                ref={desktopManagementRef}
+                                type="button"
+                                onClick={() => setManagementOpen(true)}
+                                aria-expanded={managementOpen}
+                                className="flex h-11 w-full items-center gap-2 rounded-lg border border-ink/15 bg-white px-3 text-sm font-semibold shadow-line hover:border-indigo/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50"
+                            >
+                                <UsersRound className="h-4 w-4" aria-hidden="true" />
+                                用户管理
+                            </button>
+                        </div>
+                    )}
                 </aside>
 
-                <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-                    <header className="flex h-16 shrink-0 items-center justify-between border-b border-ink/10 bg-paper px-4 lg:px-6">
+                <main className="relative flex min-h-0 min-w-0 flex-col overflow-hidden">
+                    <header inert={managementOpen} className="flex h-16 shrink-0 items-center justify-between border-b border-ink/10 bg-paper px-4 lg:px-6">
                         <div className="flex min-w-0 items-center gap-3">
                             <Seal className="h-9 w-9 text-lg lg:hidden" />
                             <div className="min-w-0">
@@ -315,9 +357,22 @@ export default function App({ username }: AppProps) {
                                 <div className="truncate text-xs text-ink/45">自然语言直连数仓</div>
                             </div>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1 sm:gap-3">
+                            {managementCapability.showEntry && (
+                                <button
+                                    ref={mobileManagementRef}
+                                    type="button"
+                                    onClick={() => setManagementOpen(true)}
+                                    aria-expanded={managementOpen}
+                                    title="用户管理"
+                                    aria-label="用户管理"
+                                    className="grid h-11 w-11 place-items-center rounded-full text-ink/70 hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50 lg:hidden"
+                                >
+                                    <UsersRound className="h-4 w-4" aria-hidden="true" />
+                                </button>
+                            )}
                             <span
-                                className="max-w-20 truncate text-xs text-ink/60 sm:max-w-40"
+                                className="hidden max-w-20 truncate text-xs text-ink/60 sm:block sm:max-w-40"
                                 title={username}
                             >
                                 {username}
@@ -353,7 +408,13 @@ export default function App({ username }: AppProps) {
                         </div>
                     </header>
 
-                    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#dfe0d8]">
+                    {managementCapability.hint && (
+                        <p role="status" aria-live="polite" className="border-b border-ink/10 bg-paper px-4 py-2 text-sm text-oxide">
+                            {managementCapability.hint} 聊天仍可继续使用。
+                        </p>
+                    )}
+
+                    <div inert={managementOpen} ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#dfe0d8]">
                         {messages.length === 0 ? (
                             <EmptyState examples={examples} onUseExample={(example) => setDraft(example)} />
                         ) : (
@@ -365,14 +426,19 @@ export default function App({ username }: AppProps) {
                         )}
                     </div>
 
-                    <Composer
-                        value={draft}
-                        disabled={!canSubmit}
-                        isStreaming={isStreaming}
-                        onChange={setDraft}
-                        onSubmit={() => startQuery()}
-                        onStop={stopQuery}
-                    />
+                    <div inert={managementOpen} className="shrink-0">
+                        <Composer
+                            value={draft}
+                            disabled={!canSubmit}
+                            isStreaming={isStreaming}
+                            onChange={setDraft}
+                            onSubmit={() => startQuery()}
+                            onStop={stopQuery}
+                        />
+                    </div>
+                    {managementOpen && managementCapability.showEntry && (
+                        <UserManagementPanel onClose={closeManagement} />
+                    )}
                 </main>
             </div>
         </div>
