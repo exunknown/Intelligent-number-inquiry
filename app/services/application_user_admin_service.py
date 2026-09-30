@@ -121,10 +121,15 @@ class ApplicationUserAdminService:
         request_key: str,
         actor_user_id: str,
     ) -> ApplicationUser | None:
-        self._validate_reason(reason)
+        clean_reason = self._validate_reason(reason)
         if status not in {"active", "disabled"}:
             raise ValueError("unsupported application user status")
 
+        previous = await self.repository.replay_status(
+            user_id=user_id, status=status, request_key=request_key
+        )
+        if previous is not None:
+            return previous
         target = await self.repository.get(user_id)
         if target is None:
             return None
@@ -143,7 +148,7 @@ class ApplicationUserAdminService:
             status=status,
             actor_user_id=actor_user_id,
             request_key=request_key,
-            reason=reason.strip(),
+            reason=clean_reason,
         )
 
     async def replace_roles(
@@ -160,6 +165,11 @@ class ApplicationUserAdminService:
         if desired_roles - APP_ROLES:
             raise ValueError("unsupported application role")
 
+        previous = await self.repository.replay_roles(
+            user_id=user_id, roles=desired_roles, request_key=request_key
+        )
+        if previous is not None:
+            return previous
         target = await self.repository.get(user_id)
         if target is None:
             return None

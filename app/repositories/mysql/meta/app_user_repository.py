@@ -219,6 +219,51 @@ class AppUserRepository:
             for model in models_by_id.values()
         ]
 
+    async def replay_status(
+        self,
+        *,
+        user_id: str,
+        status: Literal["active", "disabled"],
+        request_key: str,
+    ) -> ApplicationUser | None:
+        if status not in {"active", "disabled"}:
+            raise ValueError("unsupported application user status")
+        try:
+            previous = await self._idempotent_result(
+                request_key,
+                user_id=user_id,
+                expected_operations="enable" if status == "active" else "disable",
+                expected_status=status,
+            )
+        except Exception:
+            await self.session.rollback()
+            raise
+        if previous is not None:
+            await self.session.rollback()
+        return previous
+
+    async def replay_roles(
+        self,
+        *,
+        user_id: str,
+        roles: Collection[str],
+        request_key: str,
+    ) -> ApplicationUser | None:
+        desired_roles = self._validate_roles(roles)
+        try:
+            previous = await self._idempotent_result(
+                request_key,
+                user_id=user_id,
+                expected_operations={"assign_role", "revoke_role", "replace_roles"},
+                expected_application_roles=desired_roles,
+            )
+        except Exception:
+            await self.session.rollback()
+            raise
+        if previous is not None:
+            await self.session.rollback()
+        return previous
+
     async def set_status(
         self,
         *,
@@ -439,7 +484,9 @@ class AppUserRepository:
         return clean_reason
 
     @staticmethod
-    def _snapshot(model: AppUserMySQL, roles: Collection[str]) -> dict[str, object]:
+    def _snapshot(
+        model: AppUserMySQL, roles: Collection[str | AppUserRoleMySQL]
+    ) -> dict[str, object]:
         return {
             "user_id": model.user_id,
             "username": model.username,
@@ -454,7 +501,7 @@ class AppUserRepository:
             ),
             "disabled_by": model.disabled_by,
             "updated_at": model.updated_at.isoformat(),
-            "application_roles": sorted(roles),
+            "application_roles": sorted(AppUserRepository._role_codes(roles)),
         }
 
     @staticmethod
@@ -505,7 +552,16 @@ class AppUserRepository:
         )
 
     @staticmethod
-    def _to_entity(model: AppUserMySQL, roles: Collection[str]) -> ApplicationUser:
+    def _role_codes(roles: Collection[str | AppUserRoleMySQL]) -> frozenset[str]:
+        return frozenset(
+            role.role_code if isinstance(role, AppUserRoleMySQL) else role
+            for role in roles
+        )
+
+    @staticmethod
+    def _to_entity(
+        model: AppUserMySQL, roles: Collection[str | AppUserRoleMySQL]
+    ) -> ApplicationUser:
         return ApplicationUser(
             user_id=model.user_id,
             username=model.username,
@@ -518,5 +574,5 @@ class AppUserRepository:
             disabled_at=model.disabled_at,
             disabled_by=model.disabled_by,
             updated_at=model.updated_at,
-            application_roles=frozenset(roles),
+            application_roles=AppUserRepository._role_codes(roles),
         )
