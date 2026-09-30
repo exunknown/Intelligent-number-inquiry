@@ -2,6 +2,8 @@
 
 from dataclasses import replace
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.entities.app_user import ApplicationUser
 from app.entities.auth import AuthContext
 from app.repositories.mysql.meta.app_user_repository import AppUserRepository
@@ -46,7 +48,7 @@ class ApplicationUserService:
                 email=auth.email,
                 observed_roles=auth.keycloak_roles,
             )
-        except Exception as exc:
+        except SQLAlchemyError as exc:
             raise ApplicationUserRepositoryUnavailableError(
                 "application user repository unavailable"
             ) from exc

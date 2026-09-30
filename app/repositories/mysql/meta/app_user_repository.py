@@ -34,6 +34,16 @@ class AppUserRepository:
         return normalized
 
     @staticmethod
+    def _normalize_observed_roles(roles: Collection[str]) -> frozenset[str]:
+        normalized: set[str] = set()
+        for role in roles:
+            if not isinstance(role, str):
+                raise ValueError("observed roles must contain strings")
+            if role:
+                normalized.add(role)
+        return frozenset(normalized)
+
+    @staticmethod
     def _optional_value(value: str | None) -> str | None:
         return value if value else None
 
@@ -46,7 +56,7 @@ class AppUserRepository:
         email: str | None,
         observed_roles: Collection[str],
     ) -> ApplicationUser:
-        roles = sorted(self._validate_roles(observed_roles))
+        roles = sorted(self._normalize_observed_roles(observed_roles))
         now = self._now()
         values = {
             "user_id": user_id,
