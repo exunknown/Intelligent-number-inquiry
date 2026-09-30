@@ -1,0 +1,55 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "title": "问数请求速率",
+      "type": "timeseries",
+      "targets": [{"expr": "sum by (outcome) (rate(shopkeeper_query_requests_total[5m]))", "legendFormat": "{{outcome}}", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "title": "问数错误率",
+      "type": "timeseries",
+      "targets": [{"expr": "100 * sum(rate(shopkeeper_query_requests_total{outcome=~\"error|aborted\"}[5m])) / sum(rate(shopkeeper_query_requests_total[5m]))", "legendFormat": "错误率", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "title": "问数请求延迟",
+      "type": "timeseries",
+      "targets": [{"expr": "shopkeeper_query_request_latency_ms", "legendFormat": "{{quantile}}", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 4,
+      "title": "依赖调用与错误",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "sum by (dependency) (rate(shopkeeper_query_dependency_calls_total[5m]))", "legendFormat": "调用 {{dependency}}", "refId": "A"},
+        {"expr": "sum by (dependency) (rate(shopkeeper_query_dependency_errors_total[5m]))", "legendFormat": "错误 {{dependency}}", "refId": "B"}
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["shopkeeper", "问数"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "Shopkeeper 问数服务",
+  "uid": "shopkeeper-overview",
+  "version": 1
+}

@@ -1,0 +1,46 @@
+groups:
+  - name: shopkeeper-availability
+    rules:
+      - alert: ShopkeeperApiDown
+        expr: up{job="shopkeeper-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "问数 API 指标端点不可用"
+          description: "Prometheus 连续 2 分钟无法抓取问数 API。"
+
+      - alert: ShopkeeperQueryErrorRateHigh
+        expr: |
+          sum(rate(shopkeeper_query_requests_total{outcome=~"error|aborted"}[5m]))
+            /
+          sum(rate(shopkeeper_query_requests_total[5m])) > 0.2
+          and sum(rate(shopkeeper_query_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "问数错误率过高"
+          description: "最近 5 分钟问数错误率超过 20%。"
+
+      - alert: ShopkeeperQueryP95High
+        expr: shopkeeper_query_request_latency_ms{quantile="p95"} > 120000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "问数 P95 延迟过高"
+          description: "问数请求 P95 延迟连续 5 分钟超过 120 秒。"
+
+      - alert: ShopkeeperDependencyErrorRateHigh
+        expr: |
+          sum by (dependency) (rate(shopkeeper_query_dependency_errors_total[5m]))
+            /
+          sum by (dependency) (rate(shopkeeper_query_dependency_calls_total[5m])) > 0.2
+          and sum by (dependency) (rate(shopkeeper_query_dependency_calls_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "问数依赖错误率过高"
+          description: "某个下游依赖最近 5 分钟错误率超过 20%。"

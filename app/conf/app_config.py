@@ -219,6 +219,15 @@ class SSEConfig:
 
 
 @dataclass
+class MetricsConfig:
+    """Prometheus 指标端点配置。"""
+
+    enabled: bool
+    path: str
+    token: str
+
+
+@dataclass
 class AppConfig:
     """项目级总配置入口"""
 
@@ -239,6 +248,7 @@ class AppConfig:
     sql_safety: SQLSafetyConfig
     resource: ResourceConfig
     sse: SSEConfig
+    metrics: MetricsConfig
 
 
 # 获取配置文件位置（为了不硬编码）：从当前文件位置回到项目根目录，再定位到 conf/app_config.yaml
