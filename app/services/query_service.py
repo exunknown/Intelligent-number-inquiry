@@ -2,8 +2,9 @@
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from time import perf_counter
+from uuid import uuid4
 
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 
@@ -26,6 +27,7 @@ from app.entities.auth import QueryPrincipal
 from app.entities.query_audit import QueryAuditRecord
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
+from app.repositories.minio.result_object_store import ResultObjectStore
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
 from app.repositories.mysql.dw.sql_fallback_repository import SQLFallbackRepository
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
@@ -36,11 +38,13 @@ from app.repositories.mysql.meta.metric_candidate_repository import (
     MetricCandidateRepository,
 )
 from app.repositories.mysql.meta.query_audit_repository import QueryAuditRepository
+from app.repositories.mysql.meta.query_export_repository import QueryExportRepository
 from app.repositories.mysql.meta.query_session_repository import QuerySessionRepository
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
 )
+from app.repositories.redis.sse_event_repository import SSEEventRepository
 from app.security.sql_policy import SQLPolicyEngine
 
 _AUDIT_EVENT_FIELDS = (
@@ -92,6 +96,9 @@ class QueryService:
         value_es_repository: ValueESRepository,
         query_audit_repository: QueryAuditRepository | None = None,
         query_session_repository: QuerySessionRepository | None = None,
+        sse_event_repository: SSEEventRepository | None = None,
+        query_export_repository: QueryExportRepository | None = None,
+        result_object_store: ResultObjectStore | None = None,
         metadata_release_repository: MetadataReleaseRepository | None = None,
         metric_candidate_repository: MetricCandidateRepository | None = None,
         sql_fallback_repository: SQLFallbackRepository | None = None,
@@ -107,11 +114,93 @@ class QueryService:
         self.value_es_repository = value_es_repository
         self.query_audit_repository = query_audit_repository
         self.query_session_repository = query_session_repository
+        self.sse_event_repository = sse_event_repository
+        self.query_export_repository = query_export_repository
+        self.result_object_store = result_object_store
         self.metadata_release_repository = metadata_release_repository
         self.metric_candidate_repository = metric_candidate_repository
         self.sql_fallback_repository = sql_fallback_repository
         self.sql_policy_engine = sql_policy_engine
         self.metrics = metrics or get_query_metrics()
+
+    async def _externalize_result(
+        self,
+        payload: dict,
+        *,
+        request_id: str,
+        user_id: str,
+        policy_version: int,
+        session_id: str | None,
+    ) -> dict:
+        """把超出 SSE 内联阈值的结果保存到 MinIO，只向客户端发送预览。"""
+
+        data = payload.get("data")
+        inline_bytes = len(
+            json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+        )
+        if inline_bytes <= app_config.sse.max_inline_result_bytes:
+            return payload
+        if self.query_export_repository is None or self.result_object_store is None:
+            raise QueryExecutionError(
+                "result_export_unavailable", "结果过大且导出存储未就绪", False
+            )
+
+        export_id = str(uuid4())
+        object_key = f"query-results/{export_id}.json"
+        expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
+            seconds=app_config.minio.export_ttl_seconds
+        )
+        export_document = {
+            "request_id": request_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "row_count": payload.get("row_count")
+            if payload.get("row_count") is not None
+            else (len(data) if isinstance(data, list) else None),
+            "data": data,
+        }
+        object_bytes = json.dumps(
+            export_document, ensure_ascii=False, default=str, separators=(",", ":")
+        ).encode("utf-8")
+        try:
+            await self.result_object_store.put_json(object_key, object_bytes)
+            await self.query_export_repository.create(
+                export_id=export_id,
+                request_id=request_id,
+                user_id=user_id,
+                policy_version=policy_version,
+                session_id=session_id,
+                object_key=object_key,
+                result_bytes=len(object_bytes),
+                row_count=export_document["row_count"],
+                expires_at=expires_at,
+            )
+        except Exception as error:
+            logger.warning(
+                "Failed to save result export error_type={}", type(error).__name__
+            )
+            try:
+                await self.result_object_store.delete(object_key)
+            except Exception:
+                logger.warning("Failed to clean up result export object")
+            raise QueryExecutionError(
+                "result_export_unavailable", "结果导出暂不可用，请稍后重试", False
+            ) from error
+
+        preview = (
+            list(data[: app_config.sse.result_preview_rows])
+            if isinstance(data, list)
+            else []
+        )
+        output = dict(payload)
+        output["data"] = preview
+        output["row_count"] = export_document["row_count"]
+        output["truncated"] = True
+        output["export_id"] = export_id
+        output["export_available"] = True
+        output["export_expires_at"] = expires_at.replace(
+            tzinfo=timezone.utc
+        ).isoformat()
+        return output
 
     async def query(
         self,
@@ -194,10 +283,18 @@ class QueryService:
         event_sequence = 0
         terminal_sent = False
 
-        def serialize(payload: dict) -> str:
+        async def serialize(payload: dict) -> str:
             nonlocal event_sequence
             event_sequence += 1
-            return _serialize_sse_event(payload, request_id, event_sequence)
+            frame = _serialize_sse_event(payload, request_id, event_sequence)
+            if self.sse_event_repository is not None:
+                try:
+                    await self.sse_event_repository.append_frame(
+                        request_id, event_sequence, frame
+                    )
+                except Exception:
+                    logger.warning("Failed to persist SSE event")
+            return frame
 
         graph_stream = None
         pending_chunk = None
@@ -217,7 +314,7 @@ class QueryService:
                     )
                     if not done:
                         if not terminal_sent:
-                            yield serialize({"type": "heartbeat"})
+                            yield await serialize({"type": "heartbeat"})
                         continue
                     try:
                         chunk = pending_chunk.result()
@@ -243,6 +340,14 @@ class QueryService:
                                     (perf_counter() - node_started) * 1000,
                                     status,
                                 )
+                    if isinstance(chunk, dict) and chunk.get("type") == "result":
+                        chunk = await self._externalize_result(
+                            chunk,
+                            request_id=request_id,
+                            user_id=principal.auth.user_id,
+                            policy_version=principal.permissions.policy_version,
+                            session_id=session_id,
+                        )
                     if isinstance(chunk, dict) and chunk.get("type") in {
                         "result",
                         "error",
@@ -260,12 +365,12 @@ class QueryService:
                     elif isinstance(chunk, dict) and chunk.get("type") == "result":
                         audit["outcome"] = "success"
                         audit["verified"] = chunk.get("verified")
-                    yield serialize(chunk)
+                    yield await serialize(chunk)
                 if not terminal_sent:
                     terminal_sent = True
                     audit["outcome"] = "error"
                     audit["error_code"] = "missing_terminal_event"
-                    yield serialize(
+                    yield await serialize(
                         {
                             "type": "error",
                             "code": "missing_terminal_event",
@@ -285,7 +390,7 @@ class QueryService:
             }
             if not terminal_sent:
                 terminal_sent = True
-                yield serialize(error)
+                yield await serialize(error)
         except asyncio.CancelledError:
             audit["outcome"] = "cancelled"
             raise
@@ -301,7 +406,7 @@ class QueryService:
             }
             if not terminal_sent:
                 terminal_sent = True
-                yield serialize(error)
+                yield await serialize(error)
         except Exception:
             logger.error("Unexpected question execution error")
             audit["outcome"] = "error"
@@ -314,7 +419,7 @@ class QueryService:
             }
             if not terminal_sent:
                 terminal_sent = True
-                yield serialize(error)
+                yield await serialize(error)
         finally:
             if pending_chunk is not None and not pending_chunk.done():
                 pending_chunk.cancel()

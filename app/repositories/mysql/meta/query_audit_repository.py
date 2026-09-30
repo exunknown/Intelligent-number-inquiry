@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context import request_id_ctx_var
@@ -61,3 +62,16 @@ class QueryAuditRepository:
         except Exception:
             await self.session.rollback()
             raise
+
+    async def has_owned_request(self, request_id: str, user_id: str) -> bool:
+        """确认请求审计记录属于当前用户，避免重放接口泄露请求存在性。"""
+
+        result = await self.session.execute(
+            select(QueryAuditMySQL.id)
+            .where(
+                QueryAuditMySQL.request_id == request_id,
+                QueryAuditMySQL.user_id == user_id,
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None

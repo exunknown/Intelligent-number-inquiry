@@ -148,6 +148,9 @@ export default function App({ username }: AppProps) {
                                 result: event.data,
                                 verified: event.verified,
                                 warning: event.warning,
+                                rowCount: event.row_count,
+                                truncated: event.truncated,
+                                exportId: event.export_id,
                             };
                         case "error":
                             return {

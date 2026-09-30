@@ -114,7 +114,12 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
                                     </span>
                                 </div>
                             )}
-                            <ResultTable data={message.result} />
+                            <ResultTable
+                                data={message.result}
+                                exportId={message.exportId}
+                                rowCount={message.rowCount}
+                                truncated={message.truncated}
+                            />
                         </>
                     )}
 

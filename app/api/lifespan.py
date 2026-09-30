@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from app.clients.cube_client_manager import get_cube_client_manager
 from app.clients.embedding_client_manager import get_embedding_client_manager
 from app.clients.es_client_manager import get_es_client_manager
+from app.clients.minio_client_manager import get_minio_client_manager
 from app.clients.mysql_client_manager import (
     dw_mysql_client_manager,
     meta_mysql_client_manager,
@@ -20,6 +21,7 @@ from app.clients.mysql_client_manager import (
 )
 from app.clients.oidc_client_manager import get_oidc_client_manager
 from app.clients.qdrant_client_manager import get_qdrant_client_manager
+from app.clients.redis_client_manager import get_redis_client_manager
 from app.conf.app_config import app_config
 
 
@@ -33,6 +35,8 @@ async def lifespan(app: FastAPI):
     get_es_client_manager().init()
     get_cube_client_manager().init()
     get_oidc_client_manager().init()
+    get_redis_client_manager().init()
+    get_minio_client_manager().init()
     meta_mysql_client_manager.init()
     dw_mysql_client_manager.init()
     if app_config.sql_safety.enabled:
@@ -46,6 +50,8 @@ async def lifespan(app: FastAPI):
     await get_es_client_manager().close()
     await get_cube_client_manager().close()
     await get_oidc_client_manager().close()
+    await get_redis_client_manager().close()
+    await get_minio_client_manager().close()
     await meta_mysql_client_manager.close()
     await dw_mysql_client_manager.close()
     if app_config.sql_safety.enabled:

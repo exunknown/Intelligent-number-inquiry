@@ -92,6 +92,35 @@ class ESConfig:
 
 
 @dataclass
+class RedisConfig:
+    """Redis 短期事件存储配置。"""
+
+    enabled: bool
+    host: str
+    port: int
+    db: int
+    password: str
+    socket_timeout_seconds: float
+    event_ttl_seconds: int
+    max_events: int
+
+
+@dataclass
+class MinIOConfig:
+    """MinIO 结果对象存储配置。"""
+
+    enabled: bool
+    endpoint: str
+    access_key: str
+    secret_key: str
+    secure: bool
+    bucket: str
+    configure_lifecycle: bool
+    export_ttl_seconds: int
+    max_object_bytes: int
+
+
+@dataclass
 class LLMConfig:
     """大模型调用配置"""
 
@@ -185,6 +214,8 @@ class SSEConfig:
     """SSE 长连接配置。"""
 
     heartbeat_seconds: float
+    max_inline_result_bytes: int
+    result_preview_rows: int
 
 
 @dataclass
@@ -198,6 +229,8 @@ class AppConfig:
     qdrant: QdrantConfig
     embedding: EmbeddingConfig
     es: ESConfig
+    redis: RedisConfig
+    minio: MinIOConfig
     llm: LLMConfig
     ini: IniConfig
     selector: SelectorConfig

@@ -2,7 +2,9 @@
  * 查询结果表格组件
  * 将后端返回的结构化数据归一化为可滚动报表（黛蓝表头，数值列右对齐）
  */
-import { Database, FileJson } from "lucide-react";
+import { Database, Download, FileJson } from "lucide-react";
+import { useState } from "react";
+import { downloadQueryExport } from "../lib/agentApi";
 import { cn } from "../lib/format";
 
 function normalizeRows(data: unknown): Array<Record<string, unknown>> {
@@ -46,7 +48,19 @@ function isNumericColumn(rows: Array<Record<string, unknown>>, column: string) {
     return seen;
 }
 
-export function ResultTable({ data }: { data: unknown }) {
+export function ResultTable({
+    data,
+    exportId,
+    rowCount,
+    truncated,
+}: {
+    data: unknown;
+    exportId?: string;
+    rowCount?: number;
+    truncated?: boolean;
+}) {
+    const [downloading, setDownloading] = useState(false);
+    const [downloadError, setDownloadError] = useState<string | null>(null);
     const rows = normalizeRows(data);
     const columns = Array.from(
         rows.reduce((keys, row) => {
@@ -61,6 +75,25 @@ export function ResultTable({ data }: { data: unknown }) {
 
     const numericColumns = new Set(columns.filter((column) => isNumericColumn(rows, column)));
 
+    const download = async () => {
+        if (!exportId || downloading) return;
+        setDownloading(true);
+        setDownloadError(null);
+        try {
+            const blob = await downloadQueryExport(exportId);
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = `${exportId}.json`;
+            anchor.click();
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            setDownloadError(error instanceof Error ? error.message : "结果下载失败");
+        } finally {
+            setDownloading(false);
+        }
+    };
+
     return (
         <section className="mt-4 overflow-hidden rounded-xl border border-ink/15 bg-white">
             <div className="flex items-center justify-between border-b border-ink/10 px-4 py-3">
@@ -70,9 +103,22 @@ export function ResultTable({ data }: { data: unknown }) {
                 </div>
                 <div className="flex items-center gap-2 text-xs text-ink/55">
                     <FileJson className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span className="tabular-nums">{rows.length} 行</span>
+                    <span className="tabular-nums">{rowCount ?? rows.length} 行{truncated ? "（预览）" : ""}</span>
+                    {exportId && (
+                        <button
+                            type="button"
+                            onClick={download}
+                            disabled={downloading}
+                            title={downloading ? "正在下载" : "下载完整结果"}
+                            aria-label={downloading ? "正在下载" : "下载完整结果"}
+                            className="rounded-full p-1.5 text-indigo transition hover:bg-indigo/10 disabled:cursor-wait disabled:opacity-50"
+                        >
+                            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                    )}
                 </div>
             </div>
+            {downloadError && <div className="border-b border-oxide/20 bg-oxide/5 px-4 py-2 text-xs text-oxide">{downloadError}</div>}
             <div className="max-h-[360px] overflow-auto">
                 <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
                     <thead className="sticky top-0 z-10">

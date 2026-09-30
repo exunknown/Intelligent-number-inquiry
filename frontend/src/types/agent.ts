@@ -31,6 +31,9 @@ export type ResultEvent = {
   warning: string | null;
   row_count?: number;
   truncated?: boolean;
+  export_id?: string;
+  export_available?: boolean;
+  export_expires_at?: string;
 };
 
 export type ErrorEvent = {
@@ -74,4 +77,7 @@ export type ChatMessage = {
   error?: string;
   errorCode?: string;
   retryable?: boolean;
+  rowCount?: number;
+  truncated?: boolean;
+  exportId?: string;
 };

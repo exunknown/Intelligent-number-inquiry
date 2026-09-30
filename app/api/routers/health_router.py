@@ -1,7 +1,12 @@
 """提供给网关和容器编排使用的存活、就绪检查。"""
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 
+from app.api.dependencies import get_result_object_store
+from app.clients.redis_client_manager import get_redis_client_manager
+from app.conf.app_config import app_config
 from app.core.log import logger
 from app.scripts.check_metadata_release import verify_active_release
 
@@ -21,6 +26,15 @@ async def ready_handler() -> dict[str, str | int | None]:
 
     try:
         result = await verify_active_release()
+        async with asyncio.timeout(5):
+            if app_config.redis.enabled:
+                redis_client = get_redis_client_manager().client
+                if redis_client is None:
+                    raise RuntimeError("redis client is not initialized")
+                await redis_client.ping()
+            if app_config.minio.enabled:
+                object_store = await get_result_object_store()
+                await object_store.ensure_bucket()
     except Exception as error:
         logger.warning(
             "应用就绪检查失败 error_type={}",

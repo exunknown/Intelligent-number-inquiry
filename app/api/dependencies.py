@@ -15,15 +15,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.clients.cube_client_manager import get_cube_client_manager
 from app.clients.embedding_client_manager import get_embedding_client_manager
 from app.clients.es_client_manager import get_es_client_manager
+from app.clients.minio_client_manager import get_minio_client_manager
 from app.clients.mysql_client_manager import (
     dw_mysql_client_manager,
     meta_mysql_client_manager,
     sql_fallback_mysql_client_manager,
 )
 from app.clients.qdrant_client_manager import get_qdrant_client_manager
+from app.clients.redis_client_manager import get_redis_client_manager
 from app.conf.app_config import app_config
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
+from app.repositories.minio.result_object_store import ResultObjectStore
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
 from app.repositories.mysql.dw.sql_fallback_repository import SQLFallbackRepository
 from app.repositories.mysql.meta.authz_policy_repository import AuthzPolicyRepository
@@ -35,12 +38,14 @@ from app.repositories.mysql.meta.metric_candidate_repository import (
     MetricCandidateRepository,
 )
 from app.repositories.mysql.meta.query_audit_repository import QueryAuditRepository
+from app.repositories.mysql.meta.query_export_repository import QueryExportRepository
 from app.repositories.mysql.meta.query_session_repository import QuerySessionRepository
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
 )
 from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantRepository
+from app.repositories.redis.sse_event_repository import SSEEventRepository
 from app.security.sql_policy import SQLPolicyEngine, SQLPolicyLimits
 from app.services.authorization_service import (
     AuthorizationCacheState,
@@ -93,6 +98,29 @@ async def get_query_session_repository(
     """创建请求级查询会话仓储。"""
 
     return QuerySessionRepository(session)
+
+
+async def get_sse_event_repository() -> SSEEventRepository:
+    """创建进程级 Redis SSE 事件仓储。"""
+
+    return SSEEventRepository(
+        get_redis_client_manager().client,
+        app_config.redis,
+    )
+
+
+async def get_query_export_repository(
+    session: Annotated[AsyncSession, Depends(get_meta_session)],
+) -> QueryExportRepository:
+    """创建请求级导出对象归属仓储。"""
+
+    return QueryExportRepository(session)
+
+
+async def get_result_object_store() -> ResultObjectStore:
+    """创建进程级 MinIO 对象存储适配器。"""
+
+    return ResultObjectStore(get_minio_client_manager().client, app_config.minio)
 
 
 async def get_metadata_release_repository(
@@ -255,6 +283,13 @@ async def get_query_service(
     query_session_repository: Annotated[
         QuerySessionRepository, Depends(get_query_session_repository)
     ],
+    sse_event_repository: Annotated[
+        SSEEventRepository, Depends(get_sse_event_repository)
+    ],
+    query_export_repository: Annotated[
+        QueryExportRepository, Depends(get_query_export_repository)
+    ],
+    result_object_store: Annotated[ResultObjectStore, Depends(get_result_object_store)],
     metadata_release_repository: Annotated[
         MetadataReleaseRepository, Depends(get_metadata_release_repository)
     ],
@@ -279,6 +314,9 @@ async def get_query_service(
         value_es_repository=value_es_repository,
         query_audit_repository=query_audit_repository,
         query_session_repository=query_session_repository,
+        sse_event_repository=sse_event_repository,
+        query_export_repository=query_export_repository,
+        result_object_store=result_object_store,
         metadata_release_repository=metadata_release_repository,
         metric_candidate_repository=metric_candidate_repository,
         sql_fallback_repository=sql_fallback_repository,

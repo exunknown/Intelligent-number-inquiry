@@ -96,6 +96,19 @@ export async function createQuerySession(title?: string): Promise<QuerySessionSu
   return (await response.json()) as QuerySessionSummary;
 }
 
+export async function downloadQueryExport(exportId: string): Promise<Blob> {
+  const accessToken = await getAccessToken();
+  const response = await fetch(`${API_BASE_URL}/api/exports/${exportId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) {
+    throw new Error(
+      response.status === 410 ? "结果导出已过期" : `结果下载失败：HTTP ${response.status}`,
+    );
+  }
+  return response.blob();
+}
+
 function parseSseChunk(chunk: string): AgentEvent | null {
   const payload = chunk
     .split("\n")

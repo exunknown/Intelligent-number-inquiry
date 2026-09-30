@@ -51,6 +51,27 @@ es:
   index_name: data_agent
   timeout_seconds: ${oc.env:ES_TIMEOUT_SECONDS,10}
 
+redis:
+  enabled: ${oc.env:REDIS_ENABLED,true}
+  host: ${oc.env:REDIS_HOST,127.0.0.1}
+  port: ${oc.env:REDIS_PORT,6379}
+  db: ${oc.env:REDIS_DB,0}
+  password: ${oc.env:REDIS_PASSWORD,''}
+  socket_timeout_seconds: ${oc.env:REDIS_SOCKET_TIMEOUT_SECONDS,2}
+  event_ttl_seconds: ${oc.env:SSE_EVENT_TTL_SECONDS,900}
+  max_events: ${oc.env:SSE_MAX_EVENTS,500}
+
+minio:
+  enabled: ${oc.env:MINIO_ENABLED,true}
+  endpoint: ${oc.env:MINIO_ENDPOINT,127.0.0.1:9000}
+  access_key: ${oc.env:MINIO_ACCESS_KEY,''}
+  secret_key: ${oc.env:MINIO_SECRET_KEY,''}
+  secure: ${oc.env:MINIO_SECURE,false}
+  bucket: ${oc.env:MINIO_BUCKET,shopkeeper-results}
+  configure_lifecycle: ${oc.env:MINIO_CONFIGURE_LIFECYCLE,false}
+  export_ttl_seconds: ${oc.env:MINIO_EXPORT_TTL_SECONDS,900}
+  max_object_bytes: ${oc.env:MINIO_MAX_OBJECT_BYTES,52428800}
+
 llm:
   model_name: ${oc.env:LLM_MODEL_NAME}
   api_key: ${oc.env:LLM_API_KEY}
@@ -114,3 +135,5 @@ resource:
 
 sse:
   heartbeat_seconds: ${oc.env:SSE_HEARTBEAT_SECONDS,15}
+  max_inline_result_bytes: ${oc.env:SSE_MAX_INLINE_RESULT_BYTES,262144}
+  result_preview_rows: ${oc.env:SSE_RESULT_PREVIEW_ROWS,50}

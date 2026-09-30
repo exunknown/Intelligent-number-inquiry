@@ -16,7 +16,9 @@ from app.api.routers.health_router import health_router
 from app.api.routers.metric_candidate_router import metric_candidate_router
 from app.api.routers.metric_catalog_router import metric_catalog_router
 from app.api.routers.query_router import query_router
+from app.api.routers.export_router import export_router
 from app.api.routers.session_router import session_router
+from app.api.routers.sse_replay_router import sse_replay_router
 from app.conf.app_config import app_config
 from app.core.context import request_id_ctx_var
 from app.core.resource_governance import QueryBodyLimitMiddleware
@@ -30,7 +32,9 @@ app.add_middleware(
 
 # 把查询路由注册进应用；没有挂载时，/docs 和真实 HTTP 请求都访问不到该接口
 app.include_router(query_router)
+app.include_router(export_router)
 app.include_router(session_router)
+app.include_router(sse_replay_router)
 app.include_router(metric_catalog_router)
 app.include_router(metric_candidate_router)
 app.include_router(authz_router)
