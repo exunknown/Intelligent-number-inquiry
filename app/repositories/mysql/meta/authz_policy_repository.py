@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import LargeBinary, cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.entities.authz_policy import AuthzPolicy, AuthzPolicyCreate
@@ -25,7 +25,10 @@ class AuthzPolicyRepository:
             .order_by(AuthzPolicyMySQL.version, AuthzPolicyMySQL.id)
         )
         if subject:
-            statement = statement.where(AuthzPolicyMySQL.subject == subject)
+            statement = statement.where(
+                AuthzPolicyMySQL.subject == subject,
+                cast(AuthzPolicyMySQL.subject, LargeBinary) == subject.encode("utf-8"),
+            )
         result = await self.session.execute(statement)
         return [self._to_entity(model) for model in result.scalars().all()]
 
