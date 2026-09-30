@@ -1,11 +1,12 @@
 """应用侧用户及角色仓储。"""
 
 from datetime import datetime, timezone
-from typing import Collection
+from typing import Collection, Literal
 from uuid import uuid4
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.entities.app_user import APP_ROLES, ApplicationUser
@@ -160,7 +161,7 @@ class AppUserRepository:
         self,
         *,
         user_id: str,
-        status: str,
+        status: Literal["active", "disabled"],
         actor_user_id: str,
         request_key: str,
         reason: str,
@@ -168,12 +169,13 @@ class AppUserRepository:
         if status not in {"active", "disabled"}:
             raise ValueError("unsupported application user status")
         clean_reason = self._validate_reason(reason)
-        previous = await self._idempotent_result(request_key)
-        if previous is not None:
-            return previous
 
         try:
             model, roles = await self._load_user_with_roles(user_id, for_update=True)
+            previous = await self._idempotent_result(request_key)
+            if previous is not None:
+                await self.session.rollback()
+                return previous
             if model is None:
                 return None
             before = self._snapshot(model, roles)
@@ -201,6 +203,12 @@ class AppUserRepository:
             )
             await self.session.commit()
             return self._to_entity(model, roles)
+        except IntegrityError:
+            await self.session.rollback()
+            previous = await self._idempotent_result(request_key)
+            if previous is not None:
+                return previous
+            raise
         except Exception:
             await self.session.rollback()
             raise
@@ -216,19 +224,21 @@ class AppUserRepository:
     ) -> ApplicationUser | None:
         desired_roles = self._validate_roles(roles)
         clean_reason = self._validate_reason(reason)
-        previous = await self._idempotent_result(request_key)
-        if previous is not None:
-            return previous
 
         try:
             model, current_role_models = await self._load_user_with_roles(
                 user_id, for_update=True
             )
+            previous = await self._idempotent_result(request_key)
+            if previous is not None:
+                await self.session.rollback()
+                return previous
             if model is None:
                 return None
             current_roles = {role_model.role_code for role_model in current_role_models}
             before = self._snapshot(model, current_roles)
             now = self._now()
+            model.updated_at = now
             for role_model in current_role_models:
                 if role_model.role_code not in desired_roles:
                     role_model.revoked_at = now
@@ -258,6 +268,12 @@ class AppUserRepository:
             )
             await self.session.commit()
             return self._to_entity(model, desired_roles)
+        except IntegrityError:
+            await self.session.rollback()
+            previous = await self._idempotent_result(request_key)
+            if previous is not None:
+                return previous
+            raise
         except Exception:
             await self.session.rollback()
             raise
@@ -271,10 +287,7 @@ class AppUserRepository:
         change = result.scalar_one_or_none()
         if change is None:
             return None
-        user = await self.get(change.user_id)
-        if user is None:
-            raise RuntimeError("idempotency record references a missing user")
-        return user
+        return self._snapshot_to_entity(change.after_json)
 
     async def _load_user_with_roles(
         self, user_id: str, *, for_update: bool = False
@@ -319,6 +332,29 @@ class AppUserRepository:
             "updated_at": model.updated_at.isoformat(),
             "application_roles": sorted(roles),
         }
+
+    @staticmethod
+    def _snapshot_to_entity(snapshot: dict[str, object]) -> ApplicationUser:
+        def as_datetime(value: object) -> datetime:
+            if isinstance(value, datetime):
+                return value
+            return datetime.fromisoformat(str(value))
+
+        disabled_at = snapshot.get("disabled_at")
+        return ApplicationUser(
+            user_id=str(snapshot["user_id"]),
+            username=snapshot.get("username"),
+            display_name=snapshot.get("display_name"),
+            email=snapshot.get("email"),
+            observed_roles=frozenset(snapshot.get("observed_roles", [])),
+            status=str(snapshot["status"]),
+            first_seen_at=as_datetime(snapshot["first_seen_at"]),
+            last_seen_at=as_datetime(snapshot["last_seen_at"]),
+            disabled_at=(as_datetime(disabled_at) if disabled_at is not None else None),
+            disabled_by=snapshot.get("disabled_by"),
+            updated_at=as_datetime(snapshot["updated_at"]),
+            application_roles=frozenset(snapshot.get("application_roles", [])),
+        )
 
     @staticmethod
     def _change(
