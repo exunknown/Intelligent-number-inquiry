@@ -163,16 +163,27 @@ class AppUserRepository:
         该方法只建立并持有当前事务中的行锁，不提交事务；调用方应在同一
         事务内完成最后平台管理员保护判断及后续变更。
         """
-        user_result = await self.session.execute(
-            select(AppUserMySQL)
-            .join(
-                AppUserRoleMySQL,
-                AppUserRoleMySQL.user_id == AppUserMySQL.user_id,
-            )
+        application_platform_admin = (
+            select(1)
             .where(
-                AppUserMySQL.status == "active",
+                AppUserRoleMySQL.user_id == AppUserMySQL.user_id,
                 AppUserRoleMySQL.role_code == "platform_admin",
                 AppUserRoleMySQL.revoked_at.is_(None),
+            )
+            .exists()
+        )
+        user_result = await self.session.execute(
+            select(AppUserMySQL)
+            .where(
+                AppUserMySQL.status == "active",
+                or_(
+                    func.json_contains(
+                        AppUserMySQL.observed_roles_json,
+                        '"platform_admin"',
+                    )
+                    == 1,
+                    application_platform_admin,
+                ),
             )
             .order_by(AppUserMySQL.user_id)
             .with_for_update()
