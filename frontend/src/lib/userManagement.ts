@@ -81,6 +81,9 @@ export function mapUserManagementError(error: unknown): string {
     if (status === 409 && code === "last_platform_admin") {
         return "不能移除或禁用最后一个平台管理员。请先指定另一位平台管理员。";
     }
+    if (status === 409 && code === "idempotency_conflict") {
+        return "本次请求与已有操作冲突，请刷新用户资料后重新提交。";
+    }
     if (status === 422) return "角色、状态或原因不符合要求，请检查后重试。";
     if (status === 503) return "用户管理服务暂不可用，请稍后重试。";
     const safeMessage = safeUserManagementMessage(message);

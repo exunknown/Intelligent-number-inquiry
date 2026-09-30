@@ -21,6 +21,9 @@ from app.api.schemas.app_user_schema import (
 from app.api.schemas.authz_schema import AuthzPolicyResponse, PermissionPreviewResponse
 from app.entities.app_user import ApplicationUser
 from app.entities.auth import AuthContext
+from app.repositories.mysql.meta.app_user_repository import (
+    AppUserIdempotencyConflictError,
+)
 from app.security.dependencies import (
     get_application_auth_context,
     require_api_permission,
@@ -28,6 +31,9 @@ from app.security.dependencies import (
 from app.services.application_user_admin_service import (
     ApplicationUserAdminService,
     LastPlatformAdminError,
+)
+from app.services.application_user_service import (
+    ApplicationUserRepositoryUnavailableError,
 )
 from app.services.authorization_service import (
     AuthorizationService,
@@ -84,7 +90,12 @@ async def get_current_user_handler(
         AuthorizationService, Depends(get_authorization_service)
     ],
 ) -> ApplicationUserMeResponse:
-    user = await service.get_user(auth.user_id)
+    try:
+        user = await service.get_user(auth.user_id)
+    except ApplicationUserRepositoryUnavailableError as exc:
+        raise HTTPException(
+            status_code=503, detail="application user service unavailable"
+        ) from exc
     if user is None:
         raise HTTPException(status_code=404, detail="application user not found")
     try:
@@ -108,13 +119,18 @@ async def list_users_handler(
         ApplicationUserAdminService, Depends(get_application_user_admin_service)
     ],
 ) -> ApplicationUserListResponse:
-    result = await service.list_users(
-        query=params.query,
-        status=params.status,
-        role=params.role,
-        limit=params.limit,
-        offset=params.offset,
-    )
+    try:
+        result = await service.list_users(
+            query=params.query,
+            status=params.status,
+            role=params.role,
+            limit=params.limit,
+            offset=params.offset,
+        )
+    except ApplicationUserRepositoryUnavailableError as exc:
+        raise HTTPException(
+            status_code=503, detail="application user service unavailable"
+        ) from exc
     return ApplicationUserListResponse(
         items=[_summary(user) for user in result.items],
         total=result.total,
@@ -135,6 +151,10 @@ async def get_user_detail_handler(
 ) -> ApplicationUserDetailResponse:
     try:
         detail = await service.get_user_detail(user_id)
+    except ApplicationUserRepositoryUnavailableError as exc:
+        raise HTTPException(
+            status_code=503, detail="application user service unavailable"
+        ) from exc
     except AuthorizationUnavailableError as exc:
         raise HTTPException(
             status_code=503, detail="authorization service unavailable"
@@ -164,12 +184,24 @@ async def update_user_status_handler(
             request_key=str(idempotency_key),
             actor_user_id=auth.user_id,
         )
+    except ApplicationUserRepositoryUnavailableError as exc:
+        raise HTTPException(
+            status_code=503, detail="application user service unavailable"
+        ) from exc
     except LastPlatformAdminError as exc:
         raise HTTPException(
             status_code=409,
             detail={
                 "code": "last_platform_admin",
                 "message": "cannot remove the last platform admin",
+            },
+        ) from exc
+    except AppUserIdempotencyConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_conflict",
+                "message": "idempotency key conflicts with an existing request",
             },
         ) from exc
     if user is None:
@@ -197,12 +229,24 @@ async def replace_user_roles_handler(
             request_key=str(idempotency_key),
             actor_user_id=auth.user_id,
         )
+    except ApplicationUserRepositoryUnavailableError as exc:
+        raise HTTPException(
+            status_code=503, detail="application user service unavailable"
+        ) from exc
     except LastPlatformAdminError as exc:
         raise HTTPException(
             status_code=409,
             detail={
                 "code": "last_platform_admin",
                 "message": "cannot remove the last platform admin",
+            },
+        ) from exc
+    except AppUserIdempotencyConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_conflict",
+                "message": "idempotency key conflicts with an existing request",
             },
         ) from exc
     if user is None:

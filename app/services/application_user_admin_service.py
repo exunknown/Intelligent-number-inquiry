@@ -1,13 +1,18 @@
 """应用用户管理服务。"""
 
 from dataclasses import dataclass
-from typing import Collection, Literal
+from typing import Awaitable, Callable, Collection, Literal, TypeVar
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.entities.app_user import APP_ROLES, ApplicationUser
 from app.entities.auth import AuthContext, PermissionSnapshot
 from app.entities.authz_policy import AuthzPolicy
 from app.repositories.mysql.meta.app_user_repository import AppUserRepository
 from app.repositories.mysql.meta.authz_policy_repository import AuthzPolicyRepository
+from app.services.application_user_service import (
+    ApplicationUserRepositoryUnavailableError,
+)
 from app.services.authorization_service import (
     AuthorizationService,
     AuthorizationUnavailableError,
@@ -16,6 +21,20 @@ from app.services.authorization_service import (
 
 class LastPlatformAdminError(Exception):
     """拒绝会移除最后一个有效平台管理员来源的变更。"""
+
+
+_ResultT = TypeVar("_ResultT")
+
+
+async def _user_repository_call(
+    operation: Callable[..., Awaitable[_ResultT]], *args, **kwargs
+) -> _ResultT:
+    try:
+        return await operation(*args, **kwargs)
+    except SQLAlchemyError as exc:
+        raise ApplicationUserRepositoryUnavailableError(
+            "application user repository unavailable"
+        ) from exc
 
 
 @dataclass(frozen=True)
@@ -46,7 +65,7 @@ class ApplicationUserAdminService:
         self.authorization_service = authorization_service
 
     async def get_user(self, user_id: str) -> ApplicationUser | None:
-        return await self.repository.get(user_id)
+        return await _user_repository_call(self.repository.get, user_id)
 
     async def list_users(
         self,
@@ -63,7 +82,8 @@ class ApplicationUserAdminService:
             raise ValueError("offset must be non-negative")
         if role is not None and role not in APP_ROLES:
             raise ValueError("unsupported application role")
-        users, total = await self.repository.list_users(
+        users, total = await _user_repository_call(
+            self.repository.list_users,
             query=query,
             status=status,
             role=role,
@@ -73,7 +93,7 @@ class ApplicationUserAdminService:
         return ApplicationUserListResult(items=users, total=total)
 
     async def get_user_detail(self, user_id: str) -> ApplicationUserDetail | None:
-        user = await self.repository.get(user_id)
+        user = await self.get_user(user_id)
         if user is None:
             return None
 
@@ -124,17 +144,25 @@ class ApplicationUserAdminService:
         if status not in {"active", "disabled"}:
             raise ValueError("unsupported application user status")
 
-        previous = await self.repository.replay_status(
-            user_id=user_id, status=status, request_key=request_key
+        previous = await _user_repository_call(
+            self.repository.replay_status,
+            user_id=user_id,
+            status=status,
+            request_key=request_key,
         )
         if previous is not None:
             return previous
-        target = await self.repository.get(user_id)
+        target = await self.get_user(user_id)
         if target is None:
             return None
-        candidates = await self.repository.lock_active_platform_admin_candidates()
-        current_target = await self.repository.get_for_update(user_id)
-        previous = await self.repository.replay_status(
+        candidates = await _user_repository_call(
+            self.repository.lock_active_platform_admin_candidates
+        )
+        current_target = await _user_repository_call(
+            self.repository.get_for_update, user_id
+        )
+        previous = await _user_repository_call(
+            self.repository.replay_status,
             user_id=user_id,
             status=status,
             request_key=request_key,
@@ -152,7 +180,8 @@ class ApplicationUserAdminService:
             raise LastPlatformAdminError(
                 "cannot remove the last effective platform admin"
             )
-        return await self.repository.set_status(
+        return await _user_repository_call(
+            self.repository.set_status,
             user_id=user_id,
             status=status,
             actor_user_id=actor_user_id,
@@ -174,17 +203,25 @@ class ApplicationUserAdminService:
         if desired_roles - APP_ROLES:
             raise ValueError("unsupported application role")
 
-        previous = await self.repository.replay_roles(
-            user_id=user_id, roles=desired_roles, request_key=request_key
+        previous = await _user_repository_call(
+            self.repository.replay_roles,
+            user_id=user_id,
+            roles=desired_roles,
+            request_key=request_key,
         )
         if previous is not None:
             return previous
-        target = await self.repository.get(user_id)
+        target = await self.get_user(user_id)
         if target is None:
             return None
-        candidates = await self.repository.lock_active_platform_admin_candidates()
-        current_target = await self.repository.get_for_update(user_id)
-        previous = await self.repository.replay_roles(
+        candidates = await _user_repository_call(
+            self.repository.lock_active_platform_admin_candidates
+        )
+        current_target = await _user_repository_call(
+            self.repository.get_for_update, user_id
+        )
+        previous = await _user_repository_call(
+            self.repository.replay_roles,
             user_id=user_id,
             roles=desired_roles,
             request_key=request_key,
@@ -207,7 +244,8 @@ class ApplicationUserAdminService:
             raise LastPlatformAdminError(
                 "cannot remove the last effective platform admin"
             )
-        return await self.repository.replace_roles(
+        return await _user_repository_call(
+            self.repository.replace_roles,
             user_id=user_id,
             roles=desired_roles,
             actor_user_id=actor_user_id,

@@ -15,6 +15,10 @@ from app.models.app_user_change import AppUserChangeMySQL
 from app.models.app_user_role import AppUserRoleMySQL
 
 
+class AppUserIdempotencyConflictError(ValueError):
+    """幂等键已绑定其他用户、操作或目标值。"""
+
+
 class AppUserRepository:
     """在 Meta MySQL 中维护应用侧用户、角色和变更审计。"""
 
@@ -202,6 +206,7 @@ class AppUserRepository:
             )
             .order_by(AppUserMySQL.user_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         models_by_id = {model.user_id: model for model in user_result.scalars().all()}
         if not models_by_id:
@@ -215,13 +220,20 @@ class AppUserRepository:
             )
             .order_by(AppUserRoleMySQL.user_id, AppUserRoleMySQL.role_code)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         role_map: dict[str, set[str]] = {}
         for role_model in role_result.scalars().all():
             role_map.setdefault(role_model.user_id, set()).add(role_model.role_code)
+        # 外层行锁不传播到 EXISTS 子查询；只计数当前锁定并刷新的有效来源。
         return [
             self._to_entity(model, role_map.get(model.user_id, set()))
             for model in models_by_id.values()
+            if model.status == "active"
+            and (
+                "platform_admin" in model.observed_roles_json
+                or "platform_admin" in role_map.get(model.user_id, set())
+            )
         ]
 
     async def replay_status(
@@ -458,15 +470,23 @@ class AppUserRepository:
             else set(expected_operations)
         )
         if change.user_id != user_id or snapshot.get("user_id") != user_id:
-            raise ValueError("request key is already used for another user")
+            raise AppUserIdempotencyConflictError(
+                "request key is already used for another user"
+            )
         if change.operation not in operations:
-            raise ValueError("request key is already used for another operation")
+            raise AppUserIdempotencyConflictError(
+                "request key is already used for another operation"
+            )
         if expected_status is not None and snapshot.get("status") != expected_status:
-            raise ValueError("request key target status does not match")
+            raise AppUserIdempotencyConflictError(
+                "request key target status does not match"
+            )
         if expected_application_roles is not None and frozenset(
             snapshot.get("application_roles", [])
         ) != frozenset(expected_application_roles):
-            raise ValueError("request key target roles do not match")
+            raise AppUserIdempotencyConflictError(
+                "request key target roles do not match"
+            )
         return self._snapshot_to_entity(snapshot)
 
     async def _load_user_with_roles(

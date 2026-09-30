@@ -1,6 +1,6 @@
 """应用用户管理接口模型。"""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -28,6 +28,16 @@ class ApplicationUserSummary(BaseModel):
     first_seen_at: datetime
     last_seen_at: datetime
     disabled_at: datetime | None
+
+    @field_validator("first_seen_at", "last_seen_at", "disabled_at")
+    @classmethod
+    def normalize_utc(cls, value: datetime | None) -> datetime | None:
+        """Meta MySQL 的无时区时间按 UTC 返回，供浏览器正确转换。"""
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
 
 class ApplicationUserListResponse(BaseModel):
