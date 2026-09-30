@@ -78,7 +78,9 @@ class ApplicationUserAdminService:
             return None
 
         try:
-            policies = await self.policy_repository.list_active()
+            policies = await self.policy_repository.list_active(
+                subject=f"user:{user_id}"
+            )
             preview_roles = user.observed_roles | user.application_roles
             preview_auth = AuthContext(
                 user_id=user.user_id,
@@ -102,12 +104,9 @@ class ApplicationUserAdminService:
                 "authorization backend unavailable"
             ) from exc
 
-        direct_policies = [
-            policy for policy in policies if policy.subject == f"user:{user_id}"
-        ]
         return ApplicationUserDetail(
             user=user,
-            direct_policies=direct_policies,
+            direct_policies=policies,
             permission_preview=permission_preview,
             preview_roles=preview_roles,
         )

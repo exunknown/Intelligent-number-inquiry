@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from app.api.dependencies import (
+    get_app_user_repository,
     get_authorization_service,
     get_authz_policy_repository,
 )
@@ -18,6 +19,7 @@ from app.api.schemas.authz_schema import (
 )
 from app.entities.auth import AuthContext
 from app.entities.authz_policy import AuthzPolicyCreate
+from app.repositories.mysql.meta.app_user_repository import AppUserRepository
 from app.repositories.mysql.meta.authz_policy_repository import AuthzPolicyRepository
 from app.security.dependencies import build_permission_snapshot, require_api_permission
 from app.services.authorization_service import AuthorizationService
@@ -34,9 +36,7 @@ async def list_authz_policies_handler(
     limit: int = Query(100, ge=1, le=200),
 ) -> AuthzPolicyListResponse:
     del auth
-    policies = await repository.list_active()
-    if subject:
-        policies = [policy for policy in policies if policy.subject == subject]
+    policies = await repository.list_active(subject=subject)
     policies = policies[:limit]
     return AuthzPolicyListResponse(
         items=[AuthzPolicyResponse.model_validate(policy) for policy in policies],
@@ -98,16 +98,34 @@ async def preview_user_permissions_handler(
     authorization_service: Annotated[
         AuthorizationService, Depends(get_authorization_service)
     ],
+    app_user_repository: Annotated[AppUserRepository, Depends(get_app_user_repository)],
     roles: Annotated[list[str] | None, Query()] = None,
 ) -> PermissionPreviewResponse:
     del auth
+    observed_roles = frozenset()
+    application_roles = frozenset()
+    if roles is None:
+        try:
+            user = await app_user_repository.get(user_id)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503, detail="authorization service unavailable"
+            ) from exc
+        if user is not None:
+            observed_roles = user.observed_roles
+            application_roles = user.application_roles
+        preview_roles = observed_roles | application_roles
+    else:
+        preview_roles = frozenset(roles)
     preview_auth = AuthContext(
         user_id=user_id,
         username=None,
-        roles=frozenset(roles or []),
+        roles=preview_roles,
         token_id=None,
         issued_at=0,
         expires_at=0,
+        keycloak_roles=observed_roles,
+        application_roles=application_roles,
     )
     snapshot = await build_permission_snapshot(preview_auth, authorization_service)
     return PermissionPreviewResponse(

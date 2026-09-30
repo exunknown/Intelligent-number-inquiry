@@ -18,12 +18,14 @@ class AuthzPolicyRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def list_active(self) -> list[AuthzPolicy]:
+    async def list_active(self, subject: str | None = None) -> list[AuthzPolicy]:
         statement = (
             select(AuthzPolicyMySQL)
             .where(AuthzPolicyMySQL.active.is_(True))
             .order_by(AuthzPolicyMySQL.version, AuthzPolicyMySQL.id)
         )
+        if subject:
+            statement = statement.where(AuthzPolicyMySQL.subject == subject)
         result = await self.session.execute(statement)
         return [self._to_entity(model) for model in result.scalars().all()]
 
