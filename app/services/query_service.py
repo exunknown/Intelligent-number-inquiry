@@ -444,6 +444,9 @@ class QueryService:
                 route=audit["query_mode"],
                 error_code=audit["error_code"],
             )
+            # 先释放请求准入槽，再执行审计等持久化，避免持久化阻塞导致并发槽泄漏。
+            if lease is not None:
+                await lease.release()
             if self.query_audit_repository is not None:
                 llm_input_tokens, llm_output_tokens = usage_callback.totals()
                 record = QueryAuditRecord(
@@ -513,5 +516,3 @@ class QueryService:
                     )
                 except Exception:
                     logger.warning("Failed to save metric governance candidate")
-            if lease is not None:
-                await lease.release()
