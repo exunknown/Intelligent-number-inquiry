@@ -7,9 +7,23 @@ import type { AgentEvent } from "../types/agent";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "";
 
+export type QuerySessionSummary = {
+  session_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  last_request_id: string | null;
+  last_outcome: string | null;
+  last_query_mode: string | null;
+  last_error_code: string | null;
+  last_metadata_release_version: string | null;
+};
+
 type QueryOptions = {
   signal?: AbortSignal;
   onEvent: (event: AgentEvent) => void;
+  sessionId?: string;
 };
 
 export async function streamQuery(query: string, options: QueryOptions) {
@@ -21,7 +35,7 @@ export async function streamQuery(query: string, options: QueryOptions) {
       Accept: "text/event-stream",
       Authorization: `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, ...(options.sessionId ? { session_id: options.sessionId } : {}) }),
     signal: options.signal,
   });
 
@@ -64,6 +78,22 @@ export async function streamQuery(query: string, options: QueryOptions) {
   if (tail) {
     options.onEvent(tail);
   }
+}
+
+export async function createQuerySession(title?: string): Promise<QuerySessionSummary> {
+  const accessToken = await getAccessToken();
+  const response = await fetch(`${API_BASE_URL}/api/sessions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(title ? { title } : {}),
+  });
+  if (!response.ok) {
+    throw new Error(`会话创建失败：HTTP ${response.status}`);
+  }
+  return (await response.json()) as QuerySessionSummary;
 }
 
 function parseSseChunk(chunk: string): AgentEvent | null {

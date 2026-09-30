@@ -20,6 +20,7 @@ class QueryAuditRepository:
         model = QueryAuditMySQL(
             id=str(uuid4()),
             request_id=request_id_ctx_var.get(),
+            session_id=record.session_id,
             created_at=datetime.now(timezone.utc).replace(tzinfo=None),
             user_id=record.user_id,
             username=record.username,

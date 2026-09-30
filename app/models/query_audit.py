@@ -29,6 +29,7 @@ class QueryAuditMySQL(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     user_id: Mapped[str] = mapped_column(String(255), nullable=False)
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)

@@ -13,3 +13,4 @@ class QuerySchema(BaseModel):
 
     # 前端请求体中的 query 字段，例如 {"query": "统计华北地区销售额"}
     query: str = Field(min_length=1, max_length=4096)
+    session_id: str | None = Field(default=None, min_length=36, max_length=36)

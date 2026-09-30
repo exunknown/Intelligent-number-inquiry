@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS query_audit
 (
     id           VARCHAR(36) PRIMARY KEY,
     request_id   VARCHAR(64),
+    session_id   VARCHAR(36),
     created_at   DATETIME NOT NULL,
     user_id      VARCHAR(255) NOT NULL,
     username     VARCHAR(255),
@@ -39,5 +40,6 @@ CREATE TABLE IF NOT EXISTS query_audit
     verified     BOOLEAN,
     duration_ms  INT NOT NULL,
     INDEX idx_query_audit_user_created (user_id, created_at),
-    INDEX idx_query_audit_policy_created (policy_version, created_at)
+    INDEX idx_query_audit_policy_created (policy_version, created_at),
+    INDEX idx_query_audit_session_created (session_id, created_at)
 );

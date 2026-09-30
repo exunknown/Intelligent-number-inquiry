@@ -35,6 +35,7 @@ from app.repositories.mysql.meta.metric_candidate_repository import (
     MetricCandidateRepository,
 )
 from app.repositories.mysql.meta.query_audit_repository import QueryAuditRepository
+from app.repositories.mysql.meta.query_session_repository import QuerySessionRepository
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
@@ -84,6 +85,14 @@ async def get_query_audit_repository(
     """Create the request-scoped query audit repository."""
 
     return QueryAuditRepository(session)
+
+
+async def get_query_session_repository(
+    session: Annotated[AsyncSession, Depends(get_meta_session)],
+) -> QuerySessionRepository:
+    """创建请求级查询会话仓储。"""
+
+    return QuerySessionRepository(session)
 
 
 async def get_metadata_release_repository(
@@ -243,6 +252,9 @@ async def get_query_service(
     query_audit_repository: Annotated[
         QueryAuditRepository, Depends(get_query_audit_repository)
     ],
+    query_session_repository: Annotated[
+        QuerySessionRepository, Depends(get_query_session_repository)
+    ],
     metadata_release_repository: Annotated[
         MetadataReleaseRepository, Depends(get_metadata_release_repository)
     ],
@@ -266,6 +278,7 @@ async def get_query_service(
         cube_repository=cube_repository,
         value_es_repository=value_es_repository,
         query_audit_repository=query_audit_repository,
+        query_session_repository=query_session_repository,
         metadata_release_repository=metadata_release_repository,
         metric_candidate_repository=metric_candidate_repository,
         sql_fallback_repository=sql_fallback_repository,

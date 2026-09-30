@@ -16,7 +16,7 @@ import { logout } from "./auth/keycloak";
 import { Composer } from "./components/Composer";
 import { EmptyState } from "./components/EmptyState";
 import { MessageBubble } from "./components/MessageBubble";
-import { streamQuery } from "./lib/agentApi";
+import { createQuerySession, streamQuery } from "./lib/agentApi";
 import { cn, summarizeResult } from "./lib/format";
 import type { AgentEvent, ChatMessage, StepState } from "./types/agent";
 
@@ -67,6 +67,7 @@ type AppProps = {
 
 export default function App({ username }: AppProps) {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [sessionId, setSessionId] = useState<string | null>(null);
     const [draft, setDraft] = useState("");
     const [activeController, setActiveController] = useState<AbortController | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -167,7 +168,17 @@ export default function App({ username }: AppProps) {
         };
 
         try {
-            await streamQuery(query, { signal: controller.signal, onEvent });
+            let currentSessionId = sessionId;
+            if (!currentSessionId) {
+                const session = await createQuerySession(query);
+                currentSessionId = session.session_id;
+                setSessionId(currentSessionId);
+            }
+            await streamQuery(query, {
+                signal: controller.signal,
+                onEvent,
+                sessionId: currentSessionId,
+            });
             setMessages((current) =>
                 current.map((message) =>
                     message.id === assistantId && message.status === "streaming"
@@ -202,6 +213,7 @@ export default function App({ username }: AppProps) {
         if (isStreaming) return;
         setMessages([]);
         setDraft("");
+        setSessionId(null);
     };
 
     const handleLogout = async () => {

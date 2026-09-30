@@ -36,6 +36,7 @@ from app.repositories.mysql.meta.metric_candidate_repository import (
     MetricCandidateRepository,
 )
 from app.repositories.mysql.meta.query_audit_repository import QueryAuditRepository
+from app.repositories.mysql.meta.query_session_repository import QuerySessionRepository
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
@@ -90,6 +91,7 @@ class QueryService:
         cube_repository: CubeRepository,
         value_es_repository: ValueESRepository,
         query_audit_repository: QueryAuditRepository | None = None,
+        query_session_repository: QuerySessionRepository | None = None,
         metadata_release_repository: MetadataReleaseRepository | None = None,
         metric_candidate_repository: MetricCandidateRepository | None = None,
         sql_fallback_repository: SQLFallbackRepository | None = None,
@@ -104,6 +106,7 @@ class QueryService:
         self.cube_repository = cube_repository
         self.value_es_repository = value_es_repository
         self.query_audit_repository = query_audit_repository
+        self.query_session_repository = query_session_repository
         self.metadata_release_repository = metadata_release_repository
         self.metric_candidate_repository = metric_candidate_repository
         self.sql_fallback_repository = sql_fallback_repository
@@ -115,6 +118,7 @@ class QueryService:
         query: str,
         principal: QueryPrincipal,
         lease: AdmissionLease | None = None,
+        session_id: str | None = None,
     ):
         """Execute one graph run and yield SSE-formatted events."""
 
@@ -376,11 +380,24 @@ class QueryService:
                     llm_output_tokens=llm_output_tokens,
                     llm_cost_units=None,
                     metadata_release_version=metadata_release_version,
+                    session_id=session_id,
                 )
                 try:
                     await self.query_audit_repository.save(record)
                 except Exception:
                     logger.warning("Failed to save query audit record")
+            if self.query_session_repository is not None and session_id is not None:
+                try:
+                    await self.query_session_repository.touch(
+                        session_id,
+                        principal.auth.user_id,
+                        outcome=audit["outcome"],
+                        query_mode=audit["query_mode"],
+                        error_code=audit["error_code"],
+                        metadata_release_version=metadata_release_version,
+                    )
+                except Exception:
+                    logger.warning("Failed to update query session")
             if (
                 self.metric_candidate_repository is not None
                 and audit["query_mode"] == "sql"

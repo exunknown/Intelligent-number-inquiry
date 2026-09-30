@@ -11,11 +11,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from starlette.responses import StreamingResponse
 
-from app.api.dependencies import get_query_service
+from app.api.dependencies import get_query_service, get_query_session_repository
 from app.api.schemas.query_schema import QuerySchema
 from app.core.query_errors import QueryExecutionError
 from app.core.resource_governance import get_resource_admission
 from app.entities.auth import QueryPrincipal
+from app.repositories.mysql.meta.query_session_repository import QuerySessionRepository
 from app.security.dependencies import get_query_principal
 from app.services.query_service import QueryService
 
@@ -30,11 +31,24 @@ async def query_handler(
     # 服务依赖：FastAPI 会调用 get_query_service，递归组装它所需的仓储和客户端
     query_service: Annotated[QueryService, Depends(get_query_service)],
     principal: Annotated[QueryPrincipal, Depends(get_query_principal)],
+    session_repository: Annotated[
+        QuerySessionRepository, Depends(get_query_session_repository)
+    ],
 ):
     """接收用户自然语言问题，并流式返回 LangGraph 工作流输出"""
 
     try:
+        if (
+            query.session_id is not None
+            and await session_repository.get_owned(
+                query.session_id, principal.auth.user_id
+            )
+            is None
+        ):
+            raise HTTPException(status_code=404, detail="query session not found")
         lease = await get_resource_admission().acquire(principal.auth.user_id)
+    except HTTPException:
+        raise
     except QueryExecutionError as error:
         status_code = (
             429
@@ -50,6 +64,11 @@ async def query_handler(
 
     return StreamingResponse(
         # query.query 是用户问题字符串；QueryService.query 返回异步生成器供响应逐段消费
-        query_service.query(query.query, principal=principal, lease=lease),
+        query_service.query(
+            query.query,
+            principal=principal,
+            lease=lease,
+            session_id=query.session_id,
+        ),
         media_type="text/event-stream",
     )
