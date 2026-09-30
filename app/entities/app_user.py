@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
+ApplicationUserStatus = Literal["active", "disabled"]
 ApplicationRole = Literal[
     "platform_admin",
     "metric_governor",
@@ -24,7 +25,7 @@ class ApplicationUser:
     display_name: str | None
     email: str | None
     observed_roles: frozenset[str]
-    status: str
+    status: ApplicationUserStatus
     first_seen_at: datetime
     last_seen_at: datetime
     disabled_at: datetime | None

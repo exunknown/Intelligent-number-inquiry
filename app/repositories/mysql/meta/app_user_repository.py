@@ -126,7 +126,7 @@ class AppUserRepository:
         user_result = await self.session.execute(
             select(AppUserMySQL)
             .where(*conditions)
-            .order_by(AppUserMySQL.updated_at.desc(), AppUserMySQL.user_id)
+            .order_by(AppUserMySQL.last_seen_at.desc(), AppUserMySQL.user_id)
             .offset(max(offset, 0))
             .limit(max(limit, 0))
         )
@@ -157,6 +157,47 @@ class AppUserRepository:
         )
         return frozenset(result.scalars().all())
 
+    async def lock_active_platform_admin_candidates(self) -> list[ApplicationUser]:
+        """锁定当前活动且拥有有效平台管理员角色的用户和角色行。
+
+        该方法只建立并持有当前事务中的行锁，不提交事务；调用方应在同一
+        事务内完成最后平台管理员保护判断及后续变更。
+        """
+        user_result = await self.session.execute(
+            select(AppUserMySQL)
+            .join(
+                AppUserRoleMySQL,
+                AppUserRoleMySQL.user_id == AppUserMySQL.user_id,
+            )
+            .where(
+                AppUserMySQL.status == "active",
+                AppUserRoleMySQL.role_code == "platform_admin",
+                AppUserRoleMySQL.revoked_at.is_(None),
+            )
+            .order_by(AppUserMySQL.user_id)
+            .with_for_update()
+        )
+        models_by_id = {model.user_id: model for model in user_result.scalars().all()}
+        if not models_by_id:
+            return []
+
+        role_result = await self.session.execute(
+            select(AppUserRoleMySQL)
+            .where(
+                AppUserRoleMySQL.user_id.in_(list(models_by_id)),
+                AppUserRoleMySQL.revoked_at.is_(None),
+            )
+            .order_by(AppUserRoleMySQL.user_id, AppUserRoleMySQL.role_code)
+            .with_for_update()
+        )
+        role_map: dict[str, set[str]] = {}
+        for role_model in role_result.scalars().all():
+            role_map.setdefault(role_model.user_id, set()).add(role_model.role_code)
+        return [
+            self._to_entity(model, role_map.get(model.user_id, set()))
+            for model in models_by_id.values()
+        ]
+
     async def set_status(
         self,
         *,
@@ -169,10 +210,16 @@ class AppUserRepository:
         if status not in {"active", "disabled"}:
             raise ValueError("unsupported application user status")
         clean_reason = self._validate_reason(reason)
+        operation = "enable" if status == "active" else "disable"
 
         try:
             model, roles = await self._load_user_with_roles(user_id, for_update=True)
-            previous = await self._idempotent_result(request_key)
+            previous = await self._idempotent_result(
+                request_key,
+                user_id=user_id,
+                expected_operations=operation,
+                expected_status=status,
+            )
             if previous is not None:
                 await self.session.rollback()
                 return previous
@@ -193,7 +240,7 @@ class AppUserRepository:
                 self._change(
                     request_key=request_key,
                     user_id=user_id,
-                    operation="set_status",
+                    operation=operation,
                     actor_user_id=actor_user_id,
                     reason=clean_reason,
                     before=before,
@@ -205,7 +252,12 @@ class AppUserRepository:
             return self._to_entity(model, roles)
         except IntegrityError:
             await self.session.rollback()
-            previous = await self._idempotent_result(request_key)
+            previous = await self._idempotent_result(
+                request_key,
+                user_id=user_id,
+                expected_operations=operation,
+                expected_status=status,
+            )
             if previous is not None:
                 return previous
             raise
@@ -229,13 +281,31 @@ class AppUserRepository:
             model, current_role_models = await self._load_user_with_roles(
                 user_id, for_update=True
             )
-            previous = await self._idempotent_result(request_key)
+            current_roles = {role_model.role_code for role_model in current_role_models}
+            added_roles = desired_roles - current_roles
+            revoked_roles = current_roles - desired_roles
+            operation = (
+                "assign_role"
+                if added_roles and not revoked_roles
+                else "revoke_role"
+                if revoked_roles and not added_roles
+                else "replace_roles"
+            )
+            previous = await self._idempotent_result(
+                request_key,
+                user_id=user_id,
+                expected_operations={
+                    "assign_role",
+                    "revoke_role",
+                    "replace_roles",
+                },
+                expected_application_roles=desired_roles,
+            )
             if previous is not None:
                 await self.session.rollback()
                 return previous
             if model is None:
                 return None
-            current_roles = {role_model.role_code for role_model in current_role_models}
             before = self._snapshot(model, current_roles)
             now = self._now()
             model.updated_at = now
@@ -258,7 +328,7 @@ class AppUserRepository:
                 self._change(
                     request_key=request_key,
                     user_id=user_id,
-                    operation="replace_roles",
+                    operation=operation,
                     actor_user_id=actor_user_id,
                     reason=clean_reason,
                     before=before,
@@ -270,7 +340,16 @@ class AppUserRepository:
             return self._to_entity(model, desired_roles)
         except IntegrityError:
             await self.session.rollback()
-            previous = await self._idempotent_result(request_key)
+            previous = await self._idempotent_result(
+                request_key,
+                user_id=user_id,
+                expected_operations={
+                    "assign_role",
+                    "revoke_role",
+                    "replace_roles",
+                },
+                expected_application_roles=desired_roles,
+            )
             if previous is not None:
                 return previous
             raise
@@ -278,7 +357,15 @@ class AppUserRepository:
             await self.session.rollback()
             raise
 
-    async def _idempotent_result(self, request_key: str) -> ApplicationUser | None:
+    async def _idempotent_result(
+        self,
+        request_key: str,
+        *,
+        user_id: str,
+        expected_operations: str | Collection[str],
+        expected_status: str | None = None,
+        expected_application_roles: Collection[str] | None = None,
+    ) -> ApplicationUser | None:
         result = await self.session.execute(
             select(AppUserChangeMySQL).where(
                 AppUserChangeMySQL.request_key == request_key
@@ -287,7 +374,23 @@ class AppUserRepository:
         change = result.scalar_one_or_none()
         if change is None:
             return None
-        return self._snapshot_to_entity(change.after_json)
+        snapshot = change.after_json
+        operations = (
+            {expected_operations}
+            if isinstance(expected_operations, str)
+            else set(expected_operations)
+        )
+        if change.user_id != user_id or snapshot.get("user_id") != user_id:
+            raise ValueError("request key is already used for another user")
+        if change.operation not in operations:
+            raise ValueError("request key is already used for another operation")
+        if expected_status is not None and snapshot.get("status") != expected_status:
+            raise ValueError("request key target status does not match")
+        if expected_application_roles is not None and frozenset(
+            snapshot.get("application_roles", [])
+        ) != frozenset(expected_application_roles):
+            raise ValueError("request key target roles do not match")
+        return self._snapshot_to_entity(snapshot)
 
     async def _load_user_with_roles(
         self, user_id: str, *, for_update: bool = False
