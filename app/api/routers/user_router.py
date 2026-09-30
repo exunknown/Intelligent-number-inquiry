@@ -133,7 +133,12 @@ async def get_user_detail_handler(
         ApplicationUserAdminService, Depends(get_application_user_admin_service)
     ],
 ) -> ApplicationUserDetailResponse:
-    detail = await service.get_user_detail(user_id)
+    try:
+        detail = await service.get_user_detail(user_id)
+    except AuthorizationUnavailableError as exc:
+        raise HTTPException(
+            status_code=503, detail="authorization service unavailable"
+        ) from exc
     if detail is None:
         raise HTTPException(status_code=404, detail="application user not found")
     return _detail_response(detail)

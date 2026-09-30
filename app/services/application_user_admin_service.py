@@ -8,7 +8,10 @@ from app.entities.auth import AuthContext, PermissionSnapshot
 from app.entities.authz_policy import AuthzPolicy
 from app.repositories.mysql.meta.app_user_repository import AppUserRepository
 from app.repositories.mysql.meta.authz_policy_repository import AuthzPolicyRepository
-from app.services.authorization_service import AuthorizationService
+from app.services.authorization_service import (
+    AuthorizationService,
+    AuthorizationUnavailableError,
+)
 
 
 class LastPlatformAdminError(Exception):
@@ -74,26 +77,34 @@ class ApplicationUserAdminService:
         if user is None:
             return None
 
-        policies = await self.policy_repository.list_active()
+        try:
+            policies = await self.policy_repository.list_active()
+            preview_roles = user.observed_roles | user.application_roles
+            preview_auth = AuthContext(
+                user_id=user.user_id,
+                username=user.username,
+                roles=preview_roles,
+                token_id=None,
+                issued_at=0,
+                expires_at=0,
+                keycloak_roles=user.observed_roles,
+                application_roles=user.application_roles,
+                display_name=user.display_name,
+                email=user.email,
+            )
+            permission_preview = await self.authorization_service.build_snapshot(
+                preview_auth
+            )
+        except AuthorizationUnavailableError:
+            raise
+        except Exception as exc:
+            raise AuthorizationUnavailableError(
+                "authorization backend unavailable"
+            ) from exc
+
         direct_policies = [
             policy for policy in policies if policy.subject == f"user:{user_id}"
         ]
-        preview_roles = user.observed_roles | user.application_roles
-        preview_auth = AuthContext(
-            user_id=user.user_id,
-            username=user.username,
-            roles=preview_roles,
-            token_id=None,
-            issued_at=0,
-            expires_at=0,
-            keycloak_roles=user.observed_roles,
-            application_roles=user.application_roles,
-            display_name=user.display_name,
-            email=user.email,
-        )
-        permission_preview = await self.authorization_service.build_snapshot(
-            preview_auth
-        )
         return ApplicationUserDetail(
             user=user,
             direct_policies=direct_policies,
