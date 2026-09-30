@@ -11,7 +11,9 @@ import {
 } from "../lib/agentApi";
 import {
     APPLICATION_ROLES,
+    lastAdminInteraction,
     mapUserManagementError,
+    mutationResultIsCurrent,
     normalizeRoles,
     roleLabel,
     statusLabel,
@@ -36,6 +38,8 @@ function seenAt(value: string): string {
 
 export function UserManagementPanel({ onClose }: { onClose: () => void }) {
     const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+    const selectedUserRef = useRef<string | null>(null);
+    const selectionGenerationRef = useRef(0);
     const [searchInput, setSearchInput] = useState("");
     const [query, setQuery] = useState("");
     const [status, setStatus] = useState<ApplicationUserStatus | "">("");
@@ -107,9 +111,15 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
         };
     }, [selectedId, refreshKey]);
 
+    const selectUser = (userId: string | null) => {
+        selectedUserRef.current = userId;
+        selectionGenerationRef.current += 1;
+        setSelectedId(userId);
+    };
+
     const changeFilters = () => {
         setOffset(0);
-        setSelectedId(null);
+        selectUser(null);
         setOperationMessage(null);
     };
 
@@ -127,14 +137,24 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
 
     const saveRoles = async () => {
         if (!detail || !reason.trim() || busy) return;
+        const targetUserId = detail.user.user_id;
+        const startedGeneration = selectionGenerationRef.current;
+        const isCurrent = () => mutationResultIsCurrent(
+            targetUserId,
+            startedGeneration,
+            selectedUserRef.current,
+            selectionGenerationRef.current,
+        );
         setBusy("roles");
         setOperationMessage(null);
         try {
-            await replaceApplicationUserRoles(detail.user.user_id, normalizeRoles(selectedRoles), reason.trim());
+            await replaceApplicationUserRoles(targetUserId, normalizeRoles(selectedRoles), reason.trim());
+            if (!isCurrent()) return;
+            setLastAdminProtected(false);
             setOperationMessage("应用角色已更新。");
             setRefreshKey((value) => value + 1);
         } catch (error) {
-            handleError(error);
+            if (isCurrent()) handleError(error);
         } finally {
             setBusy(null);
         }
@@ -142,15 +162,25 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
 
     const changeStatus = async () => {
         if (!detail || !reason.trim() || busy) return;
+        const targetUserId = detail.user.user_id;
+        const startedGeneration = selectionGenerationRef.current;
+        const isCurrent = () => mutationResultIsCurrent(
+            targetUserId,
+            startedGeneration,
+            selectedUserRef.current,
+            selectionGenerationRef.current,
+        );
         const nextStatus = detail.user.status === "active" ? "disabled" : "active";
         setBusy("status");
         setOperationMessage(null);
         try {
-            await updateApplicationUserStatus(detail.user.user_id, nextStatus, reason.trim());
+            await updateApplicationUserStatus(targetUserId, nextStatus, reason.trim());
+            if (!isCurrent()) return;
+            setLastAdminProtected(false);
             setOperationMessage(nextStatus === "active" ? "用户已启用。" : "用户已禁用。");
             setRefreshKey((value) => value + 1);
         } catch (error) {
-            handleError(error);
+            if (isCurrent()) handleError(error);
         } finally {
             setBusy(null);
         }
@@ -160,10 +190,9 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
     const rolesChanged = selectedUser
         ? normalizeRoles(selectedRoles).join("|") !== normalizeRoles(selectedUser.application_roles).join("|")
         : false;
-    const removesAdmin =
-        selectedUser?.application_roles.includes("platform_admin") &&
-        !selectedRoles.includes("platform_admin");
-    const protectedDisable = lastAdminProtected && selectedUser?.status === "active";
+    const interaction = selectedUser
+        ? lastAdminInteraction(lastAdminProtected, busy !== null, selectedUser.status, selectedUser.application_roles, selectedRoles)
+        : null;
     const preview = detail?.permission_preview;
 
     return (
@@ -272,7 +301,7 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
                                         key={user.user_id}
                                         type="button"
                                         onClick={() => {
-                                            setSelectedId(user.user_id);
+                                            selectUser(user.user_id);
                                             setOperationMessage(null);
                                         }}
                                         aria-pressed={selectedId === user.user_id}
@@ -294,7 +323,7 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
                                 type="button"
                                 disabled={offset === 0 || listLoading}
                                 onClick={() => {
-                                    setSelectedId(null);
+                                    selectUser(null);
                                     setOffset(Math.max(0, offset - PAGE_SIZE));
                                 }}
                                 className={`${buttonClass} border border-ink/15`}
@@ -306,7 +335,7 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
                                 type="button"
                                 disabled={listLoading || !list || offset + list.limit >= list.total}
                                 onClick={() => {
-                                    setSelectedId(null);
+                                    selectUser(null);
                                     setOffset(offset + PAGE_SIZE);
                                 }}
                                 className={`${buttonClass} border border-ink/15`}
@@ -364,7 +393,7 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
                                                 <input
                                                     type="checkbox"
                                                     checked={selectedRoles.includes(item)}
-                                                    disabled={busy !== null || (lastAdminProtected && item === "platform_admin" && selectedUser.application_roles.includes(item))}
+                                                    disabled={!interaction?.canEditRoles}
                                                     onChange={(event) => {
                                                         setSelectedRoles((current) => normalizeRoles(event.target.checked ? [...current, item] : current.filter((roleItem) => roleItem !== item)));
                                                         setOperationMessage(null);
@@ -395,7 +424,7 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
                                     <button
                                         type="button"
                                         onClick={() => void saveRoles()}
-                                        disabled={!reason.trim() || !rolesChanged || busy !== null || Boolean(lastAdminProtected && removesAdmin)}
+                                        disabled={!reason.trim() || !rolesChanged || !interaction?.canSaveRoles}
                                         className={`${buttonClass} bg-dai text-paper`}
                                     >
                                         {busy === "roles" ? "正在保存角色…" : "保存应用角色"}
@@ -403,7 +432,7 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
                                     <button
                                         type="button"
                                         onClick={() => void changeStatus()}
-                                        disabled={!reason.trim() || busy !== null || protectedDisable}
+                                        disabled={!reason.trim() || !interaction?.canChangeStatus}
                                         className={`${buttonClass} border border-ink/15 text-ink`}
                                     >
                                         {busy === "status" ? "正在更新状态…" : selectedUser.status === "active" ? "禁用用户" : "启用用户"}

@@ -4,7 +4,7 @@
  */
 import { getAccessToken } from "../auth/keycloak";
 import type { AgentEvent } from "../types/agent";
-import type { ApplicationRole, ApplicationUserStatus } from "./userManagement";
+import { safeUserManagementMessage, type ApplicationRole, type ApplicationUserStatus } from "./userManagement";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "";
 
@@ -212,7 +212,6 @@ export type ApplicationUserListParams = {
 async function getUserManagementJson<T>(
     path: string,
     init: RequestInit,
-    action: string,
 ): Promise<T> {
     const response = await fetch(`${API_BASE_URL}${path}`, init);
     if (!response.ok) {
@@ -231,13 +230,8 @@ async function getUserManagementJson<T>(
         } catch {
             // 非 JSON 错误由状态码处理，不保留原始响应。
         }
-        const safeMessage =
-            message &&
-            message.length <= 300 &&
-            !/(?:bearer\s+\S+|authorization\s*[:=]|access[_-]?token\s*[:=]|refresh[_-]?token\s*[:=]|api[_-]?key\s*[:=]|password\s*[:=]|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b)/i.test(message)
-                ? message
-                : undefined;
-        const error = new Error(safeMessage ?? `${action}：HTTP ${response.status}`) as Error & {
+        const safeMessage = safeUserManagementMessage(message);
+        const error = new Error(safeMessage ?? "操作未完成，请稍后重试。") as Error & {
             status: number;
             code?: string;
         };
@@ -253,7 +247,6 @@ export async function getCurrentUserCapability(): Promise<ApplicationUserMeRespo
     return getUserManagementJson<ApplicationUserMeResponse>(
         "/api/admin/users/me",
         { headers: { Authorization: `Bearer ${accessToken}` } },
-        "用户能力加载失败",
     );
 }
 
@@ -270,7 +263,6 @@ export async function listApplicationUsers(
     return getUserManagementJson<ApplicationUserListResponse>(
         `/api/admin/users?${search.toString()}`,
         { headers: { Authorization: `Bearer ${accessToken}` } },
-        "用户列表加载失败",
     );
 }
 
@@ -279,7 +271,6 @@ export async function getApplicationUser(userId: string): Promise<ApplicationUse
     return getUserManagementJson<ApplicationUserDetailResponse>(
         `/api/admin/users/${encodeURIComponent(userId)}`,
         { headers: { Authorization: `Bearer ${accessToken}` } },
-        "用户详情加载失败",
     );
 }
 
@@ -300,7 +291,6 @@ export async function updateApplicationUserStatus(
             },
             body: JSON.stringify({ status, reason }),
         },
-        "用户状态更新失败",
     );
 }
 
@@ -321,6 +311,5 @@ export async function replaceApplicationUserRoles(
             },
             body: JSON.stringify({ roles, reason }),
         },
-        "应用角色更新失败",
     );
 }

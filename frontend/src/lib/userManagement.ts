@@ -33,7 +33,41 @@ export function shouldAutoScrollChat(managementOpen: boolean): boolean {
     return !managementOpen;
 }
 
+export function lastAdminInteraction(
+    protectedAdmin: boolean,
+    busy: boolean,
+    status: ApplicationUserStatus,
+    currentRoles: readonly ApplicationRole[],
+    selectedRoles: readonly ApplicationRole[],
+): { canEditRoles: boolean; canSaveRoles: boolean; canChangeStatus: boolean } {
+    const removesAdmin = currentRoles.includes("platform_admin") && !selectedRoles.includes("platform_admin");
+    return {
+        canEditRoles: !busy,
+        canSaveRoles: !busy && !(protectedAdmin && removesAdmin),
+        canChangeStatus: !busy && !(protectedAdmin && status === "active"),
+    };
+}
+
+export function mutationResultIsCurrent(
+    targetUserId: string,
+    startedGeneration: number,
+    selectedUserId: string | null,
+    currentGeneration: number,
+): boolean {
+    return targetUserId === selectedUserId && startedGeneration === currentGeneration;
+}
+
 type HttpError = { status?: unknown; code?: unknown; message?: unknown };
+
+export function safeUserManagementMessage(value: unknown): string | null {
+    if (typeof value !== "string") return null;
+    const message = value.trim();
+    if (!message || message.length > 300) return null;
+    if (/(?:bearer|authorization|token|secret|password|cookie|headers?|api[-_]?key|eyJ[A-Za-z0-9_-]{10,}\.)/i.test(message)) {
+        return null;
+    }
+    return message;
+}
 
 function errorParts(error: unknown): HttpError {
     return error !== null && typeof error === "object" ? (error as HttpError) : {};
@@ -49,13 +83,8 @@ export function mapUserManagementError(error: unknown): string {
     }
     if (status === 422) return "角色、状态或原因不符合要求，请检查后重试。";
     if (status === 503) return "用户管理服务暂不可用，请稍后重试。";
-    if (
-        typeof message === "string" &&
-        message.trim() &&
-        !/(?:bearer\s+\S+|authorization\s*[:=]|access[_-]?token\s*[:=]|refresh[_-]?token\s*[:=]|api[_-]?key\s*[:=]|password\s*[:=])/i.test(message)
-    ) {
-        return message.trim();
-    }
+    const safeMessage = safeUserManagementMessage(message);
+    if (safeMessage) return safeMessage;
     return "操作未完成，请稍后重试。";
 }
 
