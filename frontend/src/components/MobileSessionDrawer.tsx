@@ -8,6 +8,7 @@ export type MobileSessionDrawerProps = {
     sessions: QuerySessionSummary[];
     selectedSessionId: string | null;
     loading: boolean;
+    loadingSessionId?: string | null;
     disabled: boolean;
     error: string | null;
     onNewSession: () => void;
@@ -33,6 +34,7 @@ export function MobileSessionDrawer({
     sessions,
     selectedSessionId,
     loading,
+    loadingSessionId = null,
     disabled,
     error,
     onNewSession,
@@ -128,6 +130,7 @@ export function MobileSessionDrawer({
                         sessions={sessions}
                         selectedSessionId={selectedSessionId}
                         loading={loading}
+                        loadingSessionId={loadingSessionId}
                         disabled={disabled}
                         error={error}
                         onSelect={(sessionId) => {

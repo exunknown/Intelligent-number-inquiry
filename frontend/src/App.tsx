@@ -489,12 +489,13 @@ export default function App({ username }: AppProps) {
                             sessions={sessions}
                             selectedSessionId={sessionId}
                             loading={sessionsLoading || loadingSessionId !== null}
+                            loadingSessionId={loadingSessionId}
                             disabled={isStreaming}
                             error={sessionsError}
                             onSelect={(targetSessionId) => void openSession(targetSessionId)}
-                            onRename={(session) => void renameSession(session)}
-                            onArchive={(session) => void archiveSession(session)}
-                            onDelete={(session) => void removeSession(session)}
+                            onRename={renameSession}
+                            onArchive={archiveSession}
+                            onDelete={removeSession}
                             showHistoryLink={hasMoreSessions}
                             onOpenHistory={() => navigateTo("/history")}
                         />
@@ -610,13 +611,14 @@ export default function App({ username }: AppProps) {
                             sessions={sessions}
                             selectedSessionId={sessionId}
                             loading={sessionsLoading || loadingSessionId !== null}
+                            loadingSessionId={loadingSessionId}
                             disabled={isStreaming}
                             error={sessionsError}
                             onNewSession={clearConversation}
                             onSelect={(targetSessionId) => void openSession(targetSessionId)}
-                            onRename={(session) => void renameSession(session)}
-                            onArchive={(session) => void archiveSession(session)}
-                            onDelete={(session) => void removeSession(session)}
+                            onRename={renameSession}
+                            onArchive={archiveSession}
+                            onDelete={removeSession}
                             showHistoryLink={hasMoreSessions}
                             onOpenHistory={() => navigateTo("/history")}
                             onClose={closeMobileSessions}

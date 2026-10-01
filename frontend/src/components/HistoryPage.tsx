@@ -270,7 +270,7 @@ export function HistoryPage({
                         loading={loading || !hasLoaded}
                         disabled={disabled || loading}
                         loadingSessionId={loadingSessionId}
-                        error={error ?? externalError}
+                        error={externalError ?? error}
                         onSelect={onOpenSession}
                         onRename={(session) => void runSessionAction(onRename, session)}
                         onArchive={(session) => void runSessionAction(onArchive, session)}

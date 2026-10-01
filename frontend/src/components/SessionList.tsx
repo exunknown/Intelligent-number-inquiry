@@ -19,9 +19,9 @@ type SessionListProps = {
     disabled: boolean;
     error: string | null;
     onSelect: (sessionId: string) => void;
-    onRename: (session: QuerySessionSummary) => void;
-    onArchive: (session: QuerySessionSummary) => void;
-    onDelete: (session: QuerySessionSummary) => void;
+    onRename: (session: QuerySessionSummary) => void | Promise<void>;
+    onArchive: (session: QuerySessionSummary) => void | Promise<void>;
+    onDelete: (session: QuerySessionSummary) => void | Promise<void>;
     heading?: string;
     emptyMessage?: string;
     showHistoryLink?: boolean;
@@ -148,6 +148,7 @@ export function SessionList({
                                 <div className="absolute right-2 top-12 z-20 w-32 border border-ink/15 bg-white py-1 shadow-panel">
                                     <button
                                         type="button"
+                                        disabled={selectionDisabled}
                                         onClick={() => {
                                             setOpenMenuId(null);
                                             void Promise.resolve(onRename(session)).catch(() => undefined);
@@ -159,6 +160,7 @@ export function SessionList({
                                     </button>
                                     <button
                                         type="button"
+                                        disabled={selectionDisabled}
                                         onClick={() => {
                                             setOpenMenuId(null);
                                             void Promise.resolve(onArchive(session)).catch(() => undefined);
@@ -170,6 +172,7 @@ export function SessionList({
                                     </button>
                                     <button
                                         type="button"
+                                        disabled={selectionDisabled}
                                         onClick={() => {
                                             setOpenMenuId(null);
                                             void Promise.resolve(onDelete(session)).catch(() => undefined);
