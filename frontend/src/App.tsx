@@ -4,14 +4,11 @@
  */
 import {
     Eraser,
-    ListChecks,
     MessageCircle,
     MessageSquarePlus,
     ScrollText,
-    Server,
-    UserRound,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { logout } from "./auth/keycloak";
 import { Composer } from "./components/Composer";
 import { EmptyState } from "./components/EmptyState";
@@ -42,8 +39,6 @@ const examples = [
     "查询华东地区 2025 年第一季度销售额最高的前 5 个商品",
     "按会员等级统计 2025 年第一季度的订单数和销售额",
 ];
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "Vite /api proxy";
 
 function makeId() {
     return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -155,11 +150,6 @@ export default function App({ username }: AppProps) {
             .then((response) => setCanManageUsers(response.can_manage_users))
             .catch((error: unknown) => setCapabilityError(error));
     }, []);
-
-    const completedCount = useMemo(
-        () => messages.filter((message) => message.role === "assistant" && message.status === "done").length,
-        [messages],
-    );
 
     useEffect(() => {
         if (!shouldAutoScrollChat(managementOpen)) return;
@@ -482,33 +472,6 @@ export default function App({ username }: AppProps) {
                         </section>
                     </div>
 
-                    <div className="border-t border-ink/10 p-4">
-                        <div className="grid gap-2 text-xs text-ink/55">
-                            <div className="flex items-center justify-between gap-3">
-                                <span className="inline-flex items-center gap-2">
-                                    <Server className="h-3.5 w-3.5" aria-hidden="true" />
-                                    接口
-                                </span>
-                                <span className="truncate font-mono">{API_BASE_URL}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="inline-flex items-center gap-2">
-                                    <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />
-                                    已完成
-                                </span>
-                                <span className="tabular-nums">{completedCount}</span>
-                            </div>
-                            <div className="flex items-center justify-between gap-3">
-                                <span className="inline-flex items-center gap-2">
-                                    <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
-                                    用户
-                                </span>
-                                <span className="truncate" title={username}>
-                                    {username}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
                 </aside>
 
                 <main className="relative flex min-h-0 min-w-0 flex-col overflow-hidden">
