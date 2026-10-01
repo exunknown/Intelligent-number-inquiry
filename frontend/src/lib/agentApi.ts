@@ -22,6 +22,13 @@ export type QuerySessionSummary = {
   archived_at?: string | null;
 };
 
+export type QuerySessionPage = {
+  items: QuerySessionSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 export type QueryMessageResponse = {
   message_id: string;
   session_id: string;
@@ -195,6 +202,26 @@ export async function listQuerySessions(
       headers: { Authorization: `Bearer ${accessToken}` },
     },
     "会话列表加载失败",
+  );
+}
+
+export async function searchQuerySessions(
+  query = "",
+  limit = 10,
+  offset = 0,
+): Promise<QuerySessionPage> {
+  const accessToken = await getAccessToken();
+  const params = new URLSearchParams({
+    query,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return getJson<QuerySessionPage>(
+    `/api/sessions/history?${params.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+    "历史对话加载失败",
   );
 }
 

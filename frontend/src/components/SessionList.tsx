@@ -2,6 +2,7 @@ import {
     Archive,
     Clock3,
     Ellipsis,
+    History,
     LoaderCircle,
     MessageCircle,
     Pencil,
@@ -21,6 +22,10 @@ type SessionListProps = {
     onRename: (session: QuerySessionSummary) => void;
     onArchive: (session: QuerySessionSummary) => void;
     onDelete: (session: QuerySessionSummary) => void;
+    heading?: string;
+    emptyMessage?: string;
+    showHistoryLink?: boolean;
+    onOpenHistory?: () => void;
 };
 
 function formatSessionTime(value: string) {
@@ -44,6 +49,10 @@ export function SessionList({
     onRename,
     onArchive,
     onDelete,
+    heading = "历史会话",
+    emptyMessage = "还没有历史会话",
+    showHistoryLink = false,
+    onOpenHistory,
 }: SessionListProps) {
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
@@ -52,10 +61,21 @@ export function SessionList({
             <div className="mb-2 flex items-center justify-between px-1 text-xs font-semibold text-ink/45">
                 <span className="inline-flex items-center gap-2">
                     <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
-                    历史会话
+                    {heading}
                 </span>
                 {loading && <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-label="加载中" />}
             </div>
+
+            {showHistoryLink && onOpenHistory && (
+                <button
+                    type="button"
+                    onClick={onOpenHistory}
+                    className="mb-2 flex min-h-11 w-full items-center gap-2 border border-ink/10 bg-white/70 px-3 py-2 text-left text-xs font-medium text-indigo transition hover:border-indigo/25 hover:bg-indigo/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
+                >
+                    <History className="h-3.5 w-3.5" aria-hidden="true" />
+                    查看全部历史对话
+                </button>
+            )}
 
             {error && (
                 <div className="mb-2 border border-oxide/20 bg-oxide/5 px-3 py-2 text-xs leading-5 text-oxide">
@@ -65,7 +85,7 @@ export function SessionList({
 
             {!loading && sessions.length === 0 && !error && (
                 <div className="border border-dashed border-ink/15 px-3 py-4 text-center text-xs leading-5 text-ink/45">
-                    还没有历史会话
+                    {emptyMessage}
                 </div>
             )}
 
