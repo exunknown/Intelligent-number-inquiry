@@ -4,6 +4,15 @@
  */
 import { getAccessToken } from "../auth/keycloak";
 import type { AgentEvent } from "../types/agent";
+import type {
+    SemanticDraft,
+    SemanticMember,
+    SemanticMemberSummary,
+    SemanticOperation,
+    SemanticRelease,
+    SemanticSnapshot,
+    SemanticValidationIssue,
+} from "./semanticModel";
 import { safeUserManagementMessage, type ApplicationRole, type ApplicationUserStatus } from "./userManagement";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "";
@@ -445,6 +454,7 @@ export type ApplicationUserListResponse = {
 export type ApplicationUserMeResponse = {
     user: ApplicationUserSummary;
     can_manage_users: boolean;
+    can_manage_semantic_model: boolean;
 };
 
 export type ApplicationUserDetailResponse = {
@@ -583,5 +593,207 @@ export async function replaceApplicationUserRoles(
             },
             body: JSON.stringify({ roles, reason }),
         },
+    );
+}
+
+export type SemanticMemberListResponse = {
+    items: SemanticMemberSummary[];
+    total: number;
+};
+
+export type SemanticReleaseListResponse = {
+    items: SemanticRelease[];
+    total: number;
+};
+
+export type SemanticDraftPayload = {
+    release_version: string;
+    cubes: SemanticSnapshot["cubes"];
+    joins: SemanticSnapshot["joins"];
+    members: SemanticMember[];
+    reason: string;
+};
+
+export type SemanticReviewPayload = {
+    decision: "approved" | "rejected";
+    reason: string;
+};
+
+export type SemanticActionPayload = { reason: string };
+
+async function getSemanticModelJson<T>(
+    path: string,
+    init: RequestInit,
+    action: string,
+): Promise<T> {
+    const response = await fetch(`${API_BASE_URL}${path}`, init);
+    if (!response.ok) {
+        let code: string | undefined;
+        let message: string | undefined;
+        try {
+            const payload: unknown = await response.json();
+            if (payload !== null && typeof payload === "object" && "detail" in payload) {
+                const detail = payload.detail;
+                if (typeof detail === "string") message = detail;
+                if (detail !== null && typeof detail === "object") {
+                    if ("code" in detail && typeof detail.code === "string") code = detail.code;
+                    if ("message" in detail && typeof detail.message === "string") message = detail.message;
+                }
+            }
+        } catch {
+            // 非 JSON 错误由状态码处理。
+        }
+        const error = new Error(message ?? action) as Error & {
+            status: number;
+            code?: string;
+        };
+        error.status = response.status;
+        if (code && /^[a-z][a-z0-9_]{0,63}$/.test(code)) error.code = code;
+        throw error;
+    }
+    return (await response.json()) as T;
+}
+
+async function semanticHeaders(json = false): Promise<HeadersInit> {
+    const accessToken = await getAccessToken();
+    return {
+        Authorization: `Bearer ${accessToken}`,
+        ...(json ? { "Content-Type": "application/json" } : {}),
+    };
+}
+
+function withIdempotency(headers: HeadersInit): HeadersInit {
+    return { ...headers, "Idempotency-Key": crypto.randomUUID() };
+}
+
+export async function listSemanticMembers(
+    memberType: "all" | "measure" | "dimension" | "time_dimension" = "all",
+    query = "",
+): Promise<SemanticMemberListResponse> {
+    const params = new URLSearchParams({ member_type: memberType });
+    if (query.trim()) params.set("q", query.trim());
+    return getSemanticModelJson<SemanticMemberListResponse>(
+        `/api/admin/semantic-model/members?${params.toString()}`,
+        { headers: await semanticHeaders() },
+        "指标列表加载失败",
+    );
+}
+
+export async function getSemanticDraft(draftId: string): Promise<SemanticDraft> {
+    return getSemanticModelJson<SemanticDraft>(
+        `/api/admin/semantic-model/drafts/${encodeURIComponent(draftId)}`,
+        { headers: await semanticHeaders() },
+        "语义模型草稿加载失败",
+    );
+}
+
+export async function getSemanticRelease(releaseVersion: string): Promise<SemanticRelease> {
+    return getSemanticModelJson<SemanticRelease>(
+        `/api/admin/semantic-model/releases/${encodeURIComponent(releaseVersion)}`,
+        { headers: await semanticHeaders() },
+        "发布版本加载失败",
+    );
+}
+
+export async function listSemanticReleases(): Promise<SemanticReleaseListResponse> {
+    return getSemanticModelJson<SemanticReleaseListResponse>(
+        "/api/admin/semantic-model/releases",
+        { headers: await semanticHeaders() },
+        "发布记录加载失败",
+    );
+}
+
+export async function createSemanticDraft(payload: SemanticDraftPayload): Promise<SemanticOperation> {
+    return getSemanticModelJson<SemanticOperation>(
+        "/api/admin/semantic-model/drafts",
+        {
+            method: "POST",
+            headers: withIdempotency(await semanticHeaders(true)),
+            body: JSON.stringify(payload),
+        },
+        "创建语义模型草稿失败",
+    );
+}
+
+export async function updateSemanticDraft(
+    draftId: string,
+    payload: SemanticDraftPayload,
+): Promise<SemanticOperation> {
+    return getSemanticModelJson<SemanticOperation>(
+        `/api/admin/semantic-model/drafts/${encodeURIComponent(draftId)}`,
+        {
+            method: "PUT",
+            headers: withIdempotency(await semanticHeaders(true)),
+            body: JSON.stringify(payload),
+        },
+        "保存语义模型草稿失败",
+    );
+}
+
+export async function validateSemanticDraft(draftId: string): Promise<SemanticOperation> {
+    return getSemanticModelJson<SemanticOperation>(
+        `/api/admin/semantic-model/drafts/${encodeURIComponent(draftId)}/validate`,
+        { method: "POST", headers: await semanticHeaders() },
+        "校验语义模型失败",
+    );
+}
+
+export async function submitSemanticDraft(
+    draftId: string,
+    payload: SemanticActionPayload,
+): Promise<SemanticOperation> {
+    return getSemanticModelJson<SemanticOperation>(
+        `/api/admin/semantic-model/drafts/${encodeURIComponent(draftId)}/submit`,
+        {
+            method: "POST",
+            headers: withIdempotency(await semanticHeaders(true)),
+            body: JSON.stringify(payload),
+        },
+        "提交语义模型失败",
+    );
+}
+
+export async function reviewSemanticDraft(
+    draftId: string,
+    payload: SemanticReviewPayload,
+): Promise<SemanticOperation> {
+    return getSemanticModelJson<SemanticOperation>(
+        `/api/admin/semantic-model/drafts/${encodeURIComponent(draftId)}/review`,
+        {
+            method: "POST",
+            headers: withIdempotency(await semanticHeaders(true)),
+            body: JSON.stringify(payload),
+        },
+        "审核语义模型失败",
+    );
+}
+
+export async function publishSemanticDraft(
+    draftId: string,
+    payload: SemanticActionPayload,
+): Promise<SemanticOperation> {
+    return getSemanticModelJson<SemanticOperation>(
+        `/api/admin/semantic-model/drafts/${encodeURIComponent(draftId)}/publish`,
+        {
+            method: "POST",
+            headers: withIdempotency(await semanticHeaders(true)),
+            body: JSON.stringify(payload),
+        },
+        "发布语义模型失败",
+    );
+}
+
+export async function rollbackSemanticRelease(
+    releaseVersion: string,
+    payload: SemanticActionPayload,
+): Promise<SemanticOperation> {
+    return getSemanticModelJson<SemanticOperation>(
+        `/api/admin/semantic-model/releases/${encodeURIComponent(releaseVersion)}/rollback`,
+        {
+            method: "POST",
+            headers: withIdempotency(await semanticHeaders(true)),
+            body: JSON.stringify(payload),
+        },
+        "回滚语义模型失败",
     );
 }

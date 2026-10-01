@@ -33,6 +33,16 @@ export function shouldAutoScrollChat(managementOpen: boolean): boolean {
     return !managementOpen;
 }
 
+export function nextFocusableIndex(
+    currentIndex: number,
+    length: number,
+    direction: "forward" | "backward",
+): number {
+    if (length <= 0) return -1;
+    const delta = direction === "forward" ? 1 : -1;
+    return (currentIndex + delta + length) % length;
+}
+
 export function lastAdminInteraction(
     protectedAdmin: boolean,
     busy: boolean,

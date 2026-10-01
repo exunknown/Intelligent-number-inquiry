@@ -1,4 +1,4 @@
-import { UserRound } from "lucide-react";
+import { Gauge, UserRound } from "lucide-react";
 import {
     forwardRef,
     useEffect,
@@ -17,12 +17,14 @@ type UserAvatarMenuProps = {
     username: string;
     showManagement: boolean;
     onOpenManagement: () => void;
+    showGovernance: boolean;
+    onOpenGovernance: () => void;
     onLogout: () => void;
 };
 
 export const UserAvatarMenu = forwardRef<UserAvatarMenuHandle, UserAvatarMenuProps>(
     function UserAvatarMenu(
-        { username, showManagement, onOpenManagement, onLogout },
+        { username, showManagement, onOpenManagement, showGovernance, onOpenGovernance, onLogout },
         ref,
     ) {
         const [menuOpen, setMenuOpen] = useState(false);
@@ -91,6 +93,11 @@ export const UserAvatarMenu = forwardRef<UserAvatarMenuHandle, UserAvatarMenuPro
             onLogout();
         };
 
+        const handleGovernance = () => {
+            closeMenu(false);
+            onOpenGovernance();
+        };
+
         return (
             <div ref={wrapperRef} className="relative">
                 <button
@@ -130,6 +137,18 @@ export const UserAvatarMenu = forwardRef<UserAvatarMenuHandle, UserAvatarMenuPro
                                 className="flex min-h-10 w-full items-center px-3 text-left text-sm text-ink transition hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50"
                             >
                                 用户管理
+                            </button>
+                        )}
+                        {showGovernance && (
+                            <button
+                                type="button"
+                                role="menuitem"
+                                tabIndex={0}
+                                onClick={handleGovernance}
+                                className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-sm text-ink transition hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50"
+                            >
+                                <Gauge className="h-4 w-4 text-indigo" aria-hidden="true" />
+                                指标治理
                             </button>
                         )}
                         <button

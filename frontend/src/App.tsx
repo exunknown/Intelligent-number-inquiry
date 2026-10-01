@@ -14,6 +14,7 @@ import { EmptyState } from "./components/EmptyState";
 import { HistoryPage } from "./components/HistoryPage";
 import { MessageBubble } from "./components/MessageBubble";
 import { MobileSessionDrawer } from "./components/MobileSessionDrawer";
+import { SemanticModelPage } from "./components/SemanticModelPage";
 import { SessionList } from "./components/SessionList";
 import { UserAvatarMenu, type UserAvatarMenuHandle } from "./components/UserAvatarMenu";
 import { UserManagementPanel } from "./components/UserManagementPanel";
@@ -77,10 +78,12 @@ type AppProps = {
     username: string;
 };
 
-type AppPath = "/" | "/history";
+type AppPath = "/" | "/history" | "/semantic-model";
 
 function readAppPath(): AppPath {
-    return window.location.pathname === "/history" ? "/history" : "/";
+    if (window.location.pathname === "/history") return "/history";
+    if (window.location.pathname === "/semantic-model") return "/semantic-model";
+    return "/";
 }
 
 export default function App({ username }: AppProps) {
@@ -98,9 +101,11 @@ export default function App({ username }: AppProps) {
     const [draft, setDraft] = useState("");
     const [activeController, setActiveController] = useState<AbortController | null>(null);
     const [canManageUsers, setCanManageUsers] = useState<boolean | null>(null);
+    const [canManageSemanticModel, setCanManageSemanticModel] = useState<boolean | null>(null);
     const [capabilityError, setCapabilityError] = useState<unknown>(null);
     const [managementOpen, setManagementOpen] = useState(false);
     const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
+    const [semanticModelDirty, setSemanticModelDirty] = useState(false);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const desktopNewSessionRef = useRef<HTMLButtonElement | null>(null);
     const userMenuRef = useRef<UserAvatarMenuHandle | null>(null);
@@ -115,6 +120,7 @@ export default function App({ username }: AppProps) {
     const isStreaming = Boolean(activeController);
     const canSubmit = draft.trim().length > 0 && !isStreaming;
     const managementCapability = capabilityPresentation(canManageUsers, capabilityError);
+    const semanticModelCapability = canManageSemanticModel === true;
 
     const closeManagement = () => {
         setManagementOpen(false);
@@ -136,6 +142,10 @@ export default function App({ username }: AppProps) {
             setNavigationError("查询进行中，请先停止查询后再切换页面。");
             return;
         }
+        if (path === "/semantic-model" && semanticModelDirty) {
+            if (!window.confirm("当前指标治理草稿尚未保存，确定离开吗？")) return;
+            setSemanticModelDirty(false);
+        }
         setNavigationError(null);
         window.history.pushState({}, "", nextPath);
         setPath(nextPath);
@@ -148,12 +158,17 @@ export default function App({ username }: AppProps) {
                 setNavigationError("查询进行中，请先停止查询后再切换页面。");
                 return;
             }
+            if (path === "/semantic-model" && semanticModelDirty) {
+                window.history.pushState({}, "", path);
+                setNavigationError("当前指标治理草稿尚未保存，请先保存或确认离开。");
+                return;
+            }
             setNavigationError(null);
             setPath(readAppPath());
         };
         window.addEventListener("popstate", handlePopState);
         return () => window.removeEventListener("popstate", handlePopState);
-    }, [isStreaming, path]);
+    }, [isStreaming, path, semanticModelDirty]);
 
     useEffect(() => {
         const desktopMediaQuery = window.matchMedia("(min-width: 1024px)");
@@ -184,7 +199,10 @@ export default function App({ username }: AppProps) {
         if (capabilityLoadedRef.current) return;
         capabilityLoadedRef.current = true;
         void getCurrentUserCapability()
-            .then((response) => setCanManageUsers(response.can_manage_users))
+            .then((response) => {
+                setCanManageUsers(response.can_manage_users);
+                setCanManageSemanticModel(response.can_manage_semantic_model);
+            })
             .catch((error: unknown) => setCapabilityError(error));
     }, []);
 
@@ -575,6 +593,8 @@ export default function App({ username }: AppProps) {
                                 username={username}
                                 showManagement={managementCapability.showEntry}
                                 onOpenManagement={() => setManagementOpen(true)}
+                                showGovernance={semanticModelCapability}
+                                onOpenGovernance={() => navigateTo("/semantic-model")}
                                 onLogout={() => void handleLogout()}
                             />
                         </div>
@@ -611,6 +631,15 @@ export default function App({ username }: AppProps) {
                             externalError={sessionDetailError}
                             onClearExternalError={() => setSessionDetailError(null)}
                         />
+                    ) : path === "/semantic-model" ? (
+                        semanticModelCapability ? (
+                            <SemanticModelPage
+                                onBack={() => navigateTo("/")}
+                                onDirtyChange={setSemanticModelDirty}
+                            />
+                        ) : (
+                            <div className="grid min-h-0 flex-1 place-items-center bg-[#dfe0d8] px-6 text-center"><div><p className="font-serif text-xl font-bold text-ink">没有指标治理权限</p><p className="mt-2 text-sm text-ink/55">请联系平台管理员申请语义模型治理权限。</p></div></div>
+                        )
                     ) : (
                         <>
                             <div inert={managementOpen || mobileSessionsOpen} ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#dfe0d8]">
