@@ -132,6 +132,10 @@ class SemanticModelReleaseCoordinator:
     async def publish(self, snapshot, actor_id: str, reason: str):
         """按编译、索引 staging、激活顺序发布一个完整快照。"""
 
+        if self.persist_snapshot is not None and self.persist_and_activate is None:
+            raise RuntimeError(
+                "semantic snapshot publication requires persist_and_activate"
+            )
         await self.compile_model(snapshot)
         await self.stage_search_index(snapshot)
         if self.persist_and_activate is not None:
