@@ -16,6 +16,20 @@ _ALLOWED_AGGREGATIONS = {"sum", "count", "count_distinct", "number"}
 _ALLOWED_DIMENSION_TYPES = {"string", "number", "time"}
 _ALLOWED_FUNCTIONS = {"NULLIF"}
 _ALLOWED_TIME_TYPES = {"date", "datetime", "timestamp"}
+_ALLOWED_EXPRESSION_NODES = (
+    exp.Add,
+    exp.Column,
+    exp.Div,
+    exp.Identifier,
+    exp.Literal,
+    exp.Mod,
+    exp.Mul,
+    exp.Neg,
+    exp.Nullif,
+    exp.Paren,
+    exp.Struct,
+    exp.Sub,
+)
 _FUNCTION_PATTERN = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(")
 _FORBIDDEN_SQL_PATTERN = re.compile(
     r"(?:;|--|/\*|\*/|\b(?:SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b)",
@@ -55,9 +69,18 @@ class SemanticModelValidator:
         issues: list[ValidationIssue] = []
         names: dict[str, list[int]] = defaultdict(list)
         members_by_name = {member.qualified_name: member for member in snapshot.members}
+        cube_names = {cube.cube_name for cube in snapshot.cubes}
         for index, member in enumerate(snapshot.members):
             names[member.qualified_name].append(index)
             path = f"members[{index}]"
+            if member.cube_name not in cube_names:
+                issues.append(
+                    ValidationIssue(
+                        "member_cube_not_found",
+                        f"{path}.cube_name",
+                        f"成员所属 Cube 不存在：{member.cube_name}",
+                    )
+                )
             if member.member_type not in {"measure", "dimension", "time_dimension"}:
                 issues.append(
                     ValidationIssue(
@@ -67,7 +90,8 @@ class SemanticModelValidator:
                     )
                 )
             if member.source_column_id is not None:
-                if member.source_column_id.count(".") != 1:
+                source_parts = member.source_column_id.split(".")
+                if len(source_parts) != 2 or not all(source_parts):
                     issues.append(
                         ValidationIssue(
                             "invalid_source_column_id",
@@ -213,12 +237,14 @@ class SemanticModelValidator:
                     "指标表达式无法解析",
                 )
             ]
-        if isinstance(parsed, (exp.Select, exp.Insert, exp.Update, exp.Delete)):
+        if not isinstance(parsed, _ALLOWED_EXPRESSION_NODES) or any(
+            not isinstance(node, _ALLOWED_EXPRESSION_NODES) for node in parsed.walk()
+        ):
             return [
                 ValidationIssue(
-                    "expression_statement_not_allowed",
+                    "expression_operator_not_allowed",
                     path,
-                    "指标表达式不能是查询或写入语句",
+                    "指标表达式包含不允许的函数、操作符或语法节点",
                 )
             ]
         return []
