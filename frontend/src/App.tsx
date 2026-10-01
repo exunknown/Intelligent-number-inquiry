@@ -6,12 +6,12 @@ import {
     Eraser,
     MessageCircle,
     MessageSquarePlus,
-    ScrollText,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { logout } from "./auth/keycloak";
 import { Composer } from "./components/Composer";
 import { EmptyState } from "./components/EmptyState";
+import { HistoryPage } from "./components/HistoryPage";
 import { MessageBubble } from "./components/MessageBubble";
 import { MobileSessionDrawer } from "./components/MobileSessionDrawer";
 import { SessionList } from "./components/SessionList";
@@ -24,6 +24,7 @@ import {
     getQuerySession,
     getCurrentUserCapability,
     listQuerySessions,
+    searchQuerySessions,
     streamQueryWithReplay,
     updateQuerySessionTitle,
     type QuerySessionSummary,
@@ -76,10 +77,18 @@ type AppProps = {
     username: string;
 };
 
+type AppPath = "/" | "/history";
+
+function readAppPath(): AppPath {
+    return window.location.pathname === "/history" ? "/history" : "/";
+}
+
 export default function App({ username }: AppProps) {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [sessionId, setSessionId] = useState<string | null>(null);
+    const [path, setPath] = useState<AppPath>(readAppPath);
     const [sessions, setSessions] = useState<QuerySessionSummary[]>([]);
+    const [hasMoreSessions, setHasMoreSessions] = useState(false);
     const [sessionsLoading, setSessionsLoading] = useState(true);
     const [sessionsError, setSessionsError] = useState<string | null>(null);
     const [mobileSessionError, setMobileSessionError] = useState<string | null>(null);
@@ -117,6 +126,18 @@ export default function App({ username }: AppProps) {
             mobileSessionTriggerRef.current?.focus();
         });
     };
+
+    const navigateTo = (nextPath: AppPath) => {
+        if (nextPath === path) return;
+        window.history.pushState({}, "", nextPath);
+        setPath(nextPath);
+    };
+
+    useEffect(() => {
+        const handlePopState = () => setPath(readAppPath());
+        window.addEventListener("popstate", handlePopState);
+        return () => window.removeEventListener("popstate", handlePopState);
+    }, []);
 
     useEffect(() => {
         const desktopMediaQuery = window.matchMedia("(min-width: 1024px)");
@@ -160,7 +181,7 @@ export default function App({ username }: AppProps) {
     }, [messages]);
 
     const openSession = async (targetSessionId: string) => {
-        if (isStreaming || loadingSessionId === targetSessionId) return;
+        if (isStreaming || loadingSessionId === targetSessionId) return false;
         const openedFromMobile = mobileSessionsOpen;
         setMobileSessionsOpen(false);
         setMobileSessionError(null);
@@ -171,10 +192,12 @@ export default function App({ username }: AppProps) {
             setMessages(hydrateSessionMessages(detail));
             setSessionId(detail.session.session_id);
             setDraft("");
+            return true;
         } catch (error) {
             const message = error instanceof Error ? error.message : "会话详情加载失败";
             setSessionsError(message);
             if (openedFromMobile) setMobileSessionError(message);
+            return false;
         } finally {
             setLoadingSessionId(null);
         }
@@ -184,12 +207,22 @@ export default function App({ username }: AppProps) {
         setSessionsLoading(true);
         setSessionsError(null);
         try {
-            const nextSessions = await listQuerySessions(50, 0);
+            const nextSessions = await listQuerySessions(8, 0);
             setSessions(nextSessions);
+            let historyError: string | null = null;
+            try {
+                const page = await searchQuerySessions("", 1, 8);
+                setHasMoreSessions(page.total > 8);
+            } catch (error) {
+                setHasMoreSessions(false);
+                historyError = error instanceof Error ? error.message : "历史对话加载失败";
+            }
             if (openLatest && !sessionId && nextSessions[0]) {
                 await openSession(nextSessions[0].session_id);
             }
+            if (historyError) setSessionsError(historyError);
         } catch (error) {
+            setHasMoreSessions(false);
             setSessionsError(error instanceof Error ? error.message : "会话列表加载失败");
         } finally {
             setSessionsLoading(false);
@@ -216,6 +249,7 @@ export default function App({ username }: AppProps) {
         try {
             const updated = await updateQuerySessionTitle(session.session_id, title);
             updateSessionSummary(updated);
+            await refreshSessions(false);
         } catch (error) {
             setSessionsError(error instanceof Error ? error.message : "会话重命名失败");
         }
@@ -232,6 +266,7 @@ export default function App({ username }: AppProps) {
                 setMessages([]);
                 setSessionId(null);
             }
+            await refreshSessions(false);
         } catch (error) {
             setSessionsError(error instanceof Error ? error.message : "会话归档失败");
         }
@@ -248,8 +283,16 @@ export default function App({ username }: AppProps) {
                 setMessages([]);
                 setSessionId(null);
             }
+            await refreshSessions(false);
         } catch (error) {
             setSessionsError(error instanceof Error ? error.message : "会话删除失败");
+        }
+    };
+
+    const openSessionFromHistory = async (targetSessionId: string) => {
+        const opened = await openSession(targetSessionId);
+        if (opened) {
+            navigateTo("/");
         }
     };
 
@@ -449,27 +492,9 @@ export default function App({ username }: AppProps) {
                             onRename={(session) => void renameSession(session)}
                             onArchive={(session) => void archiveSession(session)}
                             onDelete={(session) => void removeSession(session)}
+                            showHistoryLink={hasMoreSessions}
+                            onOpenHistory={() => navigateTo("/history")}
                         />
-
-                        <section>
-                            <div className="mb-2 flex items-center gap-2 px-1 text-xs font-semibold text-ink/45">
-                                <ScrollText className="h-3.5 w-3.5" aria-hidden="true" />
-                                示例问题
-                            </div>
-                            <div className="space-y-2">
-                                {examples.map((example) => (
-                                    <button
-                                        key={example}
-                                        type="button"
-                                        disabled={isStreaming}
-                                        onClick={() => startQuery(example)}
-                                        className="w-full rounded-lg border border-ink/15 bg-white px-3 py-3 text-left text-sm leading-5 text-ink/80 shadow-line transition hover:-translate-y-0.5 hover:border-cinnabar/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        {example}
-                                    </button>
-                                ))}
-                            </div>
-                        </section>
                     </div>
 
                 </aside>
@@ -536,28 +561,41 @@ export default function App({ username }: AppProps) {
                         </p>
                     )}
 
-                    <div inert={managementOpen || mobileSessionsOpen} ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#dfe0d8]">
-                        {messages.length === 0 ? (
-                            <EmptyState examples={examples} onUseExample={(example) => setDraft(example)} />
-                        ) : (
-                            <div className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-6 lg:px-8">
-                                {messages.map((message) => (
-                                    <MessageBubble key={message.id} message={message} />
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    <div inert={managementOpen || mobileSessionsOpen} className="shrink-0">
-                        <Composer
-                            value={draft}
-                            disabled={!canSubmit}
-                            isStreaming={isStreaming}
-                            onChange={setDraft}
-                            onSubmit={() => startQuery()}
-                            onStop={stopQuery}
+                    {path === "/history" ? (
+                        <HistoryPage
+                            selectedSessionId={sessionId}
+                            onBack={() => navigateTo("/")}
+                            onOpenSession={openSessionFromHistory}
+                            onRename={renameSession}
+                            onArchive={archiveSession}
+                            onDelete={removeSession}
                         />
-                    </div>
+                    ) : (
+                        <>
+                            <div inert={managementOpen || mobileSessionsOpen} ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#dfe0d8]">
+                                {messages.length === 0 ? (
+                                    <EmptyState examples={examples} onUseExample={(example) => setDraft(example)} />
+                                ) : (
+                                    <div className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-6 lg:px-8">
+                                        {messages.map((message) => (
+                                            <MessageBubble key={message.id} message={message} />
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div inert={managementOpen || mobileSessionsOpen} className="shrink-0">
+                                <Composer
+                                    value={draft}
+                                    disabled={!canSubmit}
+                                    isStreaming={isStreaming}
+                                    onChange={setDraft}
+                                    onSubmit={() => startQuery()}
+                                    onStop={stopQuery}
+                                />
+                            </div>
+                        </>
+                    )}
                     {managementOpen && managementCapability.showEntry && (
                         <UserManagementPanel onClose={closeManagement} />
                     )}
@@ -573,6 +611,8 @@ export default function App({ username }: AppProps) {
                             onRename={(session) => void renameSession(session)}
                             onArchive={(session) => void archiveSession(session)}
                             onDelete={(session) => void removeSession(session)}
+                            showHistoryLink={hasMoreSessions}
+                            onOpenHistory={() => navigateTo("/history")}
                             onClose={closeMobileSessions}
                         />
                     )}

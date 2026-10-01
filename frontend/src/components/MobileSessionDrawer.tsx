@@ -15,6 +15,8 @@ export type MobileSessionDrawerProps = {
     onRename: (session: QuerySessionSummary) => void;
     onArchive: (session: QuerySessionSummary) => void;
     onDelete: (session: QuerySessionSummary) => void;
+    showHistoryLink: boolean;
+    onOpenHistory: () => void;
     onClose: () => void;
 };
 
@@ -38,6 +40,8 @@ export function MobileSessionDrawer({
     onRename,
     onArchive,
     onDelete,
+    showHistoryLink,
+    onOpenHistory,
     onClose,
 }: MobileSessionDrawerProps) {
     const dialogRef = useRef<HTMLDivElement>(null);
@@ -133,6 +137,11 @@ export function MobileSessionDrawer({
                         onRename={onRename}
                         onArchive={onArchive}
                         onDelete={onDelete}
+                        showHistoryLink={showHistoryLink}
+                        onOpenHistory={() => {
+                            onClose();
+                            onOpenHistory();
+                        }}
                     />
                 </div>
             </div>
