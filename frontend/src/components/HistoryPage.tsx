@@ -272,11 +272,6 @@ export function HistoryPage({
                         emptyMessage="没有找到匹配的历史对话"
                         showHistoryLink={false}
                     />
-                    {error && (
-                        <p role="alert" className="mt-4 border border-oxide/20 bg-oxide/5 px-3 py-2 text-sm text-oxide">
-                            {error}
-                        </p>
-                    )}
                 </div>
 
                 <div className="mt-6 flex flex-col gap-3 border-t border-ink/10 pt-4 text-sm text-ink/55 sm:flex-row sm:items-center sm:justify-between">

@@ -71,17 +71,6 @@ export function SessionList({
                 )}
             </div>
 
-            {showHistoryLink && onOpenHistory && (
-                <button
-                    type="button"
-                    onClick={onOpenHistory}
-                    className="mb-2 flex min-h-11 w-full items-center gap-2 border border-ink/10 bg-white/70 px-3 py-2 text-left text-xs font-medium text-indigo transition hover:border-indigo/25 hover:bg-indigo/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
-                >
-                    <History className="h-3.5 w-3.5" aria-hidden="true" />
-                    查看全部历史对话
-                </button>
-            )}
-
             {error && (
                 <div
                     role="alert"
@@ -192,6 +181,17 @@ export function SessionList({
                     );
                 })}
             </div>
+
+            {showHistoryLink && onOpenHistory && (
+                <button
+                    type="button"
+                    onClick={onOpenHistory}
+                    className="mt-2 flex min-h-11 w-full items-center gap-2 border border-ink/10 bg-white/70 px-3 py-2 text-left text-xs font-medium text-indigo transition hover:border-indigo/25 hover:bg-indigo/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
+                >
+                    <History className="h-3.5 w-3.5" aria-hidden="true" />
+                    查看历史对话
+                </button>
+            )}
         </section>
     );
 }
