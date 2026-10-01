@@ -13,6 +13,12 @@ from app.entities.semantic_model import SemanticModelSnapshot
 IssueSeverity = Literal["error", "warning"]
 
 _ALLOWED_AGGREGATIONS = {"sum", "count", "count_distinct", "number"}
+_ALLOWED_ATTACHMENT_RELATION_TYPES = {
+    "supporting",
+    "comparison",
+    "efficiency",
+    "breakdown",
+}
 _ALLOWED_DIMENSION_TYPES = {"string", "number", "time"}
 _ALLOWED_FUNCTIONS = {"NULLIF"}
 _ALLOWED_TIME_TYPES = {"date", "datetime", "timestamp"}
@@ -57,8 +63,216 @@ class SemanticModelValidator:
     ) -> list[ValidationIssue]:
         issues: list[ValidationIssue] = []
         issues.extend(self._validate_members(snapshot, physical_column_ids))
+        issues.extend(self._validate_metric_relations(snapshot))
         issues.extend(self._validate_cubes_and_joins(snapshot))
         issues.extend(self._validate_dependency_graph(snapshot))
+        return issues
+
+    @staticmethod
+    def _validate_metric_relations(
+        snapshot: SemanticModelSnapshot,
+    ) -> list[ValidationIssue]:
+        issues: list[ValidationIssue] = []
+        members_by_id = {
+            member.member_id: member
+            for member in snapshot.members
+            if member.release_version == snapshot.release_version
+        }
+        group_memberships: dict[str, tuple[int, int]] = {}
+        group_ids: dict[str, int] = {}
+
+        for group_index, group in enumerate(snapshot.metric_equivalence_groups):
+            group_path = f"metric_equivalence_groups[{group_index}]"
+            if group.group_id in group_ids:
+                issues.append(
+                    ValidationIssue(
+                        "metric_equivalence_duplicate_group",
+                        f"{group_path}.group_id",
+                        f"等效指标组 ID 重复：{group.group_id}",
+                    )
+                )
+            else:
+                group_ids[group.group_id] = group_index
+
+            canonical_member = members_by_id.get(group.canonical_member_id)
+            if canonical_member is None:
+                issues.append(
+                    ValidationIssue(
+                        "metric_equivalence_member_not_found",
+                        f"{group_path}.canonical_member_id",
+                        f"等效指标标准成员不存在：{group.canonical_member_id}",
+                    )
+                )
+            elif canonical_member.member_type != "measure":
+                issues.append(
+                    ValidationIssue(
+                        "metric_equivalence_member_not_measure",
+                        f"{group_path}.canonical_member_id",
+                        "等效指标标准成员必须是 measure",
+                    )
+                )
+
+            canonical_count = 0
+            for member_index, group_member in enumerate(group.members):
+                member_path = f"{group_path}.members[{member_index}]"
+                member = members_by_id.get(group_member.member_id)
+                if member is None:
+                    issues.append(
+                        ValidationIssue(
+                            "metric_equivalence_member_not_found",
+                            member_path,
+                            f"等效指标成员不存在：{group_member.member_id}",
+                        )
+                    )
+                elif member.member_type != "measure":
+                    issues.append(
+                        ValidationIssue(
+                            "metric_equivalence_member_not_measure",
+                            member_path,
+                            "等效指标组成员必须是 measure",
+                        )
+                    )
+                if group_member.member_id == group.canonical_member_id:
+                    canonical_count += 1
+
+                previous = group_memberships.get(group_member.member_id)
+                if previous is not None:
+                    issues.append(
+                        ValidationIssue(
+                            "metric_equivalence_duplicate_group",
+                            member_path,
+                            "一个指标不能重复加入等效指标组",
+                        )
+                    )
+                else:
+                    group_memberships[group_member.member_id] = (
+                        group_index,
+                        member_index,
+                    )
+
+            if canonical_count != 1:
+                issues.append(
+                    ValidationIssue(
+                        "metric_equivalence_multiple_canonical",
+                        f"{group_path}.canonical_member_id",
+                        "等效指标组必须恰好包含一个标准成员",
+                    )
+                )
+
+        attachment_edges: dict[str, list[str]] = defaultdict(list)
+        attachment_pairs: set[tuple[str, str]] = set()
+        for attachment_index, attachment in enumerate(snapshot.metric_attachments):
+            attachment_path = f"metric_attachments[{attachment_index}]"
+            primary_path = f"{attachment_path}.primary_member_id"
+            attached_path = f"{attachment_path}.attached_member_id"
+            primary_member = members_by_id.get(attachment.primary_member_id)
+            attached_member = members_by_id.get(attachment.attached_member_id)
+
+            if primary_member is None:
+                issues.append(
+                    ValidationIssue(
+                        "metric_attachment_member_not_found",
+                        primary_path,
+                        f"附带指标主成员不存在：{attachment.primary_member_id}",
+                    )
+                )
+            elif primary_member.member_type != "measure":
+                issues.append(
+                    ValidationIssue(
+                        "metric_attachment_member_not_measure",
+                        primary_path,
+                        "附带指标主成员必须是 measure",
+                    )
+                )
+            if attached_member is None:
+                issues.append(
+                    ValidationIssue(
+                        "metric_attachment_member_not_found",
+                        attached_path,
+                        f"附带指标成员不存在：{attachment.attached_member_id}",
+                    )
+                )
+            elif attached_member.member_type != "measure":
+                issues.append(
+                    ValidationIssue(
+                        "metric_attachment_member_not_measure",
+                        attached_path,
+                        "附带指标成员必须是 measure",
+                    )
+                )
+            if attachment.primary_member_id == attachment.attached_member_id:
+                issues.append(
+                    ValidationIssue(
+                        "metric_attachment_self_reference",
+                        attached_path,
+                        "附带指标不能引用自身",
+                    )
+                )
+            if attachment.relation_type not in _ALLOWED_ATTACHMENT_RELATION_TYPES:
+                issues.append(
+                    ValidationIssue(
+                        "metric_attachment_invalid_relation_type",
+                        f"{attachment_path}.relation_type",
+                        "附带指标关系类型不在允许范围内",
+                    )
+                )
+
+            pair = (
+                attachment.primary_member_id,
+                attachment.attached_member_id,
+            )
+            if pair in attachment_pairs:
+                issues.append(
+                    ValidationIssue(
+                        "metric_attachment_duplicate",
+                        attachment_path,
+                        "附带指标关系不能重复",
+                    )
+                )
+            else:
+                attachment_pairs.add(pair)
+
+            if (
+                primary_member is not None
+                and primary_member.member_type == "measure"
+                and attached_member is not None
+                and attached_member.member_type == "measure"
+                and attachment.primary_member_id != attachment.attached_member_id
+            ):
+                attachment_edges[attachment.primary_member_id].append(
+                    attachment.attached_member_id
+                )
+
+        cycle_reported = False
+
+        def reaches(start: str, target: str, visited: set[str]) -> bool:
+            if start == target:
+                return True
+            if start in visited:
+                return False
+            visited.add(start)
+            return any(
+                reaches(next_member, target, visited)
+                for next_member in attachment_edges.get(start, ())
+            )
+
+        for attachment_index, attachment in enumerate(snapshot.metric_attachments):
+            if cycle_reported:
+                break
+            if reaches(
+                attachment.attached_member_id,
+                attachment.primary_member_id,
+                set(),
+            ):
+                issues.append(
+                    ValidationIssue(
+                        "metric_attachment_cycle",
+                        f"metric_attachments[{attachment_index}]",
+                        "附带指标关系不能形成循环",
+                    )
+                )
+                cycle_reported = True
+
         return issues
 
     def _validate_members(
