@@ -1,5 +1,6 @@
 """跨存储元数据发布的顺序提交与补偿。"""
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from app.core.log import logger
@@ -101,3 +102,36 @@ class MetadataReleaseCoordinator:
                     binding.label,
                     type(rollback_error).__name__,
                 )
+
+
+class SemanticModelReleaseCoordinator:
+    """语义模型发布的显式阶段协调器。
+
+    具体的 Cube 编译、Qdrant staging 和 MySQL 激活由调用方注入，避免服务层
+    在缺少外部依赖时自行伪造发布成功。
+    """
+
+    def __init__(
+        self,
+        *,
+        compile_model: Callable[[object], Awaitable[object]],
+        stage_search_index: Callable[[object], Awaitable[object]],
+        activate_release: Callable[[object, str, str], Awaitable[object]],
+        rollback_release: Callable[[str, str, str], Awaitable[object]],
+    ):
+        self.compile_model = compile_model
+        self.stage_search_index = stage_search_index
+        self.activate_release = activate_release
+        self.rollback_release = rollback_release
+
+    async def publish(self, snapshot, actor_id: str, reason: str):
+        """按编译、索引 staging、激活顺序发布一个完整快照。"""
+
+        await self.compile_model(snapshot)
+        await self.stage_search_index(snapshot)
+        return await self.activate_release(snapshot, actor_id, reason)
+
+    async def rollback(self, release_version: str, actor_id: str, reason: str):
+        """回滚只通过已注入的激活步骤执行。"""
+
+        return await self.rollback_release(release_version, actor_id, reason)

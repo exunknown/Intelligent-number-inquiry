@@ -14,8 +14,13 @@ CatalogMemberFilter = Literal["measure", "dimension", "time_dimension", "all"]
 class MetricCatalogService:
     """Load the current Qdrant alias snapshot and apply API filters."""
 
-    def __init__(self, repository: CubeMemberQdrantRepository):
+    def __init__(
+        self,
+        repository: CubeMemberQdrantRepository,
+        semantic_repository=None,
+    ):
         self.repository = repository
+        self.semantic_repository = semantic_repository
 
     async def list_members(
         self,
@@ -25,7 +30,29 @@ class MetricCatalogService:
     ) -> list[CubeMember]:
         """Return governed members matching type and human-readable search text."""
 
-        members = await self.repository.list_members()
+        if self.semantic_repository is None:
+            members = await self.repository.list_members()
+        else:
+            snapshot = await self.semantic_repository.get_active_snapshot()
+            members = (
+                []
+                if snapshot is None
+                else [
+                    CubeMember(
+                        name=member.qualified_name,
+                        cube_name=member.cube_name,
+                        member_type=member.member_type,
+                        data_type=member.data_type,
+                        title=member.title,
+                        description=member.description,
+                        aliases=list(member.aliases),
+                        ai_context=member.ai_context,
+                        source_column_id=member.source_column_id,
+                        filterable=member.filterable,
+                    )
+                    for member in snapshot.members
+                ]
+            )
         normalized_query = q.strip().casefold() if q else ""
         result = []
         for member in members:

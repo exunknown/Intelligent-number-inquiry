@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.entities.semantic_model import (
@@ -17,7 +18,7 @@ from app.entities.semantic_model import (
 from app.models.metadata_release import MetadataReleaseMySQL
 from app.models.semantic_cube import SemanticCubeMySQL
 from app.models.semantic_dimension_definition import SemanticDimensionDefinitionMySQL
-from app.models.semantic_draft import SemanticModelDraftMySQL
+from app.models.semantic_draft import SemanticModelChangeMySQL, SemanticModelDraftMySQL
 from app.models.semantic_join import SemanticJoinMySQL
 from app.models.semantic_measure_definition import SemanticMeasureDefinitionMySQL
 from app.models.semantic_member import SemanticMemberMySQL
@@ -152,6 +153,112 @@ class SemanticModelRepository:
             return None
         return SemanticModelSnapshot.from_dict(model.snapshot_json)
 
+    async def get_draft_record(self, draft_id: str) -> dict | None:
+        model = await self.session.get(SemanticModelDraftMySQL, draft_id)
+        if model is None:
+            return None
+        return {
+            "draft_id": model.draft_id,
+            "snapshot": SemanticModelSnapshot.from_dict(model.snapshot_json),
+            "status": model.status,
+            "review_note": model.review_note,
+            "updated_at": model.updated_at,
+        }
+
+    async def set_draft_status(
+        self,
+        draft_id: str,
+        status: str,
+        updated_by: str,
+        review_note: str | None = None,
+    ) -> None:
+        result = await self.session.execute(
+            select(SemanticModelDraftMySQL)
+            .where(SemanticModelDraftMySQL.draft_id == draft_id)
+            .with_for_update()
+        )
+        model = result.scalar_one_or_none()
+        if model is None:
+            raise ValueError("semantic model draft not found")
+        model.status = status
+        model.updated_by = updated_by
+        model.review_note = review_note
+        model.updated_at = self._now()
+        try:
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+
+    async def get_change_by_key(self, idempotency_key: str) -> dict | None:
+        result = await self.session.execute(
+            select(SemanticModelChangeMySQL)
+            .where(SemanticModelChangeMySQL.idempotency_key == idempotency_key)
+            .with_for_update()
+        )
+        model = result.scalar_one_or_none()
+        if model is None:
+            return None
+        return {
+            "operation_id": model.change_id,
+            "draft_id": model.draft_id or None,
+            "action": model.action,
+            "actor_id": model.actor_id,
+            "reason": model.reason,
+        }
+
+    async def record_change(
+        self,
+        *,
+        draft_id: str | None,
+        action: str,
+        actor_id: str,
+        reason: str,
+        idempotency_key: str,
+    ) -> dict:
+        change_id = str(uuid4())
+        self.session.add(
+            SemanticModelChangeMySQL(
+                change_id=change_id,
+                draft_id=draft_id or "",
+                action=action,
+                actor_id=actor_id,
+                reason=reason,
+                idempotency_key=idempotency_key,
+                created_at=self._now(),
+            )
+        )
+        try:
+            await self.session.commit()
+        except IntegrityError:
+            await self.session.rollback()
+            existing = await self.get_change_by_key(idempotency_key)
+            if existing is None:
+                raise
+            return existing
+        except Exception:
+            await self.session.rollback()
+            raise
+        return {
+            "operation_id": change_id,
+            "draft_id": draft_id,
+            "action": action,
+            "actor_id": actor_id,
+            "reason": reason,
+        }
+
+    async def list_releases(self) -> list[dict]:
+        result = await self.session.execute(
+            select(MetadataReleaseMySQL).order_by(
+                MetadataReleaseMySQL.created_at.desc()
+            )
+        )
+        return [self._release_record(model) for model in result.scalars().all()]
+
+    async def get_release(self, release_version: str) -> dict | None:
+        model = await self.session.get(MetadataReleaseMySQL, release_version)
+        return self._release_record(model) if model is not None else None
+
     async def update_draft(
         self,
         draft_id: str,
@@ -218,3 +325,12 @@ class SemanticModelRepository:
                 else None
             ),
         )
+
+    @staticmethod
+    def _release_record(model: MetadataReleaseMySQL) -> dict:
+        return {
+            "release_version": model.release_version,
+            "status": model.status,
+            "active": model.active,
+            "error_code": model.error_code,
+        }

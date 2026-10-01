@@ -42,6 +42,9 @@ from app.repositories.mysql.meta.query_audit_repository import QueryAuditReposit
 from app.repositories.mysql.meta.query_export_repository import QueryExportRepository
 from app.repositories.mysql.meta.query_message_repository import QueryMessageRepository
 from app.repositories.mysql.meta.query_session_repository import QuerySessionRepository
+from app.repositories.mysql.meta.semantic_model_repository import (
+    SemanticModelRepository,
+)
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
@@ -58,6 +61,7 @@ from app.services.authorization_service import (
 from app.services.metric_candidate_service import MetricCandidateService
 from app.services.metric_catalog_service import MetricCatalogService
 from app.services.query_service import QueryService
+from app.services.semantic_model_service import SemanticModelService
 
 _authorization_cache_state = AuthorizationCacheState()
 _sql_policy_engine = SQLPolicyEngine(
@@ -157,6 +161,24 @@ async def get_metadata_release_repository(
     """创建请求级元数据发布版本仓储。"""
 
     return MetadataReleaseRepository(session)
+
+
+async def get_semantic_model_repository(
+    session: Annotated[AsyncSession, Depends(get_meta_session)],
+) -> SemanticModelRepository:
+    """创建请求级语义模型仓储。"""
+
+    return SemanticModelRepository(session)
+
+
+async def get_semantic_model_service(
+    repository: Annotated[
+        SemanticModelRepository, Depends(get_semantic_model_repository)
+    ],
+) -> SemanticModelService:
+    """组装语义模型治理服务。"""
+
+    return SemanticModelService(repository)
 
 
 async def get_authz_policy_repository(
@@ -270,10 +292,13 @@ async def get_metric_catalog_service(
     repository: Annotated[
         CubeMemberQdrantRepository, Depends(get_cube_member_qdrant_repository)
     ],
+    semantic_repository: Annotated[
+        SemanticModelRepository, Depends(get_semantic_model_repository)
+    ],
 ) -> MetricCatalogService:
     """Create the read-only governed metric catalog service."""
 
-    return MetricCatalogService(repository)
+    return MetricCatalogService(repository, semantic_repository)
 
 
 async def get_metric_candidate_service(
