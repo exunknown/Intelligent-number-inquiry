@@ -57,6 +57,20 @@ export function SessionList({
     loadingSessionId = null,
 }: SessionListProps) {
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    const [busySessionId, setBusySessionId] = useState<string | null>(null);
+
+    const runSessionAction = async (
+        action: (session: QuerySessionSummary) => void | Promise<void>,
+        session: QuerySessionSummary,
+    ) => {
+        setOpenMenuId(null);
+        setBusySessionId(session.session_id);
+        try {
+            await action(session);
+        } finally {
+            setBusySessionId(null);
+        }
+    };
 
     return (
         <section aria-label="历史会话">
@@ -95,7 +109,8 @@ export function SessionList({
                 {sessions.map((session) => {
                     const selected = session.session_id === selectedSessionId;
                     const menuOpen = session.session_id === openMenuId;
-                    const selectionDisabled = disabled || loadingSessionId !== null;
+                    const selectionDisabled =
+                        disabled || loadingSessionId !== null || busySessionId !== null;
                     return (
                         <div key={session.session_id} className="relative">
                             <button
@@ -149,10 +164,7 @@ export function SessionList({
                                     <button
                                         type="button"
                                         disabled={selectionDisabled}
-                                        onClick={() => {
-                                            setOpenMenuId(null);
-                                            void Promise.resolve(onRename(session)).catch(() => undefined);
-                                        }}
+                                        onClick={() => void runSessionAction(onRename, session).catch(() => undefined)}
                                         className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-xs text-ink/75 hover:bg-paper focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cinnabar/40"
                                     >
                                         <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
@@ -161,10 +173,7 @@ export function SessionList({
                                     <button
                                         type="button"
                                         disabled={selectionDisabled}
-                                        onClick={() => {
-                                            setOpenMenuId(null);
-                                            void Promise.resolve(onArchive(session)).catch(() => undefined);
-                                        }}
+                                        onClick={() => void runSessionAction(onArchive, session).catch(() => undefined)}
                                         className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-xs text-ink/75 hover:bg-paper focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cinnabar/40"
                                     >
                                         <Archive className="h-3.5 w-3.5" aria-hidden="true" />
@@ -173,10 +182,7 @@ export function SessionList({
                                     <button
                                         type="button"
                                         disabled={selectionDisabled}
-                                        onClick={() => {
-                                            setOpenMenuId(null);
-                                            void Promise.resolve(onDelete(session)).catch(() => undefined);
-                                        }}
+                                        onClick={() => void runSessionAction(onDelete, session).catch(() => undefined)}
                                         className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-xs text-oxide hover:bg-oxide/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cinnabar/40"
                                     >
                                         <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -192,8 +198,9 @@ export function SessionList({
             {showHistoryLink && onOpenHistory && (
                 <button
                     type="button"
+                    disabled={disabled || loadingSessionId !== null || busySessionId !== null}
                     onClick={onOpenHistory}
-                    className="mt-2 flex min-h-11 w-full items-center gap-2 border border-ink/10 bg-white/70 px-3 py-2 text-left text-xs font-medium text-indigo transition hover:border-indigo/25 hover:bg-indigo/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
+                    className="mt-2 flex min-h-11 w-full items-center gap-2 border border-ink/10 bg-white/70 px-3 py-2 text-left text-xs font-medium text-indigo transition hover:border-indigo/25 hover:bg-indigo/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 disabled:cursor-not-allowed disabled:opacity-45"
                 >
                     <History className="h-3.5 w-3.5" aria-hidden="true" />
                     查看历史对话

@@ -19,6 +19,7 @@ type HistoryPageProps = {
     disabled?: boolean;
     loadingSessionId?: string | null;
     externalError?: string | null;
+    onClearExternalError?: () => void;
 };
 
 const EMPTY_PAGE: QuerySessionPage = {
@@ -100,6 +101,7 @@ export function HistoryPage({
     disabled = false,
     loadingSessionId = null,
     externalError = null,
+    onClearExternalError,
 }: HistoryPageProps) {
     const [searchInput, setSearchInput] = useState("");
     const [page, setPage] = useState(1);
@@ -141,6 +143,7 @@ export function HistoryPage({
             }
             setPageData(nextPage);
             setHasLoaded(true);
+            onClearExternalError?.();
         } catch (requestError: unknown) {
             if (requestGateRef.current.accepts(request)) {
                 setError(getErrorMessage(requestError, "历史对话加载失败"));
@@ -209,8 +212,9 @@ export function HistoryPage({
                     <div>
                         <button
                             type="button"
+                            disabled={disabled}
                             onClick={onBack}
-                            className="mb-4 inline-flex min-h-11 items-center gap-2 px-1 text-sm font-medium text-ink/60 transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
+                            className="mb-4 inline-flex min-h-11 items-center gap-2 px-1 text-sm font-medium text-ink/60 transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                             返回工作台
@@ -270,7 +274,7 @@ export function HistoryPage({
                         loading={loading || !hasLoaded}
                         disabled={disabled || loading}
                         loadingSessionId={loadingSessionId}
-                        error={externalError ?? error}
+                        error={error ?? externalError}
                         onSelect={onOpenSession}
                         onRename={(session) => void runSessionAction(onRename, session)}
                         onArchive={(session) => void runSessionAction(onArchive, session)}

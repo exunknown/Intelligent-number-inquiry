@@ -174,17 +174,27 @@ export async function createQuerySession(title?: string): Promise<QuerySessionSu
 }
 
 async function getJson<T>(
-  path: string,
-  init: RequestInit,
-  action: string,
+    path: string,
+    init: RequestInit,
+    action: string,
+    unavailableMessage?: string,
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, init);
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, init);
+  } catch (error) {
+    if (unavailableMessage) throw new Error(unavailableMessage);
+    throw error;
+  }
   if (!response.ok) {
     if (response.status === 401) {
       throw new Error("登录已失效，请重新登录");
     }
     if (response.status === 403) {
       throw new Error("没有执行该操作的权限");
+    }
+    if (unavailableMessage && response.status >= 500) {
+      throw new Error(unavailableMessage);
     }
     throw new Error(`${action}：HTTP ${response.status}`);
   }
@@ -222,6 +232,7 @@ export async function searchQuerySessions(
       headers: { Authorization: `Bearer ${accessToken}` },
     },
     "历史对话加载失败",
+    "历史对话加载失败，请稍后重试",
   );
 }
 

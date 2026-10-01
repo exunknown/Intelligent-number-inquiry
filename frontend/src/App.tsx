@@ -91,6 +91,8 @@ export default function App({ username }: AppProps) {
     const [hasMoreSessions, setHasMoreSessions] = useState(false);
     const [sessionsLoading, setSessionsLoading] = useState(true);
     const [sessionsError, setSessionsError] = useState<string | null>(null);
+    const [sessionDetailError, setSessionDetailError] = useState<string | null>(null);
+    const [navigationError, setNavigationError] = useState<string | null>(null);
     const [mobileSessionError, setMobileSessionError] = useState<string | null>(null);
     const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
     const [draft, setDraft] = useState("");
@@ -108,6 +110,7 @@ export default function App({ username }: AppProps) {
     const mobileSessionTriggerRef = useRef<HTMLButtonElement | null>(null);
     const initialSessionLoadedRef = useRef(false);
     const capabilityLoadedRef = useRef(false);
+    const sessionsRefreshGenerationRef = useRef(0);
 
     const isStreaming = Boolean(activeController);
     const canSubmit = draft.trim().length > 0 && !isStreaming;
@@ -129,15 +132,28 @@ export default function App({ username }: AppProps) {
 
     const navigateTo = (nextPath: AppPath) => {
         if (nextPath === path) return;
+        if (isStreaming) {
+            setNavigationError("查询进行中，请先停止查询后再切换页面。");
+            return;
+        }
+        setNavigationError(null);
         window.history.pushState({}, "", nextPath);
         setPath(nextPath);
     };
 
     useEffect(() => {
-        const handlePopState = () => setPath(readAppPath());
+        const handlePopState = () => {
+            if (isStreaming) {
+                window.history.pushState({}, "", path);
+                setNavigationError("查询进行中，请先停止查询后再切换页面。");
+                return;
+            }
+            setNavigationError(null);
+            setPath(readAppPath());
+        };
         window.addEventListener("popstate", handlePopState);
         return () => window.removeEventListener("popstate", handlePopState);
-    }, []);
+    }, [isStreaming, path]);
 
     useEffect(() => {
         const desktopMediaQuery = window.matchMedia("(min-width: 1024px)");
@@ -187,6 +203,7 @@ export default function App({ username }: AppProps) {
         setMobileSessionError(null);
         setLoadingSessionId(targetSessionId);
         setSessionsError(null);
+        setSessionDetailError(null);
         try {
             const detail = await getQuerySession(targetSessionId, 200, 0);
             setMessages(hydrateSessionMessages(detail));
@@ -195,7 +212,7 @@ export default function App({ username }: AppProps) {
             return true;
         } catch (error) {
             const message = error instanceof Error ? error.message : "会话详情加载失败";
-            setSessionsError(message);
+            setSessionDetailError(message);
             if (openedFromMobile) setMobileSessionError(message);
             return false;
         } finally {
@@ -204,28 +221,38 @@ export default function App({ username }: AppProps) {
     };
 
     const refreshSessions = async (openLatest = false) => {
+        const generation = ++sessionsRefreshGenerationRef.current;
         setSessionsLoading(true);
         setSessionsError(null);
         try {
             const nextSessions = await listQuerySessions(8, 0);
+            if (generation !== sessionsRefreshGenerationRef.current) return;
             setSessions(nextSessions);
             let historyError: string | null = null;
             try {
                 const page = await searchQuerySessions("", 1, 8);
+                if (generation !== sessionsRefreshGenerationRef.current) return;
                 setHasMoreSessions(page.total > 8);
             } catch (error) {
+                if (generation !== sessionsRefreshGenerationRef.current) return;
                 setHasMoreSessions(false);
                 historyError = error instanceof Error ? error.message : "历史对话加载失败";
             }
+            if (generation !== sessionsRefreshGenerationRef.current) return;
             if (openLatest && !sessionId && nextSessions[0]) {
                 await openSession(nextSessions[0].session_id);
             }
-            if (historyError) setSessionsError(historyError);
+            if (generation === sessionsRefreshGenerationRef.current && historyError) {
+                setSessionsError(historyError);
+            }
         } catch (error) {
+            if (generation !== sessionsRefreshGenerationRef.current) return;
             setHasMoreSessions(false);
             setSessionsError(error instanceof Error ? error.message : "会话列表加载失败");
         } finally {
-            setSessionsLoading(false);
+            if (generation === sessionsRefreshGenerationRef.current) {
+                setSessionsLoading(false);
+            }
         }
     };
 
@@ -559,6 +586,12 @@ export default function App({ username }: AppProps) {
                         </p>
                     )}
 
+                    {navigationError && (
+                        <p role="status" aria-live="polite" className="border-b border-ink/10 bg-paper px-4 py-2 text-sm text-oxide">
+                            {navigationError}
+                        </p>
+                    )}
+
                     {mobileSessionError && (
                         <p role="alert" aria-live="assertive" className="border-b border-ink/10 bg-paper px-4 py-2 text-sm text-oxide lg:hidden">
                             {mobileSessionError}
@@ -575,7 +608,8 @@ export default function App({ username }: AppProps) {
                             onDelete={removeSession}
                             disabled={isStreaming}
                             loadingSessionId={loadingSessionId}
-                            externalError={sessionsError}
+                            externalError={sessionDetailError}
+                            onClearExternalError={() => setSessionDetailError(null)}
                         />
                     ) : (
                         <>
