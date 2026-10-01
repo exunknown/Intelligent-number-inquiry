@@ -26,6 +26,7 @@ type SessionListProps = {
     emptyMessage?: string;
     showHistoryLink?: boolean;
     onOpenHistory?: () => void;
+    loadingSessionId?: string | null;
 };
 
 function formatSessionTime(value: string) {
@@ -53,6 +54,7 @@ export function SessionList({
     emptyMessage = "还没有历史会话",
     showHistoryLink = false,
     onOpenHistory,
+    loadingSessionId = null,
 }: SessionListProps) {
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
@@ -93,11 +95,13 @@ export function SessionList({
                 {sessions.map((session) => {
                     const selected = session.session_id === selectedSessionId;
                     const menuOpen = session.session_id === openMenuId;
+                    const selectionDisabled = disabled || loadingSessionId !== null;
                     return (
                         <div key={session.session_id} className="relative">
                             <button
                                 type="button"
-                                disabled={disabled}
+                                disabled={selectionDisabled}
+                                aria-busy={loadingSessionId === session.session_id}
                                 onClick={() => {
                                     setOpenMenuId(null);
                                     onSelect(session.session_id);
@@ -127,7 +131,7 @@ export function SessionList({
 
                             <button
                                 type="button"
-                                disabled={disabled}
+                                disabled={selectionDisabled}
                                 onClick={(event) => {
                                     event.stopPropagation();
                                     setOpenMenuId(menuOpen ? null : session.session_id);
@@ -146,7 +150,7 @@ export function SessionList({
                                         type="button"
                                         onClick={() => {
                                             setOpenMenuId(null);
-                                            onRename(session);
+                                            void Promise.resolve(onRename(session)).catch(() => undefined);
                                         }}
                                         className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-xs text-ink/75 hover:bg-paper focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cinnabar/40"
                                     >
@@ -157,7 +161,7 @@ export function SessionList({
                                         type="button"
                                         onClick={() => {
                                             setOpenMenuId(null);
-                                            onArchive(session);
+                                            void Promise.resolve(onArchive(session)).catch(() => undefined);
                                         }}
                                         className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-xs text-ink/75 hover:bg-paper focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cinnabar/40"
                                     >
@@ -168,7 +172,7 @@ export function SessionList({
                                         type="button"
                                         onClick={() => {
                                             setOpenMenuId(null);
-                                            onDelete(session);
+                                            void Promise.resolve(onDelete(session)).catch(() => undefined);
                                         }}
                                         className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-xs text-oxide hover:bg-oxide/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cinnabar/40"
                                     >

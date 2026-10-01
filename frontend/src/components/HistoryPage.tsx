@@ -16,6 +16,9 @@ type HistoryPageProps = {
     onRename: (session: QuerySessionSummary) => Promise<void>;
     onArchive: (session: QuerySessionSummary) => Promise<void>;
     onDelete: (session: QuerySessionSummary) => Promise<void>;
+    disabled?: boolean;
+    loadingSessionId?: string | null;
+    externalError?: string | null;
 };
 
 const EMPTY_PAGE: QuerySessionPage = {
@@ -94,6 +97,9 @@ export function HistoryPage({
     onRename,
     onArchive,
     onDelete,
+    disabled = false,
+    loadingSessionId = null,
+    externalError = null,
 }: HistoryPageProps) {
     const [searchInput, setSearchInput] = useState("");
     const [page, setPage] = useState(1);
@@ -262,8 +268,9 @@ export function HistoryPage({
                         sessions={pageData.items}
                         selectedSessionId={selectedSessionId}
                         loading={loading || !hasLoaded}
-                        disabled={loading}
-                        error={error}
+                        disabled={disabled || loading}
+                        loadingSessionId={loadingSessionId}
+                        error={error ?? externalError}
                         onSelect={onOpenSession}
                         onRename={(session) => void runSessionAction(onRename, session)}
                         onArchive={(session) => void runSessionAction(onArchive, session)}

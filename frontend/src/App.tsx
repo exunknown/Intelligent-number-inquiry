@@ -181,7 +181,7 @@ export default function App({ username }: AppProps) {
     }, [messages]);
 
     const openSession = async (targetSessionId: string) => {
-        if (isStreaming || loadingSessionId === targetSessionId) return false;
+        if (isStreaming || loadingSessionId !== null) return false;
         const openedFromMobile = mobileSessionsOpen;
         setMobileSessionsOpen(false);
         setMobileSessionError(null);
@@ -252,6 +252,7 @@ export default function App({ username }: AppProps) {
             await refreshSessions(false);
         } catch (error) {
             setSessionsError(error instanceof Error ? error.message : "会话重命名失败");
+            throw error;
         }
     };
 
@@ -269,6 +270,7 @@ export default function App({ username }: AppProps) {
             await refreshSessions(false);
         } catch (error) {
             setSessionsError(error instanceof Error ? error.message : "会话归档失败");
+            throw error;
         }
     };
 
@@ -286,6 +288,7 @@ export default function App({ username }: AppProps) {
             await refreshSessions(false);
         } catch (error) {
             setSessionsError(error instanceof Error ? error.message : "会话删除失败");
+            throw error;
         }
     };
 
@@ -569,6 +572,9 @@ export default function App({ username }: AppProps) {
                             onRename={renameSession}
                             onArchive={archiveSession}
                             onDelete={removeSession}
+                            disabled={isStreaming}
+                            loadingSessionId={loadingSessionId}
+                            externalError={sessionsError}
                         />
                     ) : (
                         <>
