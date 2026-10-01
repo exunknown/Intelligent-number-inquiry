@@ -49,6 +49,20 @@ export function shouldReloadHistoryMutation(
     return sameHistoryRequestSnapshot(mutationSnapshot, currentSnapshot);
 }
 
+export async function runHistoryMutation<T>(
+    action: () => Promise<T>,
+    mutationSnapshot: HistoryRequestSnapshot,
+    getCurrentSnapshot: () => HistoryRequestSnapshot,
+    reload: (snapshot: HistoryRequestSnapshot) => Promise<void>,
+) {
+    const result = await action();
+    const currentSnapshot = getCurrentSnapshot();
+    if (shouldReloadHistoryMutation(mutationSnapshot, currentSnapshot)) {
+        await reload(currentSnapshot);
+    }
+    return result;
+}
+
 export function createHistoryRequestGate() {
     let generation = 0;
     let activeSnapshot: HistoryRequestSnapshot | null = null;
@@ -143,16 +157,6 @@ export function HistoryPage({
         return () => window.clearTimeout(timer);
     }, [page, searchInput]);
 
-    const reloadCurrentPage = async (mutationSnapshot: HistoryRequestSnapshot) => {
-        const currentSnapshot = {
-            query: searchInputRef.current.trim(),
-            page: pageRef.current,
-        };
-        if (!shouldReloadHistoryMutation(mutationSnapshot, currentSnapshot)) return;
-        const request = requestGateRef.current.start(currentSnapshot);
-        await loadPage(request);
-    };
-
     const runSessionAction = async (
         action: (session: QuerySessionSummary) => Promise<void>,
         session: QuerySessionSummary,
@@ -162,8 +166,18 @@ export function HistoryPage({
             page: pageRef.current,
         };
         try {
-            await action(session);
-            await reloadCurrentPage(mutationSnapshot);
+            await runHistoryMutation(
+                () => action(session),
+                mutationSnapshot,
+                () => ({
+                    query: searchInputRef.current.trim(),
+                    page: pageRef.current,
+                }),
+                async (currentSnapshot) => {
+                    const request = requestGateRef.current.start(currentSnapshot);
+                    await loadPage(request);
+                },
+            );
         } catch (actionError: unknown) {
             const currentSnapshot = {
                 query: searchInputRef.current.trim(),
@@ -222,7 +236,7 @@ export function HistoryPage({
                                     setSearchInput(event.target.value);
                                     setPage(1);
                                 }}
-                                placeholder="按标题或内容搜索"
+                                placeholder="按标题搜索"
                                 className="h-11 w-full border border-ink/15 bg-white pl-10 pr-10 text-sm text-ink outline-none transition placeholder:text-ink/35 focus:border-indigo/45 focus:ring-2 focus:ring-indigo/15"
                             />
                             {searchInput && (

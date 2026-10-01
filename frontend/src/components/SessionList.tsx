@@ -63,7 +63,12 @@ export function SessionList({
                     <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
                     {heading}
                 </span>
-                {loading && <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-label="加载中" />}
+                {loading && (
+                    <span role="status" className="inline-flex items-center gap-1.5">
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        <span>加载中</span>
+                    </span>
+                )}
             </div>
 
             {showHistoryLink && onOpenHistory && (
@@ -78,13 +83,19 @@ export function SessionList({
             )}
 
             {error && (
-                <div className="mb-2 border border-oxide/20 bg-oxide/5 px-3 py-2 text-xs leading-5 text-oxide">
+                <div
+                    role="alert"
+                    className="mb-2 border border-oxide/20 bg-oxide/5 px-3 py-2 text-xs leading-5 text-oxide"
+                >
                     {error}
                 </div>
             )}
 
             {!loading && sessions.length === 0 && !error && (
-                <div className="border border-dashed border-ink/15 px-3 py-4 text-center text-xs leading-5 text-ink/45">
+                <div
+                    role="status"
+                    className="border border-dashed border-ink/15 px-3 py-4 text-center text-xs leading-5 text-ink/45"
+                >
                     {emptyMessage}
                 </div>
             )}
