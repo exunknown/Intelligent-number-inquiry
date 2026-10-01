@@ -611,6 +611,8 @@ export type SemanticDraftPayload = {
     cubes: SemanticSnapshot["cubes"];
     joins: SemanticSnapshot["joins"];
     members: SemanticMember[];
+    metric_equivalence_groups: NonNullable<SemanticSnapshot["metric_equivalence_groups"]>;
+    metric_attachments: NonNullable<SemanticSnapshot["metric_attachments"]>;
     reason: string;
 };
 

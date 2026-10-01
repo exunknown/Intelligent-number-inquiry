@@ -26,7 +26,15 @@ type Filters = { memberType: "all" | "measure" | "dimension" | "time_dimension";
 const emptySnapshot: SemanticSnapshot = { release_version: "draft", cubes: [], joins: [], members: [] };
 
 function asPayload(snapshot: SemanticSnapshot, reason: string): SemanticDraftPayload {
-    return { release_version: snapshot.release_version, cubes: snapshot.cubes, joins: snapshot.joins, members: snapshot.members, reason };
+    return {
+        release_version: snapshot.release_version,
+        cubes: snapshot.cubes,
+        joins: snapshot.joins,
+        members: snapshot.members,
+        metric_equivalence_groups: snapshot.metric_equivalence_groups ?? [],
+        metric_attachments: snapshot.metric_attachments ?? [],
+        reason,
+    };
 }
 
 function operationIssues(operation: SemanticOperation | null): SemanticValidationIssue[] {
