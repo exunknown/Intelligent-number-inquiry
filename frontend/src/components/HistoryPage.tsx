@@ -110,6 +110,12 @@ export function HistoryPage({
             );
             if (!requestGateRef.current.accepts(request)) return;
             if (nextPage.items.length === 0 && request.snapshot.page > 1) {
+                setPageData(EMPTY_PAGE);
+                setHasLoaded(false);
+                requestGateRef.current.start({
+                    query: request.snapshot.query,
+                    page: request.snapshot.page - 1,
+                });
                 setCurrentPage(request.snapshot.page - 1);
                 return;
             }
@@ -243,7 +249,7 @@ export function HistoryPage({
                         selectedSessionId={selectedSessionId}
                         loading={loading || !hasLoaded}
                         disabled={loading}
-                        error={null}
+                        error={error}
                         onSelect={onOpenSession}
                         onRename={(session) => void runSessionAction(onRename, session)}
                         onArchive={(session) => void runSessionAction(onArchive, session)}
