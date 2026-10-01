@@ -1,7 +1,10 @@
 {
   "realm": "shopkeeper",
   "enabled": true,
-  "displayName": "Shopkeeper Inquiry",
+  "displayName": "慧析",
+  "displayNameHtml": "慧析",
+  "loginTheme": "huixi",
+  "internationalizationEnabled": false,
   "sslRequired": "external",
   "registrationAllowed": false,
   "resetPasswordAllowed": true,
