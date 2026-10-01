@@ -51,8 +51,9 @@ export const UserAvatarMenu = forwardRef<UserAvatarMenuHandle, UserAvatarMenuPro
             return () => document.removeEventListener("pointerdown", handlePointerDown);
         }, [menuOpen]);
 
-        const closeMenu = () => {
+        const closeMenu = (restoreFocus = true) => {
             setMenuOpen(false);
+            if (!restoreFocus) return;
             requestAnimationFrame(() => triggerRef.current?.focus());
         };
 
@@ -81,7 +82,7 @@ export const UserAvatarMenu = forwardRef<UserAvatarMenuHandle, UserAvatarMenuPro
         };
 
         const handleManagement = () => {
-            closeMenu();
+            closeMenu(false);
             onOpenManagement();
         };
 

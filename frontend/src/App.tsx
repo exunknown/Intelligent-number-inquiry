@@ -5,13 +5,11 @@
 import {
     Eraser,
     ListChecks,
-    LogOut,
     MessageCircle,
     MessageSquarePlus,
     ScrollText,
     Server,
     UserRound,
-    UsersRound,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { logout } from "./auth/keycloak";
@@ -20,6 +18,7 @@ import { EmptyState } from "./components/EmptyState";
 import { MessageBubble } from "./components/MessageBubble";
 import { MobileSessionDrawer } from "./components/MobileSessionDrawer";
 import { SessionList } from "./components/SessionList";
+import { UserAvatarMenu, type UserAvatarMenuHandle } from "./components/UserAvatarMenu";
 import { UserManagementPanel } from "./components/UserManagementPanel";
 import {
     archiveQuerySession,
@@ -98,9 +97,10 @@ export default function App({ username }: AppProps) {
     const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const desktopNewSessionRef = useRef<HTMLButtonElement | null>(null);
-    const desktopLogoutRef = useRef<HTMLButtonElement | null>(null);
-    const desktopManagementRef = useRef<HTMLButtonElement | null>(null);
-    const mobileManagementRef = useRef<HTMLButtonElement | null>(null);
+    const userMenuRef = useRef<UserAvatarMenuHandle | null>(null);
+    const desktopLogoutRef = {
+        current: { focus: () => userMenuRef.current?.focusTrigger() },
+    };
     const mobileSessionTriggerRef = useRef<HTMLButtonElement | null>(null);
     const initialSessionLoadedRef = useRef(false);
     const capabilityLoadedRef = useRef(false);
@@ -112,8 +112,7 @@ export default function App({ username }: AppProps) {
     const closeManagement = () => {
         setManagementOpen(false);
         requestAnimationFrame(() => {
-            const trigger = window.innerWidth >= 1024 ? desktopManagementRef : mobileManagementRef;
-            trigger.current?.focus();
+            userMenuRef.current?.focusTrigger();
         });
     };
 
@@ -510,20 +509,6 @@ export default function App({ username }: AppProps) {
                             </div>
                         </div>
                     </div>
-                    {managementCapability.showEntry && (
-                        <div className="border-t border-ink/10 p-4">
-                            <button
-                                ref={desktopManagementRef}
-                                type="button"
-                                onClick={() => setManagementOpen(true)}
-                                aria-expanded={managementOpen}
-                                className="flex h-11 w-full items-center gap-2 rounded-lg border border-ink/15 bg-white px-3 text-sm font-semibold shadow-line hover:border-indigo/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50"
-                            >
-                                <UsersRound className="h-4 w-4" aria-hidden="true" />
-                                用户管理
-                            </button>
-                        </div>
-                    )}
                 </aside>
 
                 <main className="relative flex min-h-0 min-w-0 flex-col overflow-hidden">
@@ -539,19 +524,6 @@ export default function App({ username }: AppProps) {
                             </div>
                         </div>
                         <div className="flex items-center gap-1 sm:gap-3">
-                            {managementCapability.showEntry && (
-                                <button
-                                    ref={mobileManagementRef}
-                                    type="button"
-                                    onClick={() => setManagementOpen(true)}
-                                    aria-expanded={managementOpen}
-                                    title="用户管理"
-                                    aria-label="用户管理"
-                                    className="grid h-11 w-11 place-items-center rounded-full text-ink/70 hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50 lg:hidden"
-                                >
-                                    <UsersRound className="h-4 w-4" aria-hidden="true" />
-                                </button>
-                            )}
                             <button
                                 ref={mobileSessionTriggerRef}
                                 type="button"
@@ -569,15 +541,6 @@ export default function App({ username }: AppProps) {
                             >
                                 {username}
                             </span>
-                            <span className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-white px-3 py-1.5 text-xs text-ink/60">
-                                <span
-                                    className={cn(
-                                        "h-2 w-2 rounded-full",
-                                        isStreaming ? "animate-pulse bg-cinnabar" : "bg-pine",
-                                    )}
-                                />
-                                <span className="hidden sm:inline">{isStreaming ? "正在算账" : "就绪"}</span>
-                            </span>
                             <button
                                 type="button"
                                 onClick={clearConversation}
@@ -588,16 +551,13 @@ export default function App({ username }: AppProps) {
                             >
                                 <Eraser className="h-4 w-4" aria-hidden="true" />
                             </button>
-                            <button
-                                ref={desktopLogoutRef}
-                                type="button"
-                                onClick={() => void handleLogout()}
-                                className="grid h-11 w-11 place-items-center rounded-full text-ink/55 transition hover:bg-ink/5 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
-                                title="退出登录"
-                                aria-label="退出登录"
-                            >
-                                <LogOut className="h-4 w-4" aria-hidden="true" />
-                            </button>
+                            <UserAvatarMenu
+                                ref={userMenuRef}
+                                username={username}
+                                showManagement={managementCapability.showEntry}
+                                onOpenManagement={() => setManagementOpen(true)}
+                                onLogout={() => void handleLogout()}
+                            />
                         </div>
                     </header>
 
