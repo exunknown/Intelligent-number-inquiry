@@ -266,6 +266,18 @@ async def get_semantic_release_handler(
     record = await service.get_release(release_version)
     if record is None:
         raise HTTPException(status_code=404, detail="semantic release not found")
+    snapshot = await service.get_release_snapshot(release_version)
+    if snapshot is not None:
+        record["snapshot"] = SemanticDraftRequest.model_validate(
+            {
+                **{
+                    key: value
+                    for key, value in snapshot.to_dict().items()
+                    if key != "created_at"
+                },
+                "reason": "读取语义模型发布版本",
+            }
+        )
     return SemanticReleaseResponse(**record)
 
 

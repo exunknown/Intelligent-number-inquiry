@@ -72,6 +72,7 @@ class UserListQuery(BaseModel):
 class ApplicationUserMeResponse(BaseModel):
     user: ApplicationUserSummary
     can_manage_users: bool
+    can_manage_semantic_model: bool = False
 
 
 class ApplicationUserDetailResponse(BaseModel):

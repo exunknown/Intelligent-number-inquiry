@@ -72,6 +72,9 @@ class SemanticModelService:
     async def get_release(self, release_version: str):
         return await self.repository.get_release(release_version)
 
+    async def get_release_snapshot(self, release_version: str):
+        return await self.repository.get_snapshot(release_version)
+
     async def create_draft(
         self,
         snapshot: SemanticModelSnapshot,

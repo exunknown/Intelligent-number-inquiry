@@ -209,6 +209,7 @@ class SemanticReleaseResponse(BaseModel):
     status: str
     active: bool = False
     error_code: str | None = None
+    snapshot: SemanticDraftRequest | None = None
 
 
 class SemanticReleaseListResponse(BaseModel):

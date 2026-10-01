@@ -102,12 +102,17 @@ async def get_current_user_handler(
         can_manage_users = await authorization_service.authorize(
             auth, "api:users", "manage"
         )
+        can_manage_semantic_model = await authorization_service.authorize(
+            auth, "api:semantic-model", "read"
+        )
     except AuthorizationUnavailableError as exc:
         raise HTTPException(
             status_code=503, detail="authorization service unavailable"
         ) from exc
     return ApplicationUserMeResponse(
-        user=_summary(user), can_manage_users=can_manage_users
+        user=_summary(user),
+        can_manage_users=can_manage_users,
+        can_manage_semantic_model=can_manage_semantic_model,
     )
 
 
