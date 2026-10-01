@@ -12,6 +12,9 @@ from app.entities.semantic_model import (
     SemanticJoin,
     SemanticMeasureDefinition,
     SemanticMember,
+    SemanticMetricAttachment,
+    SemanticMetricEquivalenceGroup,
+    SemanticMetricEquivalenceMember,
     SemanticModelSnapshot,
 )
 
@@ -74,6 +77,55 @@ class SemanticDimensionPayload(BaseModel):
         )
 
 
+class SemanticMetricEquivalenceMemberPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    member_id: str
+    match_type: Literal["exact", "compatible"]
+    note: str = ""
+
+    def to_entity(self) -> SemanticMetricEquivalenceMember:
+        return SemanticMetricEquivalenceMember(**self.model_dump())
+
+
+class SemanticMetricEquivalenceGroupPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    group_id: str
+    canonical_member_id: str
+    group_name: str
+    description: str
+    members: list[SemanticMetricEquivalenceMemberPayload] = Field(default_factory=list)
+
+    def to_entity(self) -> SemanticMetricEquivalenceGroup:
+        return SemanticMetricEquivalenceGroup(
+            group_id=self.group_id,
+            canonical_member_id=self.canonical_member_id,
+            group_name=self.group_name,
+            description=self.description,
+            members=tuple(item.to_entity() for item in self.members),
+        )
+
+
+class SemanticMetricAttachmentPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    primary_member_id: str
+    attached_member_id: str
+    relation_type: Literal[
+        "supporting",
+        "comparison",
+        "efficiency",
+        "breakdown",
+    ]
+    display_order: int = 0
+    default_visible: bool = False
+    note: str = ""
+
+    def to_entity(self) -> SemanticMetricAttachment:
+        return SemanticMetricAttachment(**self.model_dump())
+
+
 class SemanticMemberPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -91,6 +143,8 @@ class SemanticMemberPayload(BaseModel):
     filterable: bool = False
     groupable: bool = False
     status: str = "published"
+    calculation_note: str = ""
+    unit: str = ""
     measure: SemanticMeasurePayload | None = None
     dimension: SemanticDimensionPayload | None = None
 
@@ -110,6 +164,8 @@ class SemanticMemberPayload(BaseModel):
             filterable=self.filterable,
             groupable=self.groupable,
             status=self.status,
+            calculation_note=self.calculation_note,
+            unit=self.unit,
             measure=self.measure.to_entity() if self.measure else None,
             dimension=self.dimension.to_entity() if self.dimension else None,
         )
@@ -122,6 +178,12 @@ class SemanticDraftRequest(BaseModel):
     cubes: list[SemanticCubePayload]
     joins: list[SemanticJoinPayload]
     members: list[SemanticMemberPayload]
+    metric_equivalence_groups: list[SemanticMetricEquivalenceGroupPayload] = Field(
+        default_factory=list
+    )
+    metric_attachments: list[SemanticMetricAttachmentPayload] = Field(
+        default_factory=list
+    )
     reason: str = Field(default="创建语义模型草稿", min_length=1, max_length=500)
 
     def to_snapshot(self) -> SemanticModelSnapshot:
@@ -130,6 +192,12 @@ class SemanticDraftRequest(BaseModel):
             cubes=tuple(item.to_entity() for item in self.cubes),
             joins=tuple(item.to_entity() for item in self.joins),
             members=tuple(item.to_entity() for item in self.members),
+            metric_equivalence_groups=tuple(
+                item.to_entity() for item in self.metric_equivalence_groups
+            ),
+            metric_attachments=tuple(
+                item.to_entity() for item in self.metric_attachments
+            ),
         )
 
 
@@ -147,6 +215,8 @@ class SemanticMemberResponse(BaseModel):
     aliases: list[str]
     filterable: bool
     groupable: bool
+    calculation_note: str = ""
+    unit: str = ""
 
     @classmethod
     def from_entity(cls, member: SemanticMember) -> "SemanticMemberResponse":
@@ -162,6 +232,8 @@ class SemanticMemberResponse(BaseModel):
             aliases=list(member.aliases),
             filterable=member.filterable,
             groupable=member.groupable,
+            calculation_note=member.calculation_note,
+            unit=member.unit,
         )
 
 

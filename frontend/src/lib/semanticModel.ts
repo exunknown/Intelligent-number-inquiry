@@ -1,4 +1,10 @@
 export type SemanticMemberType = "measure" | "dimension" | "time_dimension";
+export type SemanticMetricEquivalenceMatchType = "exact" | "compatible";
+export type SemanticMetricAttachmentRelationType =
+    | "supporting"
+    | "comparison"
+    | "efficiency"
+    | "breakdown";
 
 export type SemanticMeasure = {
     expression: string;
@@ -27,6 +33,8 @@ export type SemanticMember = {
     filterable: boolean;
     groupable: boolean;
     status: string;
+    calculation_note: string;
+    unit: string;
     measure?: SemanticMeasure | null;
     dimension?: SemanticDimension | null;
 };
@@ -44,7 +52,32 @@ export type SemanticMemberSummary = Pick<
     | "aliases"
     | "filterable"
     | "groupable"
+    | "calculation_note"
+    | "unit"
 >;
+
+export type SemanticMetricEquivalenceMember = {
+    member_id: string;
+    match_type: SemanticMetricEquivalenceMatchType;
+    note: string;
+};
+
+export type SemanticMetricEquivalenceGroup = {
+    group_id: string;
+    canonical_member_id: string;
+    group_name: string;
+    description: string;
+    members: SemanticMetricEquivalenceMember[];
+};
+
+export type SemanticMetricAttachment = {
+    primary_member_id: string;
+    attached_member_id: string;
+    relation_type: SemanticMetricAttachmentRelationType;
+    display_order: number;
+    default_visible: boolean;
+    note: string;
+};
 
 export type SemanticCube = {
     release_version: string;
@@ -69,6 +102,8 @@ export type SemanticSnapshot = {
     cubes: SemanticCube[];
     joins: SemanticJoin[];
     members: SemanticMember[];
+    metric_equivalence_groups?: SemanticMetricEquivalenceGroup[];
+    metric_attachments?: SemanticMetricAttachment[];
 };
 
 export type SemanticDraft = {

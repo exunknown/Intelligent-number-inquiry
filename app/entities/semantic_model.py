@@ -7,6 +7,13 @@ from typing import Literal, TypeAlias
 MemberType: TypeAlias = Literal["measure", "dimension", "time_dimension"]
 AggregationType: TypeAlias = Literal["sum", "count", "count_distinct", "number"]
 DimensionType: TypeAlias = Literal["string", "number", "time"]
+MetricEquivalenceMatchType: TypeAlias = Literal["exact", "compatible"]
+MetricAttachmentRelationType: TypeAlias = Literal[
+    "supporting",
+    "comparison",
+    "efficiency",
+    "breakdown",
+]
 
 
 @dataclass(frozen=True)
@@ -110,6 +117,96 @@ class SemanticDimensionDefinition:
 
 
 @dataclass(frozen=True)
+class SemanticMetricEquivalenceMember:
+    """等效指标组中的一个指标成员。"""
+
+    member_id: str
+    match_type: MetricEquivalenceMatchType
+    note: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "member_id": self.member_id,
+            "match_type": self.match_type,
+            "note": self.note,
+        }
+
+    @classmethod
+    def from_dict(cls, value: dict) -> "SemanticMetricEquivalenceMember":
+        return cls(
+            member_id=value["member_id"],
+            match_type=value["match_type"],
+            note=value.get("note", ""),
+        )
+
+
+@dataclass(frozen=True)
+class SemanticMetricEquivalenceGroup:
+    """一个发布版本中的等效指标组。"""
+
+    group_id: str
+    canonical_member_id: str
+    group_name: str
+    description: str
+    members: tuple[SemanticMetricEquivalenceMember, ...] = ()
+
+    def to_dict(self) -> dict:
+        return {
+            "group_id": self.group_id,
+            "canonical_member_id": self.canonical_member_id,
+            "group_name": self.group_name,
+            "description": self.description,
+            "members": [member.to_dict() for member in self.members],
+        }
+
+    @classmethod
+    def from_dict(cls, value: dict) -> "SemanticMetricEquivalenceGroup":
+        return cls(
+            group_id=value["group_id"],
+            canonical_member_id=value["canonical_member_id"],
+            group_name=value["group_name"],
+            description=value["description"],
+            members=tuple(
+                SemanticMetricEquivalenceMember.from_dict(item)
+                for item in value.get("members", ())
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class SemanticMetricAttachment:
+    """主指标和单向附带指标之间的关系。"""
+
+    primary_member_id: str
+    attached_member_id: str
+    relation_type: MetricAttachmentRelationType
+    display_order: int = 0
+    default_visible: bool = False
+    note: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "primary_member_id": self.primary_member_id,
+            "attached_member_id": self.attached_member_id,
+            "relation_type": self.relation_type,
+            "display_order": self.display_order,
+            "default_visible": self.default_visible,
+            "note": self.note,
+        }
+
+    @classmethod
+    def from_dict(cls, value: dict) -> "SemanticMetricAttachment":
+        return cls(
+            primary_member_id=value["primary_member_id"],
+            attached_member_id=value["attached_member_id"],
+            relation_type=value["relation_type"],
+            display_order=value.get("display_order", 0),
+            default_visible=value.get("default_visible", False),
+            note=value.get("note", ""),
+        )
+
+
+@dataclass(frozen=True)
 class SemanticMember:
     """Cube 对外暴露的指标、维度或时间维度。"""
 
@@ -129,6 +226,8 @@ class SemanticMember:
     status: str = "published"
     measure: SemanticMeasureDefinition | None = None
     dimension: SemanticDimensionDefinition | None = None
+    calculation_note: str = ""
+    unit: str = ""
 
     def __post_init__(self) -> None:
         if self.member_type == "measure" and self.measure is None:
@@ -160,6 +259,8 @@ class SemanticMember:
             "filterable": self.filterable,
             "groupable": self.groupable,
             "status": self.status,
+            "calculation_note": self.calculation_note,
+            "unit": self.unit,
             "measure": self.measure.to_dict() if self.measure else None,
             "dimension": self.dimension.to_dict() if self.dimension else None,
         }
@@ -181,6 +282,8 @@ class SemanticMember:
             filterable=value.get("filterable", False),
             groupable=value.get("groupable", False),
             status=value.get("status", "published"),
+            calculation_note=value.get("calculation_note", ""),
+            unit=value.get("unit", ""),
             measure=(
                 SemanticMeasureDefinition.from_dict(value["measure"])
                 if value.get("measure") is not None
@@ -202,6 +305,8 @@ class SemanticModelSnapshot:
     cubes: tuple[SemanticCube, ...]
     joins: tuple[SemanticJoin, ...]
     members: tuple[SemanticMember, ...]
+    metric_equivalence_groups: tuple[SemanticMetricEquivalenceGroup, ...] = ()
+    metric_attachments: tuple[SemanticMetricAttachment, ...] = ()
     created_at: datetime | None = None
 
     def to_dict(self) -> dict:
@@ -210,6 +315,12 @@ class SemanticModelSnapshot:
             "cubes": [cube.to_dict() for cube in self.cubes],
             "joins": [join.to_dict() for join in self.joins],
             "members": [member.to_dict() for member in self.members],
+            "metric_equivalence_groups": [
+                group.to_dict() for group in self.metric_equivalence_groups
+            ],
+            "metric_attachments": [
+                attachment.to_dict() for attachment in self.metric_attachments
+            ],
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -226,6 +337,14 @@ class SemanticModelSnapshot:
             ),
             members=tuple(
                 SemanticMember.from_dict(item) for item in value.get("members", ())
+            ),
+            metric_equivalence_groups=tuple(
+                SemanticMetricEquivalenceGroup.from_dict(item)
+                for item in value.get("metric_equivalence_groups", ())
+            ),
+            metric_attachments=tuple(
+                SemanticMetricAttachment.from_dict(item)
+                for item in value.get("metric_attachments", ())
             ),
             created_at=datetime.fromisoformat(created_at) if created_at else None,
         )
