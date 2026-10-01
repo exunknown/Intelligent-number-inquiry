@@ -4,12 +4,14 @@ from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
     Index,
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
@@ -55,6 +57,16 @@ class SemanticMetricEquivalenceGroupMySQL(Base):
 
     __tablename__ = "semantic_metric_equivalence_group"
     __table_args__ = (
+        UniqueConstraint(
+            "release_version",
+            "canonical_member_id",
+            name="uq_semantic_metric_equivalence_canonical",
+        ),
+        Index(
+            "idx_semantic_metric_equivalence_canonical",
+            "release_version",
+            "canonical_member_id",
+        ),
         ForeignKeyConstraint(
             ["release_version", "canonical_member_id"],
             ["semantic_member.release_version", "semantic_member.member_id"],
@@ -73,6 +85,16 @@ class SemanticMetricEquivalenceMemberMySQL(Base):
 
     __tablename__ = "semantic_metric_equivalence_member"
     __table_args__ = (
+        UniqueConstraint(
+            "release_version",
+            "member_id",
+            name="uq_semantic_metric_equivalence_member",
+        ),
+        CheckConstraint(
+            "match_type IN ('exact', 'compatible')",
+            name="chk_semantic_metric_equivalence_match_type",
+        ),
+        Index("idx_semantic_metric_equivalence_member", "release_version", "member_id"),
         ForeignKeyConstraint(
             ["release_version", "group_id"],
             [
@@ -98,6 +120,15 @@ class SemanticMetricAttachmentMySQL(Base):
 
     __tablename__ = "semantic_metric_attachment"
     __table_args__ = (
+        CheckConstraint(
+            "relation_type IN ('supporting', 'comparison', 'efficiency', 'breakdown')",
+            name="chk_semantic_metric_attachment_relation_type",
+        ),
+        Index(
+            "idx_semantic_metric_attachment_attached",
+            "release_version",
+            "attached_member_id",
+        ),
         ForeignKeyConstraint(
             ["release_version", "primary_member_id"],
             ["semantic_member.release_version", "semantic_member.member_id"],

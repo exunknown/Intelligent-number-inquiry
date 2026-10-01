@@ -1,5 +1,6 @@
 """元数据 manifest 注册表仓储。"""
 
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
 from sqlalchemy import select, update
@@ -100,21 +101,43 @@ class MetadataReleaseRepository:
                 model.active = False
                 model.error_code = error_code
 
+    async def _activate_in_transaction(self, release_version: str) -> dict:
+        await self._lock()
+        model = await self.session.get(MetadataReleaseMySQL, release_version)
+        if model is None or model.status not in {"validated", "active"}:
+            raise ValueError("release version is not validated")
+        await self.session.execute(
+            update(MetadataReleaseMySQL)
+            .values(active=False)
+            .where(MetadataReleaseMySQL.active.is_(True))
+        )
+        now = self._now()
+        model.status = "active"
+        model.active = True
+        model.activated_at = now
+        model.error_code = None
+        return self._record(model)
+
+    async def activate_in_transaction(self, release_version: str) -> dict:
+        """在调用方已开启的事务中激活，不回滚或提交调用方事务。"""
+
+        return await self._activate_in_transaction(release_version)
+
+    async def activate_with_materializer(
+        self,
+        release_version: str,
+        materialize: Callable[[], Awaitable[object]],
+    ) -> dict:
+        """在同一事务中物化快照并激活版本。"""
+
+        await self.session.rollback()
+        async with self.session.begin():
+            await materialize()
+            record = await self._activate_in_transaction(release_version)
+        return record
+
     async def activate(self, release_version: str) -> dict:
         await self.session.rollback()
         async with self.session.begin():
-            await self._lock()
-            model = await self.session.get(MetadataReleaseMySQL, release_version)
-            if model is None or model.status not in {"validated", "active"}:
-                raise ValueError("release version is not validated")
-            await self.session.execute(
-                update(MetadataReleaseMySQL)
-                .values(active=False)
-                .where(MetadataReleaseMySQL.active.is_(True))
-            )
-            now = self._now()
-            model.status = "active"
-            model.active = True
-            model.activated_at = now
-            model.error_code = None
-        return self._record(model)
+            record = await self._activate_in_transaction(release_version)
+        return record
