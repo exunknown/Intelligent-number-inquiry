@@ -13,6 +13,7 @@ from app.api.schemas.session_schema import (
     QuerySessionCreateRequest,
     QuerySessionDetail,
     QuerySessionMessageResponse,
+    QuerySessionPage,
     QuerySessionSummary,
     QuerySessionUpdateRequest,
 )
@@ -57,6 +58,35 @@ async def list_sessions_handler(
         include_archived,
     )
     return [QuerySessionSummary.model_validate(session) for session in sessions]
+
+
+@session_router.get(
+    "/api/sessions/history",
+    response_model=QuerySessionPage,
+)
+async def search_sessions_handler(
+    repository: Annotated[
+        QuerySessionRepository, Depends(get_query_session_repository)
+    ],
+    principal: Annotated[QueryPrincipal, Depends(get_query_principal)],
+    query: str = Query("", max_length=200),
+    limit: int = Query(10, ge=1, le=10),
+    offset: int = Query(0, ge=0),
+    include_archived: bool = Query(False),
+) -> QuerySessionPage:
+    sessions, total = await repository.search_owned(
+        principal.auth.user_id,
+        query,
+        limit,
+        offset,
+        include_archived,
+    )
+    return QuerySessionPage(
+        items=[QuerySessionSummary.model_validate(session) for session in sessions],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @session_router.get("/api/sessions/{session_id}", response_model=QuerySessionDetail)

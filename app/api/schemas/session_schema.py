@@ -31,6 +31,13 @@ class QuerySessionSummary(BaseModel):
     archived_at: datetime | None = None
 
 
+class QuerySessionPage(BaseModel):
+    items: list[QuerySessionSummary]
+    total: int
+    limit: int
+    offset: int
+
+
 class QuerySessionMessageResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

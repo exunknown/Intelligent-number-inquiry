@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context import request_id_ctx_var
@@ -98,6 +98,48 @@ class QuerySessionRepository:
             .limit(limit)
         )
         return [self._to_session(model) for model in result.scalars().all()]
+
+    @staticmethod
+    def _owned_filters(
+        user_id: str,
+        include_archived: bool = False,
+    ) -> list:
+        filters = [
+            QuerySessionMySQL.user_id == user_id,
+            QuerySessionMySQL.deleted_at.is_(None),
+        ]
+        if not include_archived:
+            filters.append(QuerySessionMySQL.archived_at.is_(None))
+        return filters
+
+    async def search_owned(
+        self,
+        user_id: str,
+        query: str | None = None,
+        limit: int = 10,
+        offset: int = 0,
+        include_archived: bool = False,
+    ) -> tuple[list[QuerySession], int]:
+        clean_query = " ".join((query or "").split())[:200]
+        filters = self._owned_filters(user_id, include_archived)
+        if clean_query:
+            filters.append(QuerySessionMySQL.title.ilike(f"%{clean_query}%"))
+
+        total = await self.session.scalar(
+            select(func.count()).select_from(QuerySessionMySQL).where(*filters)
+        )
+        result = await self.session.execute(
+            select(QuerySessionMySQL)
+            .where(*filters)
+            .order_by(
+                QuerySessionMySQL.updated_at.desc(),
+                QuerySessionMySQL.id.desc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+        sessions = [self._to_session(model) for model in result.scalars().all()]
+        return sessions, total
 
     @staticmethod
     def _normalize_title(title: str) -> str:
