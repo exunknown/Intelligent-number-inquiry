@@ -25,6 +25,50 @@ const EMPTY_PAGE: QuerySessionPage = {
     offset: 0,
 };
 
+export type HistoryRequestSnapshot = {
+    query: string;
+    page: number;
+};
+
+type HistoryRequest = {
+    generation: number;
+    snapshot: HistoryRequestSnapshot;
+};
+
+export function sameHistoryRequestSnapshot(
+    left: HistoryRequestSnapshot,
+    right: HistoryRequestSnapshot,
+) {
+    return left.query === right.query && left.page === right.page;
+}
+
+export function shouldReloadHistoryMutation(
+    mutationSnapshot: HistoryRequestSnapshot,
+    currentSnapshot: HistoryRequestSnapshot,
+) {
+    return sameHistoryRequestSnapshot(mutationSnapshot, currentSnapshot);
+}
+
+export function createHistoryRequestGate() {
+    let generation = 0;
+    let activeSnapshot: HistoryRequestSnapshot | null = null;
+
+    return {
+        start(snapshot: HistoryRequestSnapshot): HistoryRequest {
+            generation += 1;
+            activeSnapshot = snapshot;
+            return { generation, snapshot };
+        },
+        accepts(request: HistoryRequest) {
+            return (
+                request.generation === generation &&
+                activeSnapshot !== null &&
+                sameHistoryRequestSnapshot(activeSnapshot, request.snapshot)
+            );
+        },
+    };
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
     return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -40,74 +84,88 @@ export function HistoryPage({
     const [searchInput, setSearchInput] = useState("");
     const [page, setPage] = useState(1);
     const [pageData, setPageData] = useState<QuerySessionPage>(EMPTY_PAGE);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [hasLoaded, setHasLoaded] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const requestGenerationRef = useRef(0);
+    const searchInputRef = useRef("");
+    const pageRef = useRef(1);
+    const requestGateRef = useRef(createHistoryRequestGate());
+
+    searchInputRef.current = searchInput;
+    pageRef.current = page;
+
+    const setCurrentPage = (nextPage: number) => {
+        pageRef.current = nextPage;
+        setPage(nextPage);
+    };
+
+    const loadPage = async (request: HistoryRequest) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const nextPage = await searchQuerySessions(
+                request.snapshot.query,
+                PAGE_SIZE,
+                (request.snapshot.page - 1) * PAGE_SIZE,
+            );
+            if (!requestGateRef.current.accepts(request)) return;
+            if (nextPage.items.length === 0 && request.snapshot.page > 1) {
+                setCurrentPage(request.snapshot.page - 1);
+                return;
+            }
+            setPageData(nextPage);
+            setHasLoaded(true);
+        } catch (requestError: unknown) {
+            if (requestGateRef.current.accepts(request)) {
+                setError(getErrorMessage(requestError, "历史对话加载失败"));
+                setHasLoaded(true);
+            }
+        } finally {
+            if (requestGateRef.current.accepts(request)) {
+                setLoading(false);
+            }
+        }
+    };
 
     useEffect(() => {
-        const generation = requestGenerationRef.current + 1;
-        requestGenerationRef.current = generation;
+        const snapshot = { query: searchInput.trim(), page };
+        const request = requestGateRef.current.start(snapshot);
         const timer = window.setTimeout(() => {
-            setLoading(true);
-            setError(null);
-            void searchQuerySessions(searchInput.trim(), PAGE_SIZE, (page - 1) * PAGE_SIZE)
-                .then((nextPage) => {
-                    if (generation === requestGenerationRef.current) {
-                        setPageData(nextPage);
-                    }
-                })
-                .catch((requestError: unknown) => {
-                    if (generation === requestGenerationRef.current) {
-                        setError(getErrorMessage(requestError, "历史对话加载失败"));
-                    }
-                })
-                .finally(() => {
-                    if (generation === requestGenerationRef.current) {
-                        setLoading(false);
-                    }
-                });
+            void loadPage(request);
         }, 250);
 
         return () => window.clearTimeout(timer);
     }, [page, searchInput]);
 
-    const reloadCurrentPage = async () => {
-        const generation = requestGenerationRef.current + 1;
-        requestGenerationRef.current = generation;
-        setLoading(true);
-        setError(null);
-        try {
-            const nextPage = await searchQuerySessions(
-                searchInput.trim(),
-                PAGE_SIZE,
-                (page - 1) * PAGE_SIZE,
-            );
-            if (generation !== requestGenerationRef.current) return;
-            if (nextPage.items.length === 0 && page > 1) {
-                setPage(page - 1);
-                return;
-            }
-            setPageData(nextPage);
-        } catch (requestError: unknown) {
-            if (generation === requestGenerationRef.current) {
-                setError(getErrorMessage(requestError, "历史对话加载失败"));
-            }
-        } finally {
-            if (generation === requestGenerationRef.current) {
-                setLoading(false);
-            }
-        }
+    const reloadCurrentPage = async (mutationSnapshot: HistoryRequestSnapshot) => {
+        const currentSnapshot = {
+            query: searchInputRef.current.trim(),
+            page: pageRef.current,
+        };
+        if (!shouldReloadHistoryMutation(mutationSnapshot, currentSnapshot)) return;
+        const request = requestGateRef.current.start(currentSnapshot);
+        await loadPage(request);
     };
 
     const runSessionAction = async (
         action: (session: QuerySessionSummary) => Promise<void>,
         session: QuerySessionSummary,
     ) => {
+        const mutationSnapshot = {
+            query: searchInputRef.current.trim(),
+            page: pageRef.current,
+        };
         try {
             await action(session);
-            await reloadCurrentPage();
+            await reloadCurrentPage(mutationSnapshot);
         } catch (actionError: unknown) {
-            setError(getErrorMessage(actionError, "历史对话操作失败"));
+            const currentSnapshot = {
+                query: searchInputRef.current.trim(),
+                page: pageRef.current,
+            };
+            if (shouldReloadHistoryMutation(mutationSnapshot, currentSnapshot)) {
+                setError(getErrorMessage(actionError, "历史对话操作失败"));
+            }
         }
     };
 
@@ -183,7 +241,7 @@ export function HistoryPage({
                     <SessionList
                         sessions={pageData.items}
                         selectedSessionId={selectedSessionId}
-                        loading={loading}
+                        loading={loading || !hasLoaded}
                         disabled={loading}
                         error={null}
                         onSelect={onOpenSession}
