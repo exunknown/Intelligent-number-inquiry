@@ -116,11 +116,13 @@ class SemanticModelReleaseCoordinator:
         *,
         compile_model: Callable[[object], Awaitable[object]],
         stage_search_index: Callable[[object], Awaitable[object]],
+        persist_snapshot: Callable[[object, str], Awaitable[object]] | None = None,
         activate_release: Callable[[object, str, str], Awaitable[object]],
         rollback_release: Callable[[str, str, str], Awaitable[object]],
     ):
         self.compile_model = compile_model
         self.stage_search_index = stage_search_index
+        self.persist_snapshot = persist_snapshot
         self.activate_release = activate_release
         self.rollback_release = rollback_release
 
@@ -129,6 +131,8 @@ class SemanticModelReleaseCoordinator:
 
         await self.compile_model(snapshot)
         await self.stage_search_index(snapshot)
+        if self.persist_snapshot is not None:
+            await self.persist_snapshot(snapshot, actor_id)
         return await self.activate_release(snapshot, actor_id, reason)
 
     async def rollback(self, release_version: str, actor_id: str, reason: str):

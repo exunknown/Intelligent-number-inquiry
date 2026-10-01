@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,9 @@ from app.entities.semantic_model import (
     SemanticJoin,
     SemanticMeasureDefinition,
     SemanticMember,
+    SemanticMetricAttachment,
+    SemanticMetricEquivalenceGroup,
+    SemanticMetricEquivalenceMember,
     SemanticModelSnapshot,
 )
 from app.models.metadata_release import MetadataReleaseMySQL
@@ -21,7 +24,12 @@ from app.models.semantic_dimension_definition import SemanticDimensionDefinition
 from app.models.semantic_draft import SemanticModelChangeMySQL, SemanticModelDraftMySQL
 from app.models.semantic_join import SemanticJoinMySQL
 from app.models.semantic_measure_definition import SemanticMeasureDefinitionMySQL
-from app.models.semantic_member import SemanticMemberMySQL
+from app.models.semantic_member import (
+    SemanticMemberMySQL,
+    SemanticMetricAttachmentMySQL,
+    SemanticMetricEquivalenceGroupMySQL,
+    SemanticMetricEquivalenceMemberMySQL,
+)
 
 
 class SemanticModelRepository:
@@ -60,6 +68,21 @@ class SemanticModelRepository:
                 SemanticDimensionDefinitionMySQL.release_version == release_version
             )
         )
+        equivalence_group_result = await self.session.execute(
+            select(SemanticMetricEquivalenceGroupMySQL).where(
+                SemanticMetricEquivalenceGroupMySQL.release_version == release_version
+            )
+        )
+        equivalence_member_result = await self.session.execute(
+            select(SemanticMetricEquivalenceMemberMySQL).where(
+                SemanticMetricEquivalenceMemberMySQL.release_version == release_version
+            )
+        )
+        attachment_result = await self.session.execute(
+            select(SemanticMetricAttachmentMySQL).where(
+                SemanticMetricAttachmentMySQL.release_version == release_version
+            )
+        )
 
         cubes = list(cube_result.scalars().all())
         joins = list(join_result.scalars().all())
@@ -68,6 +91,15 @@ class SemanticModelRepository:
         dimensions = {
             model.member_id: model for model in dimension_result.scalars().all()
         }
+        equivalence_members = {}
+        for model in equivalence_member_result.scalars().all():
+            equivalence_members.setdefault(model.group_id, []).append(
+                SemanticMetricEquivalenceMember(
+                    member_id=model.member_id,
+                    match_type=model.match_type,
+                    note=model.note,
+                )
+            )
         if not cubes and not members:
             return None
 
@@ -104,6 +136,27 @@ class SemanticModelRepository:
                 for model in joins
             ),
             members=semantic_members,
+            metric_equivalence_groups=tuple(
+                SemanticMetricEquivalenceGroup(
+                    group_id=model.group_id,
+                    canonical_member_id=model.canonical_member_id,
+                    group_name=model.group_name,
+                    description=model.description,
+                    members=tuple(equivalence_members.get(model.group_id, ())),
+                )
+                for model in equivalence_group_result.scalars().all()
+            ),
+            metric_attachments=tuple(
+                SemanticMetricAttachment(
+                    primary_member_id=model.primary_member_id,
+                    attached_member_id=model.attached_member_id,
+                    relation_type=model.relation_type,
+                    display_order=model.display_order,
+                    default_visible=model.default_visible,
+                    note=model.note,
+                )
+                for model in attachment_result.scalars().all()
+            ),
         )
 
     async def get_active_snapshot(self) -> SemanticModelSnapshot | None:
@@ -285,6 +338,137 @@ class SemanticModelRepository:
             await self.session.rollback()
             raise
 
+    async def persist_release_snapshot(
+        self,
+        snapshot: SemanticModelSnapshot,
+        actor_id: str = "system",
+    ) -> None:
+        """在当前事务中物化一个不可变发布版本的规范化语义行。"""
+
+        release_version = snapshot.release_version
+        for model in (
+            SemanticMetricAttachmentMySQL,
+            SemanticMetricEquivalenceMemberMySQL,
+            SemanticMetricEquivalenceGroupMySQL,
+            SemanticMeasureDefinitionMySQL,
+            SemanticDimensionDefinitionMySQL,
+            SemanticMemberMySQL,
+            SemanticJoinMySQL,
+            SemanticCubeMySQL,
+        ):
+            await self.session.execute(
+                delete(model).where(model.release_version == release_version)
+            )
+
+        now = self._now()
+        for cube in snapshot.cubes:
+            self.session.add(
+                SemanticCubeMySQL(
+                    release_version=release_version,
+                    cube_name=cube.cube_name,
+                    sql_table=cube.sql_table,
+                    title=cube.title,
+                    description=cube.description,
+                    public=cube.public,
+                )
+            )
+        for join in snapshot.joins:
+            self.session.add(
+                SemanticJoinMySQL(
+                    release_version=release_version,
+                    cube_name=join.cube_name,
+                    target_cube_name=join.target_cube_name,
+                    sql_expression=join.sql_expression,
+                    relationship=join.relationship,
+                    editable=join.editable,
+                )
+            )
+        for member in snapshot.members:
+            self.session.add(
+                SemanticMemberMySQL(
+                    release_version=release_version,
+                    member_id=member.member_id,
+                    cube_name=member.cube_name,
+                    member_name=member.member_name,
+                    member_type=member.member_type,
+                    title=member.title,
+                    description=member.description,
+                    data_type=member.data_type,
+                    source_column_id=member.source_column_id,
+                    ai_context=member.ai_context,
+                    calculation_note=member.calculation_note,
+                    unit=member.unit,
+                    aliases_json=list(member.aliases),
+                    filterable=member.filterable,
+                    groupable=member.groupable,
+                    status=member.status,
+                    created_by=actor_id,
+                    updated_by=actor_id,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+
+        await self.session.flush()
+
+        for member in snapshot.members:
+            if member.measure is not None:
+                self.session.add(
+                    SemanticMeasureDefinitionMySQL(
+                        release_version=release_version,
+                        member_id=member.member_id,
+                        expression=member.measure.expression,
+                        aggregation_type=member.measure.aggregation_type,
+                        dependency_members_json=list(member.measure.dependency_members),
+                    )
+                )
+            if member.dimension is not None:
+                self.session.add(
+                    SemanticDimensionDefinitionMySQL(
+                        release_version=release_version,
+                        member_id=member.member_id,
+                        dimension_type=member.dimension.dimension_type,
+                        time_granularity=member.dimension.time_granularity,
+                        primary_key=member.dimension.primary_key,
+                    )
+                )
+        for group in snapshot.metric_equivalence_groups:
+            self.session.add(
+                SemanticMetricEquivalenceGroupMySQL(
+                    release_version=release_version,
+                    group_id=group.group_id,
+                    canonical_member_id=group.canonical_member_id,
+                    group_name=group.group_name,
+                    description=group.description,
+                )
+            )
+
+        await self.session.flush()
+
+        for group in snapshot.metric_equivalence_groups:
+            for member in group.members:
+                self.session.add(
+                    SemanticMetricEquivalenceMemberMySQL(
+                        release_version=release_version,
+                        group_id=group.group_id,
+                        member_id=member.member_id,
+                        match_type=member.match_type,
+                        note=member.note,
+                    )
+                )
+        for attachment in snapshot.metric_attachments:
+            self.session.add(
+                SemanticMetricAttachmentMySQL(
+                    release_version=release_version,
+                    primary_member_id=attachment.primary_member_id,
+                    attached_member_id=attachment.attached_member_id,
+                    relation_type=attachment.relation_type,
+                    display_order=attachment.display_order,
+                    default_visible=attachment.default_visible,
+                    note=attachment.note,
+                )
+            )
+
     @staticmethod
     def _member_entity(
         model: SemanticMemberMySQL,
@@ -306,6 +490,8 @@ class SemanticModelRepository:
             filterable=model.filterable,
             groupable=model.groupable,
             status=model.status,
+            calculation_note=model.calculation_note or "",
+            unit=model.unit or "",
             measure=(
                 SemanticMeasureDefinition(
                     expression=measure.expression,
