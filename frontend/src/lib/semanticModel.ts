@@ -124,6 +124,19 @@ export function canLeaveSemanticModel({
     return !isStreaming && !dirty;
 }
 
+export function createSemanticModelRequestGate() {
+    let generation = 0;
+    return {
+        start(): number {
+            generation += 1;
+            return generation;
+        },
+        accepts(startedGeneration: number): boolean {
+            return startedGeneration === generation;
+        },
+    };
+}
+
 type SemanticError = {
     status?: number;
     code?: string;

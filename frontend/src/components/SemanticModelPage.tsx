@@ -1,5 +1,5 @@
 import { ArrowLeft, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     createSemanticDraft,
     getSemanticDraft,
@@ -14,7 +14,7 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { formatSemanticModelError, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue } from "../lib/semanticModel";
+import { createSemanticModelRequestGate, formatSemanticModelError, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue } from "../lib/semanticModel";
 import { SemanticMemberEditor } from "./SemanticMemberEditor";
 import { SemanticMemberList } from "./SemanticMemberList";
 import { SemanticReleasePanel } from "./SemanticReleasePanel";
@@ -45,26 +45,30 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const [operation, setOperation] = useState<SemanticOperation | null>(null);
     const [busy, setBusy] = useState(false);
     const [dirty, setDirty] = useState(false);
+    const requestGateRef = useRef(createSemanticModelRequestGate());
 
     const selectedMember = useMemo(() => snapshot.members.find((member) => member.member_id === selectedId) ?? null, [selectedId, snapshot.members]);
 
     const load = async () => {
+        const generation = requestGateRef.current.start();
         setLoading(true);
         setError(null);
         try {
             const [memberResponse, releaseResponse] = await Promise.all([listSemanticMembers(filters.memberType, filters.query), listSemanticReleases()]);
+            if (!requestGateRef.current.accepts(generation)) return;
             setMembers(memberResponse.items);
             setReleases(releaseResponse.items);
             const active = releaseResponse.items.find((item) => item.active);
             let nextSnapshot = active?.snapshot ? active.snapshot : emptySnapshot;
             if (active && !active.snapshot) nextSnapshot = (await getSemanticRelease(active.release_version)).snapshot ?? emptySnapshot;
+            if (!requestGateRef.current.accepts(generation)) return;
             setSnapshot(nextSnapshot);
             setSelectedId((current) => current && memberResponse.items.some((item) => item.member_id === current) ? current : memberResponse.items[0]?.member_id ?? nextSnapshot.members[0]?.member_id ?? null);
             setDirty(false);
         } catch (loadError) {
-            setError(formatSemanticModelError(loadError));
+            if (requestGateRef.current.accepts(generation)) setError(formatSemanticModelError(loadError));
         } finally {
-            setLoading(false);
+            if (requestGateRef.current.accepts(generation)) setLoading(false);
         }
     };
 
