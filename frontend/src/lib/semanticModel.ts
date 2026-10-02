@@ -139,6 +139,20 @@ export type SemanticRelease = {
     snapshot?: SemanticSnapshot & { reason?: string };
 };
 
+export type SemanticDependencyResolution = {
+    memberIds: string[];
+    unresolved: string[];
+};
+
+export type SemanticChangeSummary = {
+    added: SemanticMember[];
+    changed: SemanticMember[];
+    removed: SemanticMember[];
+    equivalence_changed: boolean;
+    attachments_changed: boolean;
+    has_changes: boolean;
+};
+
 type SemanticMemberDirectoryFilters = {
     memberType: "all" | SemanticMemberType;
     query: string;
@@ -228,6 +242,219 @@ export function createDraftSemanticMember(
                   time_granularity: isTimeDimension ? "day" : null,
                   primary_key: false,
               },
+    };
+}
+
+export function resolveSemanticDependencyMemberIds(
+    member: Pick<SemanticMember, "member_id" | "cube_name" | "member_type" | "measure">,
+    snapshot: Pick<SemanticSnapshot, "members">,
+): SemanticDependencyResolution {
+    const measureMembers = snapshot.members.filter((item) => item.member_type === "measure");
+    const membersById = new Map(measureMembers.map((item) => [item.member_id, item]));
+    const membersByQualifiedName = new Map(
+        measureMembers.flatMap((item) => [
+            [`${item.cube_name}.${item.member_name}`, item],
+            [`${item.cube_name}:${item.member_name}`, item],
+        ]),
+    );
+    const memberIds: string[] = [];
+    const unresolved: string[] = [];
+    const resolvedIds = new Set<string>();
+    const unresolvedValues = new Set<string>();
+
+    for (const rawValue of member.measure?.dependency_members ?? []) {
+        const candidate =
+            membersById.get(rawValue) ??
+            membersByQualifiedName.get(rawValue) ??
+            measureMembers.find(
+                (item) =>
+                    item.cube_name === member.cube_name &&
+                    item.member_name === rawValue,
+            );
+        if (!candidate) {
+            if (!unresolvedValues.has(rawValue)) {
+                unresolved.push(rawValue);
+                unresolvedValues.add(rawValue);
+            }
+            continue;
+        }
+        if (candidate.member_id === member.member_id || resolvedIds.has(candidate.member_id)) {
+            continue;
+        }
+        memberIds.push(candidate.member_id);
+        resolvedIds.add(candidate.member_id);
+    }
+
+    return { memberIds, unresolved };
+}
+
+export function semanticDependencyCandidates(
+    snapshot: Pick<SemanticSnapshot, "members">,
+    currentMemberId: string,
+): SemanticMember[] {
+    const currentMember = snapshot.members.find((item) => item.member_id === currentMemberId);
+    const cubeName = currentMember?.cube_name ?? currentMemberId.split(":")[1];
+    return snapshot.members.filter(
+        (item) =>
+            item.member_type === "measure" &&
+            item.cube_name === cubeName &&
+            item.member_id !== currentMemberId,
+    );
+}
+
+export function copySemanticMeasure(
+    snapshot: SemanticSnapshot,
+    memberId: string,
+): { snapshot: SemanticSnapshot; copiedMemberId: string } {
+    const nextSnapshot = cloneSemanticSnapshot(snapshot);
+    const sourceMember = nextSnapshot.members.find((item) => item.member_id === memberId);
+    if (!sourceMember || sourceMember.member_type !== "measure" || !sourceMember.measure) {
+        throw new Error("只能复制指标成员。");
+    }
+
+    let sequence = 1;
+    let copiedName = `${sourceMember.member_name}_copy_${sequence}`;
+    while (
+        nextSnapshot.members.some(
+            (item) =>
+                item.cube_name === sourceMember.cube_name &&
+                item.member_name === copiedName,
+        )
+    ) {
+        sequence += 1;
+        copiedName = `${sourceMember.member_name}_copy_${sequence}`;
+    }
+    const copiedMemberId = buildSemanticMemberId({
+        ...sourceMember,
+        member_name: copiedName,
+    });
+    const copiedMember: SemanticMember = {
+        ...sourceMember,
+        member_id: copiedMemberId,
+        member_name: copiedName,
+        title: sourceMember.title ? `${sourceMember.title} 副本` : `${copiedName} 副本`,
+        status: "draft",
+    };
+    nextSnapshot.members.push(copiedMember);
+
+    nextSnapshot.metric_equivalence_groups = (nextSnapshot.metric_equivalence_groups ?? []).map(
+        (group) => {
+            const sourceRelation = group.members.find(
+                (item) => item.member_id === memberId,
+            );
+            if (!sourceRelation && group.canonical_member_id !== memberId) return group;
+            if (group.members.some((item) => item.member_id === copiedMemberId)) return group;
+            return {
+                ...group,
+                members: [
+                    ...group.members,
+                    {
+                        member_id: copiedMemberId,
+                        match_type: sourceRelation?.match_type ?? "exact",
+                        note: sourceRelation?.note ?? "",
+                    },
+                ],
+            };
+        },
+    );
+
+    const originalAttachments = nextSnapshot.metric_attachments ?? [];
+    const attachments: SemanticMetricAttachment[] = [];
+    for (const attachment of originalAttachments) {
+        if (
+            attachment.primary_member_id !== memberId &&
+            attachment.attached_member_id !== memberId
+        ) {
+            continue;
+        }
+        attachments.push({
+            ...attachment,
+            primary_member_id:
+                attachment.primary_member_id === memberId
+                    ? copiedMemberId
+                    : attachment.primary_member_id,
+            attached_member_id:
+                attachment.attached_member_id === memberId
+                    ? copiedMemberId
+                    : attachment.attached_member_id,
+        });
+    }
+    attachments.push(...originalAttachments);
+    const uniqueAttachments = new Map<string, SemanticMetricAttachment>();
+    for (const attachment of attachments) {
+        const endpointKey = `${attachment.primary_member_id}\u0000${attachment.attached_member_id}`;
+        if (!uniqueAttachments.has(endpointKey)) uniqueAttachments.set(endpointKey, attachment);
+    }
+    nextSnapshot.metric_attachments = [...uniqueAttachments.values()];
+
+    return { snapshot: nextSnapshot, copiedMemberId };
+}
+
+function sortedRelationSignature(value: unknown): string {
+    if (Array.isArray(value)) {
+        return JSON.stringify(
+            value.map((item) => sortedRelationSignature(item)).sort(),
+        );
+    }
+    if (value !== null && typeof value === "object") {
+        return JSON.stringify(
+            Object.fromEntries(
+                Object.entries(value)
+                    .sort(([left], [right]) => left.localeCompare(right))
+                    .map(([key, item]) => [key, sortedRelationSignature(item)]),
+            ),
+        );
+    }
+    return JSON.stringify(value);
+}
+
+function measureDefinitionSignature(member: SemanticMember): string {
+    return JSON.stringify({
+        expression: member.measure?.expression ?? null,
+        aggregation_type: member.measure?.aggregation_type ?? null,
+        dependency_members: member.measure?.dependency_members ?? [],
+        source_column_id: member.source_column_id ?? null,
+        data_type: member.data_type ?? null,
+    });
+}
+
+export function buildSemanticChangeSummary(
+    base: Pick<SemanticSnapshot, "members" | "metric_equivalence_groups" | "metric_attachments">,
+    current: Pick<SemanticSnapshot, "members" | "metric_equivalence_groups" | "metric_attachments">,
+): SemanticChangeSummary {
+    const baseMembers = new Map(base.members.map((member) => [member.member_id, member]));
+    const currentMembers = new Map(
+        current.members.map((member) => [member.member_id, member]),
+    );
+    const added = current.members.filter((member) => !baseMembers.has(member.member_id));
+    const removed = base.members.filter((member) => !currentMembers.has(member.member_id));
+    const changed = current.members.filter((member) => {
+        const previous = baseMembers.get(member.member_id);
+        return (
+            previous !== undefined &&
+            member.member_type === "measure" &&
+            measureDefinitionSignature(previous) !== measureDefinitionSignature(member)
+        );
+    });
+    const equivalence_changed =
+        sortedRelationSignature(base.metric_equivalence_groups ?? []) !==
+        sortedRelationSignature(current.metric_equivalence_groups ?? []);
+    const attachments_changed =
+        sortedRelationSignature(base.metric_attachments ?? []) !==
+        sortedRelationSignature(current.metric_attachments ?? []);
+
+    return {
+        added,
+        changed,
+        removed,
+        equivalence_changed,
+        attachments_changed,
+        has_changes:
+            added.length > 0 ||
+            changed.length > 0 ||
+            removed.length > 0 ||
+            equivalence_changed ||
+            attachments_changed,
     };
 }
 
