@@ -227,27 +227,36 @@ export function setMetricEquivalenceMembership(
     canonical: boolean,
     note: string,
 ): SemanticSnapshot {
-    const groups = (snapshot.metric_equivalence_groups ?? []).map((group) => {
-        const members = group.members.filter((member) => member.member_id !== memberId);
-        if (group.group_id !== groupId) {
-            return { ...group, members };
-        }
+    const groups = (snapshot.metric_equivalence_groups ?? [])
+        .map((group) => {
+            const members = group.members.filter((member) => member.member_id !== memberId);
+            if (group.group_id !== groupId) {
+                return {
+                    ...group,
+                    canonical_member_id:
+                        group.canonical_member_id === memberId
+                            ? members[0]?.member_id ?? ""
+                            : group.canonical_member_id,
+                    members,
+                };
+            }
 
-        const nextMembers = [
-            ...members,
-            { member_id: memberId, match_type: matchType, note },
-        ];
-        const nextCanonical = canonical
-            ? memberId
-            : group.canonical_member_id === memberId
-              ? members[0]?.member_id ?? ""
-              : group.canonical_member_id;
-        return {
-            ...group,
-            canonical_member_id: nextCanonical,
-            members: nextMembers,
-        };
-    });
+            const nextMembers = [
+                ...members,
+                { member_id: memberId, match_type: matchType, note },
+            ];
+            const nextCanonical = canonical
+                ? memberId
+                : group.canonical_member_id === memberId
+                  ? members[0]?.member_id ?? ""
+                  : group.canonical_member_id;
+            return {
+                ...group,
+                canonical_member_id: nextCanonical,
+                members: nextMembers,
+            };
+        })
+        .filter((group) => group.members.length > 0);
 
     return { ...snapshot, metric_equivalence_groups: groups };
 }
