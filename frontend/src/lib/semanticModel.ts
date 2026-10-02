@@ -261,10 +261,15 @@ export function renameSemanticMemberReferences(
         previousMember.cube_name === nextMember.cube_name
             ? nextMember.member_name
             : nextQualifiedName;
-    const replaceDependency = (value: string): string => {
+    const replaceDependency = (value: string, dependentCubeName: string): string => {
         if (value === previousMember.member_id) return nextMember.member_id;
         if (value === previousQualifiedName) return nextQualifiedName;
-        if (value === previousMember.member_name) return bareNameReplacement;
+        if (
+            value === previousMember.member_name &&
+            dependentCubeName === previousMember.cube_name
+        ) {
+            return bareNameReplacement;
+        }
         return value;
     };
     const replaceRelationId = (value: string): string =>
@@ -280,7 +285,7 @@ export function renameSemanticMemberReferences(
                 measure: {
                     ...member.measure,
                     dependency_members: member.measure.dependency_members.map(
-                        replaceDependency,
+                        (value) => replaceDependency(value, member.cube_name),
                     ),
                 },
             };
