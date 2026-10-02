@@ -72,7 +72,15 @@ class SemanticMetricRelationService:
         and longer chains cannot cause recursion or additional query columns.
         """
 
-        semantic_members = {member.member_id: member for member in snapshot.members}
+        active_members = tuple(
+            member
+            for member in snapshot.members
+            if member.release_version == snapshot.release_version
+        )
+        semantic_members = {member.member_id: member for member in active_members}
+        semantic_members_by_name = {
+            member.qualified_name: member for member in active_members
+        }
         requested_name = (
             requested_metric.name
             if isinstance(requested_metric, CubeMember)
@@ -82,10 +90,11 @@ class SemanticMetricRelationService:
         if requested_cube_member is None:
             return SemanticMetricRelationResolution(primary=None)
 
-        requested_semantic = self._semantic_member_for_name(
-            snapshot.members, requested_cube_member.name
+        requested_semantic = semantic_members_by_name.get(requested_cube_member.name)
+        requested_member = self._permitted_cube_member(
+            requested_semantic, member_catalog, permissions
         )
-        if requested_semantic is None or requested_semantic.member_type != "measure":
+        if requested_member is None:
             return SemanticMetricRelationResolution(primary=None)
 
         group, relation_member = self._equivalence_for(
@@ -129,15 +138,6 @@ class SemanticMetricRelationService:
             attachments=attachments,
             compatibility_notes=compatibility_notes,
         )
-
-    @staticmethod
-    def _semantic_member_for_name(
-        members: tuple[SemanticMember, ...], name: str
-    ) -> SemanticMember | None:
-        for member in members:
-            if member.qualified_name == name:
-                return member
-        return None
 
     @staticmethod
     def _equivalence_for(
