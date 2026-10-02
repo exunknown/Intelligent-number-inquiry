@@ -296,7 +296,7 @@ class SemanticModelValidator:
                         "成员名称不能为空",
                     )
                 )
-            elif not _MEMBER_NAME_PATTERN.match(member.member_name):
+            elif _MEMBER_NAME_PATTERN.fullmatch(member.member_name) is None:
                 issues.append(
                     ValidationIssue(
                         "invalid_member_name",
