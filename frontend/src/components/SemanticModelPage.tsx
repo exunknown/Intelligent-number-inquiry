@@ -54,6 +54,7 @@ function defaultCubeName(cubes: SemanticCube[]): string {
 
 export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPageProps) {
     const [filters, setFilters] = useState<Filters>({ memberType: "all", query: "" });
+    const [directoryQuery, setDirectoryQuery] = useState("");
     const [members, setMembers] = useState<SemanticMemberSummary[]>([]);
     const [snapshot, setSnapshot] = useState<SemanticSnapshot>(emptySnapshot);
     const [activeSnapshot, setActiveSnapshot] = useState<SemanticSnapshot>(emptySnapshot);
@@ -81,7 +82,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         setError(null);
         setSnapshotUnavailable(false);
         try {
-            const [memberResponse, releaseResponse] = await Promise.all([listSemanticMembers(filters.memberType, filters.query), listSemanticReleases()]);
+            const [memberResponse, releaseResponse] = await Promise.all([listSemanticMembers(filters.memberType, directoryQuery), listSemanticReleases()]);
             if (!requestGateRef.current.accepts(generation)) return;
             setMembers(memberResponse.items);
             setReleases(releaseResponse.items);
@@ -105,7 +106,13 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         }
     };
 
-    useEffect(() => { void load(); }, [filters.memberType, filters.query]);
+    useEffect(() => {
+        const timer = window.setTimeout(() => {
+            setDirectoryQuery(filters.query);
+        }, 280);
+        return () => window.clearTimeout(timer);
+    }, [filters.query]);
+    useEffect(() => { void load(); }, [filters.memberType, directoryQuery]);
     useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
 
     const workingSnapshot = draft?.snapshot ?? snapshot;
