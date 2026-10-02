@@ -72,12 +72,15 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const [busy, setBusy] = useState(false);
     const [dirty, setDirty] = useState(false);
     const requestGateRef = useRef(createSemanticModelRequestGate());
+    const localEditGenerationRef = useRef(0);
     const createDialogRef = useRef<HTMLDivElement | null>(null);
     const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
     const createTriggerRef = useRef<HTMLButtonElement | null>(null);
 
     const load = async () => {
         const generation = requestGateRef.current.start();
+        const editGeneration = localEditGenerationRef.current;
+        const acceptsLocalEdit = () => localEditGenerationRef.current === editGeneration;
         setLoading(true);
         setError(null);
         setSnapshotUnavailable(true);
@@ -85,6 +88,10 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             const [memberResponse, releaseResponse] = await Promise.all([listSemanticMembers(filters.memberType, directoryQuery), listSemanticReleases()]);
             if (!requestGateRef.current.accepts(generation)) return;
             setMembers(memberResponse.items);
+            if (!acceptsLocalEdit()) {
+                setSnapshotUnavailable(false);
+                return;
+            }
             setReleases(releaseResponse.items);
             const active = releaseResponse.items.find((item) => item.active);
             const releaseDetail = active && !active.snapshot
@@ -92,6 +99,10 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
                 : null;
             const nextSnapshot = resolveSemanticModelSnapshot(active, releaseDetail);
             if (!requestGateRef.current.accepts(generation)) return;
+            if (!acceptsLocalEdit()) {
+                setSnapshotUnavailable(false);
+                return;
+            }
             setSnapshot(nextSnapshot);
             setActiveSnapshot(nextSnapshot);
             setSnapshotUnavailable(false);
@@ -117,7 +128,11 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
 
     const workingSnapshot = draft?.snapshot ?? snapshot;
+    const beginLocalEdit = () => {
+        localEditGenerationRef.current += 1;
+    };
     const updateWorkingSnapshot = (update: (current: SemanticSnapshot) => SemanticSnapshot) => {
+        beginLocalEdit();
         setSnapshot((current) => update(current));
         if (draft) setDraft((current) => current ? { ...current, snapshot: update(current.snapshot) } : current);
         setDirty(true);
@@ -178,6 +193,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
 
     const copyMeasure = (memberId: string) => {
         try {
+            beginLocalEdit();
             const baseSnapshot = draft?.snapshot ?? snapshot;
             const { snapshot: nextSnapshot, copiedMemberId } = copySemanticMeasure(baseSnapshot, memberId);
             setSnapshot(nextSnapshot);
@@ -336,6 +352,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     };
 
     const handleRollback = (release: SemanticRelease) => {
+        if (dirty && !window.confirm("当前指标治理草稿尚未保存，回滚会丢失修改，确定继续吗？")) return;
         const reason = window.prompt(`请输入回滚 ${release.release_version} 的原因`);
         if (!reason?.trim()) return;
         void perform(() => rollbackSemanticRelease(release.release_version, { reason: reason.trim() }), "");
@@ -343,6 +360,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
 
     const changeFilters = (nextFilters: Filters) => {
         if (dirty && !window.confirm("当前指标治理草稿尚未保存，切换筛选会丢失修改，确定继续吗？")) return;
+        requestGateRef.current.start();
         setDraft(null);
         setDirty(false);
         setPendingNewMemberIds([]);
@@ -352,6 +370,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
 
     const refresh = () => {
         if (dirty && !window.confirm("当前指标治理草稿尚未保存，刷新会丢失修改，确定继续吗？")) return;
+        requestGateRef.current.start();
         setDraft(null);
         setDirty(false);
         setPendingNewMemberIds([]);
@@ -366,6 +385,36 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const changeSummary = canPublish && activeSnapshotReady
         ? buildSemanticChangeSummary(activeRelease ? activeSnapshot : emptySnapshot, currentDraft)
         : null;
+    const handlePublish = async () => {
+        const current = requireDraft();
+        if (!current || !canPublish) return;
+        const publishConflictMessage = "发布版本已发生变化，请刷新后重试。";
+        setBusy(true);
+        try {
+            const latestReleaseResponse = await listSemanticReleases();
+            const latestActiveRelease = latestReleaseResponse.items.find((item) => item.active);
+            const latestActiveVersion = latestActiveRelease?.release_version ?? null;
+            const pageActiveVersion = activeRelease?.release_version ?? null;
+            const pageSnapshotVersion = activeRelease ? activeSnapshot.release_version : null;
+            if (latestActiveVersion !== pageActiveVersion || pageSnapshotVersion !== latestActiveVersion) {
+                setDraft(null);
+                setDirty(false);
+                setPendingNewMemberIds([]);
+                setReplacedMemberIds([]);
+                await load();
+                setError(publishConflictMessage);
+                setBusy(false);
+                return;
+            }
+        } catch {
+            await load();
+            setError("发布版本复核失败，请刷新后重试。");
+            setBusy(false);
+            return;
+        }
+        await perform(() => publishSemanticDraft(current.draft_id, { reason: "发布语义模型版本" }), "");
+        setBusy(false);
+    };
     const selectedMember = currentDraft.members.find((member) => member.member_id === selectedId) ?? null;
     const directoryMembers = mergeSemanticMemberSummaries(
         members,
@@ -399,9 +448,9 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
                         onRelationsChange={updateRelations}
                         onSave={() => void save()}
                     />
-                    <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} canReview={draft?.status === "pending_review"} canPublish={canPublish} busy={busy} changeSummary={changeSummary ?? undefined} onValidate={() => { const current = requireDraft(); if (current) void perform(() => validateSemanticDraft(current.draft_id), ""); }} onSubmit={() => { const current = requireDraft(); if (current) void perform(() => submitSemanticDraft(current.draft_id, { reason: "提交语义模型审核" }), ""); }} onReview={(decision) => { const current = requireDraft(); if (current) void perform(() => reviewSemanticDraft(current.draft_id, { decision, reason: decision === "approved" ? "审核通过" : "审核驳回" }), ""); }} onPublish={() => { const current = requireDraft(); if (current) void perform(() => publishSemanticDraft(current.draft_id, { reason: "发布语义模型版本" }), ""); }} />
+                    <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} canReview={draft?.status === "pending_review"} canPublish={canPublish} busy={busy} changeSummary={changeSummary ?? undefined} onValidate={() => { const current = requireDraft(); if (current) void perform(() => validateSemanticDraft(current.draft_id), ""); }} onSubmit={() => { const current = requireDraft(); if (current) void perform(() => submitSemanticDraft(current.draft_id, { reason: "提交语义模型审核" }), ""); }} onReview={(decision) => { const current = requireDraft(); if (current) void perform(() => reviewSemanticDraft(current.draft_id, { decision, reason: decision === "approved" ? "审核通过" : "审核驳回" }), ""); }} onPublish={() => void handlePublish()} />
                 </div>
-                <SemanticReleasePanel releases={releases} activeVersion={releases.find((item) => item.active)?.release_version ?? null} activeSnapshot={activeSnapshot} disabled={busy} onRollback={handleRollback} />
+                <SemanticReleasePanel releases={releases} activeVersion={activeRelease?.release_version ?? null} activeSnapshot={snapshotUnavailable || !activeSnapshotReady ? null : activeSnapshot} disabled={busy || loading || snapshotUnavailable || !activeSnapshotReady} dirty={dirty} onRollback={handleRollback} />
             </div>
             {createMemberType && (
                 <div className="absolute inset-0 z-20 flex items-start justify-center bg-ink/10 p-10" role="presentation">

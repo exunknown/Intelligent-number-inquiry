@@ -520,6 +520,8 @@ export function renameSemanticMemberReferences(
 ): SemanticSnapshot {
     const previousQualifiedName = `${previousMember.cube_name}.${previousMember.member_name}`;
     const nextQualifiedName = `${nextMember.cube_name}.${nextMember.member_name}`;
+    const previousLegacyQualifiedName = `${previousMember.cube_name}:${previousMember.member_name}`;
+    const nextLegacyQualifiedName = `${nextMember.cube_name}:${nextMember.member_name}`;
     const bareNameReplacement =
         previousMember.cube_name === nextMember.cube_name
             ? nextMember.member_name
@@ -527,6 +529,7 @@ export function renameSemanticMemberReferences(
     const replaceDependency = (value: string, dependentCubeName: string): string => {
         if (value === previousMember.member_id) return nextMember.member_id;
         if (value === previousQualifiedName) return nextQualifiedName;
+        if (value === previousLegacyQualifiedName) return nextLegacyQualifiedName;
         if (
             value === previousMember.member_name &&
             dependentCubeName === previousMember.cube_name
@@ -542,6 +545,9 @@ export function renameSemanticMemberReferences(
         expression.replace(/\{([^{}]+)\}/g, (reference, memberReference: string) => {
             if (memberReference === previousQualifiedName) {
                 return `{${nextQualifiedName}}`;
+            }
+            if (memberReference === previousLegacyQualifiedName) {
+                return `{${nextLegacyQualifiedName}}`;
             }
             if (
                 memberReference === previousMember.member_name &&
