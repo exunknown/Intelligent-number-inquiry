@@ -1,17 +1,22 @@
 import { Save } from "lucide-react";
-import type { SemanticMember } from "../lib/semanticModel";
+import type { SemanticMember, SemanticMetricAttachment, SemanticMetricEquivalenceGroup } from "../lib/semanticModel";
+import { SemanticMetricRelationsEditor } from "./SemanticMetricRelationsEditor";
 
 type SemanticMemberEditorProps = {
     member: SemanticMember | null;
     disabled: boolean;
     onChange: (member: SemanticMember) => void;
+    members: SemanticMember[];
+    metricEquivalenceGroups: SemanticMetricEquivalenceGroup[];
+    metricAttachments: SemanticMetricAttachment[];
+    onRelationsChange: (groups: SemanticMetricEquivalenceGroup[], attachments: SemanticMetricAttachment[]) => void;
     onSave: () => void;
 };
 
 const inputClass = "h-10 w-full border border-ink/15 bg-white px-3 text-sm text-ink outline-none focus:border-indigo/60 focus:ring-2 focus:ring-indigo/15 disabled:bg-paper disabled:text-ink/50";
 const areaClass = "min-h-24 w-full resize-y border border-ink/15 bg-white px-3 py-2 text-sm leading-6 text-ink outline-none focus:border-indigo/60 focus:ring-2 focus:ring-indigo/15 disabled:bg-paper disabled:text-ink/50";
 
-export function SemanticMemberEditor({ member, disabled, onChange, onSave }: SemanticMemberEditorProps) {
+export function SemanticMemberEditor({ member, disabled, onChange, members, metricEquivalenceGroups, metricAttachments, onRelationsChange, onSave }: SemanticMemberEditorProps) {
     if (!member) {
         return <div className="grid min-h-0 flex-1 place-items-center text-sm text-ink/45">从左侧选择一个成员开始编辑。</div>;
     }
@@ -38,7 +43,7 @@ export function SemanticMemberEditor({ member, disabled, onChange, onSave }: Sem
 
                 <div className="grid gap-5 xl:grid-cols-2">
                     <label className="block">
-                        <span className="mb-2 block text-xs font-semibold text-ink/60">展示名称</span>
+                        <span className="mb-2 block text-xs font-semibold text-ink/60">{member.member_type === "measure" ? "指标名称" : "展示名称"}</span>
                         <input className={inputClass} value={member.title} disabled={disabled} onChange={(event) => update({ title: event.target.value })} />
                     </label>
                     <label className="block">
@@ -75,6 +80,17 @@ export function SemanticMemberEditor({ member, disabled, onChange, onSave }: Sem
                                 <label className="block xl:col-span-2"><span className="mb-2 block text-xs font-semibold text-ink/60">表达式</span><textarea className={`${areaClass} font-mono text-xs`} value={member.measure.expression} disabled={disabled} onChange={(event) => updateMeasure({ expression: event.target.value })} /></label>
                             </div>
                         </div>
+                    )}
+
+                    {member.member_type === "measure" && (
+                        <SemanticMetricRelationsEditor
+                            member={member}
+                            members={members}
+                            groups={metricEquivalenceGroups}
+                            attachments={metricAttachments}
+                            disabled={disabled}
+                            onChange={onRelationsChange}
+                        />
                     )}
 
                     {member.member_type !== "measure" && member.dimension && (

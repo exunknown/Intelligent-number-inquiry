@@ -1,5 +1,5 @@
 import { ArrowLeft, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
     createSemanticDraft,
     getSemanticDraft,
@@ -14,7 +14,7 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { createSemanticModelRequestGate, formatSemanticModelError, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue } from "../lib/semanticModel";
+import { createSemanticModelRequestGate, formatSemanticModelError, serializeSemanticSnapshot, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue } from "../lib/semanticModel";
 import { SemanticMemberEditor } from "./SemanticMemberEditor";
 import { SemanticMemberList } from "./SemanticMemberList";
 import { SemanticReleasePanel } from "./SemanticReleasePanel";
@@ -26,15 +26,7 @@ type Filters = { memberType: "all" | "measure" | "dimension" | "time_dimension";
 const emptySnapshot: SemanticSnapshot = { release_version: "draft", cubes: [], joins: [], members: [] };
 
 function asPayload(snapshot: SemanticSnapshot, reason: string): SemanticDraftPayload {
-    return {
-        release_version: snapshot.release_version,
-        cubes: snapshot.cubes,
-        joins: snapshot.joins,
-        members: snapshot.members,
-        metric_equivalence_groups: snapshot.metric_equivalence_groups ?? [],
-        metric_attachments: snapshot.metric_attachments ?? [],
-        reason,
-    };
+    return serializeSemanticSnapshot(snapshot, reason);
 }
 
 function operationIssues(operation: SemanticOperation | null): SemanticValidationIssue[] {
@@ -45,6 +37,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const [filters, setFilters] = useState<Filters>({ memberType: "all", query: "" });
     const [members, setMembers] = useState<SemanticMemberSummary[]>([]);
     const [snapshot, setSnapshot] = useState<SemanticSnapshot>(emptySnapshot);
+    const [activeSnapshot, setActiveSnapshot] = useState<SemanticSnapshot>(emptySnapshot);
     const [draft, setDraft] = useState<SemanticDraft | null>(null);
     const [releases, setReleases] = useState<SemanticRelease[]>([]);
     const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -54,8 +47,6 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const [busy, setBusy] = useState(false);
     const [dirty, setDirty] = useState(false);
     const requestGateRef = useRef(createSemanticModelRequestGate());
-
-    const selectedMember = useMemo(() => snapshot.members.find((member) => member.member_id === selectedId) ?? null, [selectedId, snapshot.members]);
 
     const load = async () => {
         const generation = requestGateRef.current.start();
@@ -71,6 +62,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             if (active && !active.snapshot) nextSnapshot = (await getSemanticRelease(active.release_version)).snapshot ?? emptySnapshot;
             if (!requestGateRef.current.accepts(generation)) return;
             setSnapshot(nextSnapshot);
+            setActiveSnapshot(nextSnapshot);
             setSelectedId((current) => current && memberResponse.items.some((item) => item.member_id === current) ? current : memberResponse.items[0]?.member_id ?? nextSnapshot.members[0]?.member_id ?? null);
             setDirty(false);
         } catch (loadError) {
@@ -84,10 +76,26 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
 
     const workingSnapshot = draft?.snapshot ?? snapshot;
-    const updateMember = (member: SemanticMember) => {
-        setSnapshot((current) => ({ ...current, release_version: workingSnapshot.release_version, members: current.members.map((item) => item.member_id === member.member_id ? member : item) }));
-        if (draft) setDraft((current) => current ? { ...current, snapshot: { ...current.snapshot, members: current.snapshot.members.map((item) => item.member_id === member.member_id ? member : item) } } : current);
+    const updateWorkingSnapshot = (update: (current: SemanticSnapshot) => SemanticSnapshot) => {
+        setSnapshot((current) => update(current));
+        if (draft) setDraft((current) => current ? { ...current, snapshot: update(current.snapshot) } : current);
         setDirty(true);
+    };
+
+    const updateMember = (member: SemanticMember) => {
+        updateWorkingSnapshot((current) => ({
+            ...current,
+            release_version: workingSnapshot.release_version,
+            members: current.members.map((item) => item.member_id === member.member_id ? member : item),
+        }));
+    };
+
+    const updateRelations = (groups: SemanticMetricEquivalenceGroup[], attachments: SemanticMetricAttachment[]) => {
+        updateWorkingSnapshot((current) => ({
+            ...current,
+            metric_equivalence_groups: groups,
+            metric_attachments: attachments,
+        }));
     };
 
     const refreshDraft = async (draftId: string) => {
@@ -163,10 +171,19 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             <div className="flex min-h-0 flex-1">
                 <SemanticMemberList items={members} selectedId={selectedId} filters={filters} loading={loading} error={error && !members.length ? error : null} onSelect={setSelectedId} onFilterChange={changeFilters} />
                 <div className="flex min-w-0 flex-1 flex-col">
-                    <SemanticMemberEditor member={currentDraft.members.find((member) => member.member_id === selectedId) ?? null} disabled={busy || loading} onChange={updateMember} onSave={() => void save()} />
+                    <SemanticMemberEditor
+                        member={currentDraft.members.find((member) => member.member_id === selectedId) ?? null}
+                        members={currentDraft.members}
+                        metricEquivalenceGroups={currentDraft.metric_equivalence_groups ?? []}
+                        metricAttachments={currentDraft.metric_attachments ?? []}
+                        disabled={busy || loading}
+                        onChange={updateMember}
+                        onRelationsChange={updateRelations}
+                        onSave={() => void save()}
+                    />
                     <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} canReview={draft?.status === "pending_review"} canPublish={draft?.status === "validated"} busy={busy} onValidate={() => { const current = requireDraft(); if (current) void perform(() => validateSemanticDraft(current.draft_id), ""); }} onSubmit={() => { const current = requireDraft(); if (current) void perform(() => submitSemanticDraft(current.draft_id, { reason: "提交语义模型审核" }), ""); }} onReview={(decision) => { const current = requireDraft(); if (current) void perform(() => reviewSemanticDraft(current.draft_id, { decision, reason: decision === "approved" ? "审核通过" : "审核驳回" }), ""); }} onPublish={() => { const current = requireDraft(); if (current) void perform(() => publishSemanticDraft(current.draft_id, { reason: "发布语义模型版本" }), ""); }} />
                 </div>
-                <SemanticReleasePanel releases={releases} activeVersion={releases.find((item) => item.active)?.release_version ?? null} disabled={busy} onRollback={handleRollback} />
+                <SemanticReleasePanel releases={releases} activeVersion={releases.find((item) => item.active)?.release_version ?? null} activeSnapshot={activeSnapshot} disabled={busy} onRollback={handleRollback} />
             </div>
         </div>
     );

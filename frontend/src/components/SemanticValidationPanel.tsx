@@ -29,7 +29,7 @@ export function SemanticValidationPanel({ issues, status, canReview, canPublish,
                     {canPublish && <button type="button" onClick={onPublish} disabled={busy} className="inline-flex min-h-9 items-center gap-2 bg-cinnabar px-3 text-xs font-semibold text-white disabled:opacity-45">发布版本</button>}
                 </div>
             </div>
-            {issues.length > 0 && <div className="mt-3 grid gap-2 lg:grid-cols-2">{issues.map((issue, index) => <div key={`${issue.path}-${index}`} className={`border-l-2 px-3 py-2 text-xs ${issue.severity === "error" ? "border-oxide bg-oxide/5 text-oxide" : "border-cinnabar bg-cinnabar/5 text-ink/70"}`}><span className="font-mono">{issue.path || "model"}</span><span className="mx-2 text-ink/30">·</span>{issue.message}</div>)}</div>}
+            {issues.length > 0 && <div className="mt-3 grid gap-2 lg:grid-cols-2">{issues.map((issue, index) => <div key={`${issue.path}-${index}`} className={`border-l-2 px-3 py-2 text-xs ${issue.severity === "error" ? "border-oxide bg-oxide/5 text-oxide" : "border-cinnabar bg-cinnabar/5 text-ink/70"}`}><span className="font-mono">{issue.code}</span><span className="mx-2 text-ink/30">·</span><span className="font-mono">{issue.path || "model"}</span><span className="mx-2 text-ink/30">·</span>{issue.message}</div>)}</div>}
         </section>
     );
 }

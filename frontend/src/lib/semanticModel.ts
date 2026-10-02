@@ -211,3 +211,85 @@ export function newSemanticIdempotencyKey(): string {
 export function cloneSemanticSnapshot(snapshot: SemanticSnapshot): SemanticSnapshot {
     return structuredClone(snapshot);
 }
+
+export function updateSemanticMemberFields<T extends object>(
+    member: T,
+    patch: Partial<T>,
+): T {
+    return { ...member, ...patch };
+}
+
+export function setMetricEquivalenceMembership(
+    snapshot: SemanticSnapshot,
+    memberId: string,
+    groupId: string | null,
+    matchType: SemanticMetricEquivalenceMatchType,
+    canonical: boolean,
+    note: string,
+): SemanticSnapshot {
+    const groups = (snapshot.metric_equivalence_groups ?? []).map((group) => {
+        const members = group.members.filter((member) => member.member_id !== memberId);
+        if (group.group_id !== groupId) {
+            return { ...group, members };
+        }
+
+        const nextMembers = [
+            ...members,
+            { member_id: memberId, match_type: matchType, note },
+        ];
+        const nextCanonical = canonical
+            ? memberId
+            : group.canonical_member_id === memberId
+              ? members[0]?.member_id ?? ""
+              : group.canonical_member_id;
+        return {
+            ...group,
+            canonical_member_id: nextCanonical,
+            members: nextMembers,
+        };
+    });
+
+    return { ...snapshot, metric_equivalence_groups: groups };
+}
+
+export function upsertMetricAttachment(
+    snapshot: SemanticSnapshot,
+    attachment: SemanticMetricAttachment,
+): SemanticSnapshot {
+    const attachments = (snapshot.metric_attachments ?? []).filter(
+        (item) =>
+            item.primary_member_id !== attachment.primary_member_id ||
+            item.attached_member_id !== attachment.attached_member_id,
+    );
+    return {
+        ...snapshot,
+        metric_attachments: [...attachments, { ...attachment }],
+    };
+}
+
+export function removeMetricAttachment(
+    snapshot: SemanticSnapshot,
+    primaryMemberId: string,
+    attachedMemberId: string,
+): SemanticSnapshot {
+    return {
+        ...snapshot,
+        metric_attachments: (snapshot.metric_attachments ?? []).filter(
+            (attachment) =>
+                attachment.primary_member_id !== primaryMemberId ||
+                attachment.attached_member_id !== attachedMemberId,
+        ),
+    };
+}
+
+export function serializeSemanticSnapshot(
+    snapshot: SemanticSnapshot,
+    reason: string,
+) {
+    return {
+        ...snapshot,
+        metric_equivalence_groups: snapshot.metric_equivalence_groups ?? [],
+        metric_attachments: snapshot.metric_attachments ?? [],
+        reason,
+    };
+}
