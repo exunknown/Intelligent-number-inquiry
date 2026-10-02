@@ -14,7 +14,7 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { buildSemanticMemberId, copySemanticMeasure, createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, mergeSemanticMemberSummaries, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticMemberName, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
+import { buildSemanticChangeSummary, buildSemanticMemberId, copySemanticMeasure, createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, mergeSemanticMemberSummaries, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticMemberName, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
 import { nextFocusableIndex } from "../lib/userManagement";
 import { SemanticMemberEditor } from "./SemanticMemberEditor";
 import { SemanticMemberList } from "./SemanticMemberList";
@@ -358,6 +358,8 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     };
 
     const currentDraft = draft?.snapshot ?? snapshot;
+    const activeRelease = releases.find((item) => item.active);
+    const changeSummary = snapshotUnavailable ? null : buildSemanticChangeSummary(activeRelease ? activeSnapshot : emptySnapshot, currentDraft);
     const selectedMember = currentDraft.members.find((member) => member.member_id === selectedId) ?? null;
     const directoryMembers = mergeSemanticMemberSummaries(
         members,
@@ -391,7 +393,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
                         onRelationsChange={updateRelations}
                         onSave={() => void save()}
                     />
-                    <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} canReview={draft?.status === "pending_review"} canPublish={draft?.status === "validated"} busy={busy} onValidate={() => { const current = requireDraft(); if (current) void perform(() => validateSemanticDraft(current.draft_id), ""); }} onSubmit={() => { const current = requireDraft(); if (current) void perform(() => submitSemanticDraft(current.draft_id, { reason: "提交语义模型审核" }), ""); }} onReview={(decision) => { const current = requireDraft(); if (current) void perform(() => reviewSemanticDraft(current.draft_id, { decision, reason: decision === "approved" ? "审核通过" : "审核驳回" }), ""); }} onPublish={() => { const current = requireDraft(); if (current) void perform(() => publishSemanticDraft(current.draft_id, { reason: "发布语义模型版本" }), ""); }} />
+                    <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} canReview={draft?.status === "pending_review"} canPublish={draft?.status === "validated"} busy={busy} changeSummary={changeSummary ?? undefined} onValidate={() => { const current = requireDraft(); if (current) void perform(() => validateSemanticDraft(current.draft_id), ""); }} onSubmit={() => { const current = requireDraft(); if (current) void perform(() => submitSemanticDraft(current.draft_id, { reason: "提交语义模型审核" }), ""); }} onReview={(decision) => { const current = requireDraft(); if (current) void perform(() => reviewSemanticDraft(current.draft_id, { decision, reason: decision === "approved" ? "审核通过" : "审核驳回" }), ""); }} onPublish={() => { const current = requireDraft(); if (current) void perform(() => publishSemanticDraft(current.draft_id, { reason: "发布语义模型版本" }), ""); }} />
                 </div>
                 <SemanticReleasePanel releases={releases} activeVersion={releases.find((item) => item.active)?.release_version ?? null} activeSnapshot={activeSnapshot} disabled={busy} onRollback={handleRollback} />
             </div>

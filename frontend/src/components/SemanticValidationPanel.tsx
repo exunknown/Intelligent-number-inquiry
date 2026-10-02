@@ -1,5 +1,5 @@
 import { CheckCircle2, CircleAlert, Send, ShieldCheck, XCircle } from "lucide-react";
-import type { SemanticValidationIssue } from "../lib/semanticModel";
+import type { SemanticChangeSummary, SemanticValidationIssue } from "../lib/semanticModel";
 
 type SemanticValidationPanelProps = {
     issues: SemanticValidationIssue[];
@@ -11,12 +11,28 @@ type SemanticValidationPanelProps = {
     onSubmit: () => void;
     onReview: (decision: "approved" | "rejected") => void;
     onPublish: () => void;
+    changeSummary?: SemanticChangeSummary;
 };
 
-export function SemanticValidationPanel({ issues, status, canReview, canPublish, busy, onValidate, onSubmit, onReview, onPublish }: SemanticValidationPanelProps) {
+export function SemanticValidationPanel({ issues, status, canReview, canPublish, busy, onValidate, onSubmit, onReview, onPublish, changeSummary }: SemanticValidationPanelProps) {
     const errors = issues.filter((issue) => issue.severity === "error");
+    const addedMeasures = changeSummary?.added.filter((member) => member.member_type === "measure") ?? [];
+    const addedDimensions = changeSummary?.added.filter((member) => member.member_type === "dimension") ?? [];
+    const addedTimeDimensions = changeSummary?.added.filter((member) => member.member_type === "time_dimension") ?? [];
     return (
         <section className="border-t border-ink/10 bg-white px-6 py-4 lg:px-8">
+            {canPublish && changeSummary && <div className="mb-4 border-l-2 border-cinnabar bg-cinnabar/5 px-4 py-3" aria-label="发布前变更摘要">
+                <p className="text-xs font-semibold text-ink">发布前变更摘要</p>
+                {!changeSummary.has_changes ? <p className="mt-2 text-xs text-ink/55">暂无成员或关系变更</p> : <div className="mt-2 grid gap-2 text-xs text-ink/70 lg:grid-cols-2">
+                    {addedMeasures.length > 0 && <div><p className="font-semibold text-ink">新增指标</p><ul className="mt-1 space-y-1">{addedMeasures.map((item) => <li key={item.member_id}>{item.title || item.member_name} <span className="font-mono text-ink/45">({item.member_id})</span></li>)}</ul></div>}
+                    {addedDimensions.length > 0 && <div><p className="font-semibold text-ink">新增维度</p><ul className="mt-1 space-y-1">{addedDimensions.map((item) => <li key={item.member_id}>{item.title || item.member_name} <span className="font-mono text-ink/45">({item.member_id})</span></li>)}</ul></div>}
+                    {addedTimeDimensions.length > 0 && <div><p className="font-semibold text-ink">新增时间维度</p><ul className="mt-1 space-y-1">{addedTimeDimensions.map((item) => <li key={item.member_id}>{item.title || item.member_name} <span className="font-mono text-ink/45">({item.member_id})</span></li>)}</ul></div>}
+                    {changeSummary.changed.length > 0 && <div><p className="font-semibold text-ink">修改指标口径</p><ul className="mt-1 space-y-1">{changeSummary.changed.map((item) => <li key={item.member_id}>{item.title || item.member_name} <span className="font-mono text-ink/45">({item.member_id})</span></li>)}</ul></div>}
+                    {changeSummary.removed.length > 0 && <div><p className="font-semibold text-ink">删除或下线成员</p><ul className="mt-1 space-y-1">{changeSummary.removed.map((item) => <li key={item.member_id}>{item.title || item.member_name} <span className="font-mono text-ink/45">({item.member_id})</span></li>)}</ul></div>}
+                    {changeSummary.equivalence_changed && <p>等效指标关系：已变更</p>}
+                    {changeSummary.attachments_changed && <p>附带指标关系：已变更</p>}
+                </div>}
+            </div>}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                     {errors.length ? <CircleAlert className="h-5 w-5 text-oxide" aria-hidden="true" /> : <CheckCircle2 className="h-5 w-5 text-pine" aria-hidden="true" />}
