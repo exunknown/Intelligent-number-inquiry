@@ -14,7 +14,7 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, mergeSemanticMemberSummaries, resolveSemanticModelSnapshot, semanticCubeOptions, serializeSemanticSnapshot, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
+import { buildSemanticMemberId, createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, mergeSemanticMemberSummaries, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, serializeSemanticSnapshot, validateSemanticMemberName, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
 import { nextFocusableIndex } from "../lib/userManagement";
 import { SemanticMemberEditor } from "./SemanticMemberEditor";
 import { SemanticMemberList } from "./SemanticMemberList";
@@ -121,6 +121,30 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         }));
     };
 
+    const changeMemberName = (memberId: string, memberName: string) => {
+        const current = workingSnapshot.members.find((item) => item.member_id === memberId);
+        if (!current) return;
+        const validationError = validateSemanticMemberName(
+            workingSnapshot,
+            current,
+            memberName,
+        );
+        if (validationError) {
+            setError(validationError);
+            return;
+        }
+        const nextMember = {
+            ...current,
+            member_name: memberName,
+            member_id: buildSemanticMemberId({ ...current, member_name: memberName }),
+        };
+        updateWorkingSnapshot((currentSnapshot) =>
+            renameSemanticMemberReferences(currentSnapshot, current, nextMember),
+        );
+        setSelectedId(nextMember.member_id);
+        setError(null);
+    };
+
     const updateRelations = (groups: SemanticMetricEquivalenceGroup[], attachments: SemanticMetricAttachment[]) => {
         updateWorkingSnapshot((current) => ({
             ...current,
@@ -211,6 +235,37 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     };
 
     const save = async () => {
+        const invalidMember = workingSnapshot.members
+            .map((member) => ({
+                member,
+                message: validateSemanticMemberName(
+                    workingSnapshot,
+                    member,
+                    member.member_name,
+                ),
+            }))
+            .find((item) => item.message);
+        if (invalidMember?.message) {
+            setError(
+                `${invalidMember.member.title || invalidMember.member.member_name}：${invalidMember.message}`,
+            );
+            return;
+        }
+        const missingRequiredField = workingSnapshot.members.find(
+            (member) =>
+                !member.source_column_id?.trim() ||
+                (member.member_type === "measure" &&
+                    !member.measure?.expression.trim()),
+        );
+        if (missingRequiredField) {
+            const fieldName = !missingRequiredField.source_column_id?.trim()
+                ? "源字段 ID"
+                : "表达式";
+            setError(
+                `${missingRequiredField.title || missingRequiredField.member_name}：${fieldName}为必填项`,
+            );
+            return;
+        }
         const reason = "更新指标和维度治理草稿";
         const payload = asPayload(workingSnapshot, reason);
         await perform(async () => {
@@ -248,6 +303,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     };
 
     const currentDraft = draft?.snapshot ?? snapshot;
+    const selectedMember = currentDraft.members.find((member) => member.member_id === selectedId) ?? null;
     const directoryMembers = mergeSemanticMemberSummaries(members, currentDraft.members, filters);
     return (
         <div className="relative flex min-h-0 flex-1 flex-col bg-paper">
@@ -260,12 +316,16 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
                 <SemanticMemberList items={directoryMembers} selectedId={selectedId} filters={filters} loading={loading} disabled={busy || loading || snapshotUnavailable} error={error && !directoryMembers.length ? error : null} onSelect={setSelectedId} onFilterChange={changeFilters} onCreate={requestCreateMember} cubes={workingSnapshot.cubes} />
                 <div className="flex min-w-0 flex-1 flex-col">
                     <SemanticMemberEditor
-                        member={currentDraft.members.find((member) => member.member_id === selectedId) ?? null}
+                        member={selectedMember}
+                        snapshot={currentDraft}
                         members={currentDraft.members}
                         metricEquivalenceGroups={currentDraft.metric_equivalence_groups ?? []}
                         metricAttachments={currentDraft.metric_attachments ?? []}
                         disabled={busy || loading || snapshotUnavailable}
                         onChange={updateMember}
+                        onMemberNameChange={(name) => {
+                            if (selectedMember) changeMemberName(selectedMember.member_id, name);
+                        }}
                         onRelationsChange={updateRelations}
                         onSave={() => void save()}
                     />
