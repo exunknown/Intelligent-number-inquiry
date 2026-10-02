@@ -209,7 +209,15 @@ class SemanticModelService:
                 "semantic_model_publish_not_ready",
             )
         try:
-            await self.release_coordinator.publish(record["snapshot"], actor_id, reason)
+            publication = await self.release_coordinator.publish(
+                record["snapshot"], actor_id, reason
+            )
+            if isinstance(publication, dict) and publication.get("status") != "active":
+                return self._failure(
+                    draft_id,
+                    record["snapshot"].release_version,
+                    "semantic_model_publish_failed",
+                )
         except Exception:
             return self._failure(
                 draft_id,
