@@ -31,6 +31,12 @@ export function sanitizeMetricItems(value: unknown): MetricItem[] {
         ) {
             safe.source_member_id = candidate.source_member_id;
         }
+        if (
+            typeof candidate.compatibility_note === "string" &&
+            candidate.compatibility_note
+        ) {
+            safe.compatibility_note = candidate.compatibility_note;
+        }
         return [safe];
     });
 }

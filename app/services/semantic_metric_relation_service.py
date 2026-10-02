@@ -22,6 +22,7 @@ class ResolvedMetricAttachment:
     relation_type: str
     note: str
     display_order: int
+    source_member_id: str
 
 
 @dataclass(frozen=True)
@@ -204,6 +205,7 @@ class SemanticMetricRelationService:
                     relation_type=attachment.relation_type,
                     note=attachment.note,
                     display_order=attachment.display_order,
+                    source_member_id=primary_name,
                 )
             )
         return tuple(resolved)

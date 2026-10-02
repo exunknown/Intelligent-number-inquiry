@@ -15,6 +15,7 @@ class MetricDisplayEntryResponse(BaseModel):
     title: str
     role: Literal["primary", "attached"] | None = None
     source_member_id: str | None = None
+    compatibility_note: str | None = None
 
 
 MetricDisplayItemResponse = Annotated[

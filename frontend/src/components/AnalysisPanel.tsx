@@ -7,7 +7,7 @@ import { ChevronDown, Route } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { StepRail } from "./StepRail";
 import { cn } from "../lib/format";
-import { attachedMetricEntries, metricLabel } from "../lib/metricDisplay";
+import { attachedMetricEntries, metricDisplayEntries, metricLabel } from "../lib/metricDisplay";
 import type { MetricItem, QueryMode, StepState } from "../types/agent";
 
 type AnalysisPanelProps = {
@@ -118,6 +118,18 @@ export function AnalysisPanel({
                                 查询指标：
                                 {summaryMetrics.length > 0 ? summaryMetrics.join("，") : "暂无"}
                             </p>
+                            {metricDisplayEntries(metrics).some((metric) => Boolean(metric.compatibility_note)) && (
+                                <div className="mt-2 space-y-1 text-xs leading-5 text-ink/55">
+                                    <div className="font-semibold text-ink/70">口径说明</div>
+                                    {metricDisplayEntries(metrics)
+                                        .filter((metric) => Boolean(metric.compatibility_note))
+                                        .map((metric) => (
+                                            <div key={metric.member_id}>
+                                                {metric.title}：{metric.compatibility_note}
+                                            </div>
+                                        ))}
+                                </div>
+                            )}
                             {attachedMetrics.length > 0 && (
                                 <div className="mt-3 space-y-2 border-t border-ink/10 pt-3">
                                     <label className="flex items-center gap-2 text-xs font-semibold text-ink/75">

@@ -14,7 +14,7 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { createSemanticModelRequestGate, formatSemanticModelError, serializeSemanticSnapshot, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue } from "../lib/semanticModel";
+import { createSemanticModelRequestGate, formatSemanticModelError, resolveSemanticModelSnapshot, serializeSemanticSnapshot, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue } from "../lib/semanticModel";
 import { SemanticMemberEditor } from "./SemanticMemberEditor";
 import { SemanticMemberList } from "./SemanticMemberList";
 import { SemanticReleasePanel } from "./SemanticReleasePanel";
@@ -23,7 +23,7 @@ import { SemanticValidationPanel } from "./SemanticValidationPanel";
 type SemanticModelPageProps = { onBack: () => void; onDirtyChange?: (dirty: boolean) => void };
 type Filters = { memberType: "all" | "measure" | "dimension" | "time_dimension"; query: string };
 
-const emptySnapshot: SemanticSnapshot = { release_version: "draft", cubes: [], joins: [], members: [] };
+const emptySnapshot = resolveSemanticModelSnapshot(undefined);
 
 function asPayload(snapshot: SemanticSnapshot, reason: string): SemanticDraftPayload {
     return serializeSemanticSnapshot(snapshot, reason);
@@ -43,6 +43,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [snapshotUnavailable, setSnapshotUnavailable] = useState(false);
     const [operation, setOperation] = useState<SemanticOperation | null>(null);
     const [busy, setBusy] = useState(false);
     const [dirty, setDirty] = useState(false);
@@ -52,21 +53,27 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         const generation = requestGateRef.current.start();
         setLoading(true);
         setError(null);
+        setSnapshotUnavailable(false);
         try {
             const [memberResponse, releaseResponse] = await Promise.all([listSemanticMembers(filters.memberType, filters.query), listSemanticReleases()]);
             if (!requestGateRef.current.accepts(generation)) return;
             setMembers(memberResponse.items);
             setReleases(releaseResponse.items);
             const active = releaseResponse.items.find((item) => item.active);
-            let nextSnapshot = active?.snapshot ? active.snapshot : emptySnapshot;
-            if (active && !active.snapshot) nextSnapshot = (await getSemanticRelease(active.release_version)).snapshot ?? emptySnapshot;
+            const releaseDetail = active && !active.snapshot
+                ? await getSemanticRelease(active.release_version)
+                : null;
+            const nextSnapshot = resolveSemanticModelSnapshot(active, releaseDetail);
             if (!requestGateRef.current.accepts(generation)) return;
             setSnapshot(nextSnapshot);
             setActiveSnapshot(nextSnapshot);
             setSelectedId((current) => current && memberResponse.items.some((item) => item.member_id === current) ? current : memberResponse.items[0]?.member_id ?? nextSnapshot.members[0]?.member_id ?? null);
             setDirty(false);
         } catch (loadError) {
-            if (requestGateRef.current.accepts(generation)) setError(formatSemanticModelError(loadError));
+            if (requestGateRef.current.accepts(generation)) {
+                setSnapshotUnavailable(true);
+                setError(formatSemanticModelError(loadError));
+            }
         } finally {
             if (requestGateRef.current.accepts(generation)) setLoading(false);
         }
@@ -176,7 +183,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
                         members={currentDraft.members}
                         metricEquivalenceGroups={currentDraft.metric_equivalence_groups ?? []}
                         metricAttachments={currentDraft.metric_attachments ?? []}
-                        disabled={busy || loading}
+                        disabled={busy || loading || snapshotUnavailable}
                         onChange={updateMember}
                         onRelationsChange={updateRelations}
                         onSave={() => void save()}

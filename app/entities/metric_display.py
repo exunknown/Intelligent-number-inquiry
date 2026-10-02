@@ -11,6 +11,7 @@ class MetricDisplayEntry(TypedDict, total=False):
     title: str
     role: Literal["primary", "attached"]
     source_member_id: str | None
+    compatibility_note: str
 
 
 MetricDisplayItem = str | MetricDisplayEntry
@@ -38,6 +39,9 @@ def safe_metric_display_item(value: object) -> MetricDisplayItem | None:
     source_member_id = value.get("source_member_id")
     if source_member_id is None or isinstance(source_member_id, str):
         entry["source_member_id"] = source_member_id
+    compatibility_note = value.get("compatibility_note")
+    if isinstance(compatibility_note, str) and compatibility_note:
+        entry["compatibility_note"] = compatibility_note
     return entry
 
 

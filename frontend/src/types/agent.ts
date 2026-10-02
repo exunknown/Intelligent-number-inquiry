@@ -15,6 +15,7 @@ export type MetricDisplayEntry = {
   title: string;
   role?: "primary" | "attached";
   source_member_id?: string | null;
+  compatibility_note?: string;
 };
 
 export type MetricItem = string | MetricDisplayEntry;

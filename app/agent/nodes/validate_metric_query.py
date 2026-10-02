@@ -38,9 +38,11 @@ def _resolve_metric_relations(
     resolved_names: list[str] = []
     seen_names: set[str] = set()
     primary_by_requested: dict[str, str] = {}
-    first_primary: CubeMember | None = None
+    primary_metrics: list[CubeMember] = []
+    compatibility_notes: dict[str, str] = {}
     explicit_metrics: list[tuple[str, CubeMember]] = []
     attached_members: list[CubeMember] = []
+    attached_sources: dict[str, str] = {}
 
     for requested_name in decision.query.measures:
         resolution = relation_service.resolve(
@@ -64,8 +66,12 @@ def _resolve_metric_relations(
         if primary is None or primary.name not in permissions.allowed_metrics:
             continue
         explicit_metrics.append((requested_name, primary))
-        if first_primary is None:
-            first_primary = primary
+        if primary.name not in {member.name for member in primary_metrics}:
+            primary_metrics.append(primary)
+        if resolution.compatibility_notes:
+            compatibility_notes[primary.name] = "；".join(
+                resolution.compatibility_notes
+            )
         if primary.name not in seen_names:
             seen_names.add(primary.name)
             resolved_names.append(primary.name)
@@ -98,6 +104,7 @@ def _resolve_metric_relations(
                 seen_names.add(member.name)
                 resolved_names.append(member.name)
                 attached_members.append(member)
+                attached_sources[member.name] = attachment.source_member_id
 
     if not resolved_names:
         raise QueryExecutionError(
@@ -134,12 +141,13 @@ def _resolve_metric_relations(
         cube_query=cube_query,
     )
     state_updates: dict = {
-        "resolved_attached_metrics": list(
-            {member.name: member for member in attached_members}.values()
-        )
+        "resolved_primary_metrics": primary_metrics,
+        "resolved_attached_metrics": attached_members,
+        "resolved_attached_metric_sources": attached_sources,
+        "resolved_compatibility_notes": compatibility_notes,
     }
-    if first_primary is not None:
-        state_updates["resolved_primary_metric"] = first_primary
+    if primary_metrics:
+        state_updates["resolved_primary_metric"] = primary_metrics[0]
     return resolved_decision, state_updates
 
 

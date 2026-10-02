@@ -139,6 +139,37 @@ export type SemanticRelease = {
     snapshot?: SemanticSnapshot & { reason?: string };
 };
 
+export function createMetricEquivalenceGroup(
+    snapshot: Pick<SemanticSnapshot, "metric_equivalence_groups">,
+): SemanticMetricEquivalenceGroup {
+    const groups = snapshot.metric_equivalence_groups ?? [];
+    let sequence = 1;
+    while (groups.some((group) => group.group_id === `metric-equivalence-${sequence}`)) {
+        sequence += 1;
+    }
+    return {
+        group_id: `metric-equivalence-${sequence}`,
+        canonical_member_id: "",
+        group_name: `新等效指标组 ${sequence}`,
+        description: "待完善的等效指标组",
+        members: [],
+    };
+}
+
+export function resolveSemanticModelSnapshot(
+    active: SemanticRelease | null | undefined,
+    detail?: SemanticRelease | null,
+): SemanticSnapshot {
+    if (!active) {
+        return { release_version: "draft", cubes: [], joins: [], members: [] };
+    }
+    const snapshot = active.snapshot ?? detail?.snapshot;
+    if (!snapshot || snapshot.release_version !== active.release_version) {
+        throw new Error("活动语义模型版本缺少快照，无法编辑。");
+    }
+    return snapshot;
+}
+
 export function editorSections(member: Pick<SemanticMember, "member_type">): string[] {
     if (member.member_type === "measure") {
         return ["common", "measure", "source"];

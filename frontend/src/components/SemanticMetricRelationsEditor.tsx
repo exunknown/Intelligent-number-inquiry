@@ -1,6 +1,7 @@
 import { Link2, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
+    createMetricEquivalenceGroup,
     removeMetricAttachment,
     setMetricEquivalenceMembership,
     upsertMetricAttachment,
@@ -77,6 +78,13 @@ export function SemanticMetricRelationsEditor({
         nextAttachments: SemanticMetricAttachment[],
     ) => onChange(nextGroups, nextAttachments);
 
+    const addEquivalenceGroup = () => {
+        updateRelations(
+            [...groups, createMetricEquivalenceGroup({ metric_equivalence_groups: groups })],
+            attachments,
+        );
+    };
+
     const updateEquivalence = (
         groupId: string | null,
         canonical: boolean,
@@ -135,7 +143,12 @@ export function SemanticMetricRelationsEditor({
 
             <div className="mt-4 grid gap-4 xl:grid-cols-2">
                 <div className="border border-ink/10 bg-white p-3">
-                    <p className="text-xs font-semibold text-ink/65">等效指标组</p>
+                    <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-semibold text-ink/65">等效指标组</p>
+                        <button type="button" onClick={addEquivalenceGroup} disabled={disabled} className="inline-flex min-h-8 items-center gap-1 border border-indigo/30 px-2 text-xs font-semibold text-indigo hover:bg-indigo/5 disabled:opacity-45" title="新建等效指标组">
+                            <Plus className="h-3.5 w-3.5" aria-hidden="true" />新建
+                        </button>
+                    </div>
                     <select
                         className={`${inputClass} mt-2`}
                         value={currentGroup?.group_id ?? ""}

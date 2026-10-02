@@ -252,7 +252,27 @@ class SemanticModelService:
                 release_version=release_version,
                 error_code="semantic_model_publish_not_ready",
             )
-        await self.release_coordinator.rollback(release_version, actor_id, reason)
+        try:
+            rollback_result = await self.release_coordinator.rollback(
+                release_version, actor_id, reason
+            )
+            if not (
+                isinstance(rollback_result, dict)
+                and rollback_result.get("status") == "active"
+            ):
+                return SemanticOperationResult(
+                    operation_id=f"failed:rollback:{release_version}",
+                    status="failed",
+                    release_version=release_version,
+                    error_code="semantic_model_rollback_failed",
+                )
+        except Exception:
+            return SemanticOperationResult(
+                operation_id=f"failed:rollback:{release_version}",
+                status="failed",
+                release_version=release_version,
+                error_code="semantic_model_rollback_failed",
+            )
         return await self._record(
             None,
             "rollback",

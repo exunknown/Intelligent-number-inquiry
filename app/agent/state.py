@@ -135,7 +135,12 @@ class DataAgentState(TypedDict):
     retrieved_cube_dimensions: list[CubeMember]  # 召回到的 Cube 维度候选
     cube_member_catalog: dict[str, CubeMember]  # 当前同步版本的完整成员目录
     resolved_primary_metric: NotRequired[CubeMember]  # 语义关系解析后的主指标
+    resolved_primary_metrics: NotRequired[list[CubeMember]]  # 最终顺序的全部主指标
     resolved_attached_metrics: NotRequired[list[CubeMember]]  # 一跳展开后的附带指标
+    resolved_attached_metric_sources: NotRequired[
+        dict[str, str]
+    ]  # 附带指标的主指标来源
+    resolved_compatibility_notes: NotRequired[dict[str, str]]  # 主指标兼容口径说明
     include_attached_metrics: bool  # 是否展开默认展示的一跳附带指标
     metric_query_raw: dict  # 通过严格结构校验的模型原始输出
     metric_query_decision: MetricQueryDecision  # 确定性校验后的指标查询决策
