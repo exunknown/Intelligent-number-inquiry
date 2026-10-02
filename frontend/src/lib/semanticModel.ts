@@ -250,6 +250,20 @@ export function validateSemanticMemberName(
     return null;
 }
 
+export function validateNewSemanticMemberFields(
+    member: Pick<
+        SemanticMember,
+        "member_type" | "status" | "source_column_id" | "measure"
+    >,
+): string | null {
+    if (member.status !== "draft") return null;
+    if (!member.source_column_id?.trim()) return "源字段 ID为必填项";
+    if (member.member_type === "measure" && !member.measure?.expression.trim()) {
+        return "表达式为必填项";
+    }
+    return null;
+}
+
 export function renameSemanticMemberReferences(
     snapshot: SemanticSnapshot,
     previousMember: SemanticMember,
@@ -310,8 +324,14 @@ export function mergeSemanticMemberSummaries(
     baseItems: SemanticMemberSummary[],
     workingMembers: SemanticMemberSummary[],
     filters: SemanticMemberDirectoryFilters,
+    replacedMemberIds: readonly string[] = [],
 ): SemanticMemberSummary[] {
-    const members = new Map(baseItems.map((item) => [item.member_id, item]));
+    const replacedIds = new Set(replacedMemberIds);
+    const members = new Map(
+        baseItems
+            .filter((item) => !replacedIds.has(item.member_id))
+            .map((item) => [item.member_id, item]),
+    );
     for (const item of workingMembers) members.set(item.member_id, item);
     const query = filters.query.trim().toLocaleLowerCase();
 

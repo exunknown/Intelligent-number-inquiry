@@ -86,7 +86,12 @@ export function SemanticMemberEditor({
                             disabled={disabled}
                             onChange={(event) => setMemberNameDraft(event.target.value)}
                             onBlur={() => {
-                                if (!memberNameError) onMemberNameChange(memberNameDraft);
+                                if (
+                                    !memberNameError &&
+                                    memberNameDraft !== member.member_name
+                                ) {
+                                    onMemberNameChange(memberNameDraft);
+                                }
                             }}
                             aria-invalid={Boolean(memberNameError)}
                             aria-describedby="member-name-help member-name-error"
