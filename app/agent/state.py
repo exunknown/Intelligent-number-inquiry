@@ -7,7 +7,7 @@ State 是 LangGraph 各节点之间传递和更新的共享数据
 SQL 生成闭环会继续写入候选 SQL 以及校验错误信息，用于控制校正或执行分支
 """
 
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 from app.agent.selector import SelectorDecision
 from app.entities.column_info import ColumnInfo
@@ -134,6 +134,8 @@ class DataAgentState(TypedDict):
     retrieved_cube_measures: list[CubeMember]  # 召回到的 Cube 度量候选
     retrieved_cube_dimensions: list[CubeMember]  # 召回到的 Cube 维度候选
     cube_member_catalog: dict[str, CubeMember]  # 当前同步版本的完整成员目录
+    resolved_primary_metric: NotRequired[CubeMember]  # 语义关系解析后的主指标
+    resolved_attached_metrics: NotRequired[list[CubeMember]]  # 一跳展开后的附带指标
     metric_query_raw: dict  # 通过严格结构校验的模型原始输出
     metric_query_decision: MetricQueryDecision  # 确定性校验后的指标查询决策
     cube_query: dict  # 可直接发送给 Cube 的查询对象

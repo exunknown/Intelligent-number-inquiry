@@ -14,6 +14,7 @@ from langchain_huggingface import HuggingFaceEndpointEmbeddings
 
 from app.core.resource_governance import DependencyCircuitBreaker, RequestBudget
 from app.entities.auth import AuthContext, PermissionSnapshot
+from app.entities.semantic_model import SemanticModelSnapshot
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
@@ -24,6 +25,7 @@ from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
 )
 from app.security.sql_policy import SQLPolicyEngine
+from app.services.semantic_metric_relation_service import SemanticMetricRelationService
 
 
 class DataAgentContext(TypedDict):
@@ -51,6 +53,10 @@ class DataAgentContext(TypedDict):
     permissions: PermissionSnapshot
     # 已验证的用户身份，用于下游服务令牌的主体声明
     auth: AuthContext
+    # 当前生效的语义模型快照，供指标关系解析节点读取
+    semantic_model_snapshot: NotRequired[SemanticModelSnapshot]
+    # 无状态的指标关系解析器，不持有仓储或客户端
+    semantic_metric_relation_service: NotRequired[SemanticMetricRelationService]
     # 请求级端到端资源预算；调试入口和旧调用可暂不提供
     resource_budget: NotRequired[RequestBudget]
     # 进程级依赖熔断器，问数节点只消费不重建
