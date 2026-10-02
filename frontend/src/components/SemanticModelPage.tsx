@@ -71,6 +71,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const [operation, setOperation] = useState<SemanticOperation | null>(null);
     const [busy, setBusy] = useState(false);
     const [dirty, setDirty] = useState(false);
+    const [publishBlocked, setPublishBlocked] = useState(false);
     const requestGateRef = useRef(createSemanticModelRequestGate());
     const localEditGenerationRef = useRef(0);
     const createDialogRef = useRef<HTMLDivElement | null>(null);
@@ -109,12 +110,12 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             setSelectedId((current) => current ?? memberResponse.items[0]?.member_id ?? nextSnapshot.members[0]?.member_id ?? null);
             setDirty(false);
         } catch (loadError) {
-            if (requestGateRef.current.accepts(generation)) {
+            if (requestGateRef.current.accepts(generation) && acceptsLocalEdit()) {
                 setSnapshotUnavailable(true);
                 setError(formatSemanticModelError(loadError));
             }
         } finally {
-            if (requestGateRef.current.accepts(generation)) setLoading(false);
+            if (requestGateRef.current.accepts(generation) && acceptsLocalEdit()) setLoading(false);
         }
     };
 
@@ -129,6 +130,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
 
     const workingSnapshot = draft?.snapshot ?? snapshot;
     const beginLocalEdit = () => {
+        setLoading(false);
         localEditGenerationRef.current += 1;
     };
     const updateWorkingSnapshot = (update: (current: SemanticSnapshot) => SemanticSnapshot) => {
@@ -365,6 +367,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         setDirty(false);
         setPendingNewMemberIds([]);
         setReplacedMemberIds([]);
+        setPublishBlocked(false);
         setFilters(nextFilters);
     };
 
@@ -375,13 +378,14 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         setDirty(false);
         setPendingNewMemberIds([]);
         setReplacedMemberIds([]);
+        setPublishBlocked(false);
         void load();
     };
 
     const currentDraft = draft?.snapshot ?? snapshot;
     const activeRelease = releases.find((item) => item.active);
     const activeSnapshotReady = !activeRelease || activeSnapshot.release_version === activeRelease.release_version;
-    const canPublish = draft?.status === "validated" && !dirty && !loading && !snapshotUnavailable && (!activeRelease || activeSnapshot.release_version === activeRelease.release_version);
+    const canPublish = draft?.status === "validated" && !dirty && !loading && !snapshotUnavailable && !publishBlocked && (!activeRelease || activeSnapshot.release_version === activeRelease.release_version);
     const changeSummary = canPublish && activeSnapshotReady
         ? buildSemanticChangeSummary(activeRelease ? activeSnapshot : emptySnapshot, currentDraft)
         : null;
@@ -397,16 +401,14 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             const pageActiveVersion = activeRelease?.release_version ?? null;
             const pageSnapshotVersion = activeRelease ? activeSnapshot.release_version : null;
             if (latestActiveVersion !== pageActiveVersion || pageSnapshotVersion !== latestActiveVersion) {
-                setDraft(null);
-                setDirty(false);
-                setPendingNewMemberIds([]);
-                setReplacedMemberIds([]);
+                setPublishBlocked(true);
                 await load();
                 setError(publishConflictMessage);
                 setBusy(false);
                 return;
             }
         } catch {
+            setPublishBlocked(true);
             await load();
             setError("发布版本复核失败，请刷新后重试。");
             setBusy(false);
