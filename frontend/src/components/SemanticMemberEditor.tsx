@@ -60,6 +60,7 @@ export function SemanticMemberEditor({
     const updateMeasure = (patch: Partial<NonNullable<SemanticMember["measure"]>>) => update({ measure: { ...member.measure, ...patch } as NonNullable<SemanticMember["measure"]> });
     const updateDimension = (patch: Partial<NonNullable<SemanticMember["dimension"]>>) => update({ dimension: { ...member.dimension, ...patch } as NonNullable<SemanticMember["dimension"]> });
     const dependencyResolution = resolveSemanticDependencyMemberIds(member, snapshot);
+    const preservedResolvedDependencyIds = dependencyResolution.memberIds.filter((memberId) => !dependencyCandidates.some((candidate) => candidate.member_id === memberId));
 
     return (
         <section className="min-h-0 flex-1 overflow-y-auto bg-[#eceee8]">
@@ -158,10 +159,11 @@ export function SemanticMemberEditor({
                                         value={dependencyResolution.memberIds}
                                         disabled={disabled}
                                         onChange={(event) => updateMeasure({
-                                            dependency_members: [
+                                            dependency_members: Array.from(new Set([
+                                                ...preservedResolvedDependencyIds,
                                                 ...Array.from(event.target.selectedOptions, (option) => option.value),
                                                 ...dependencyResolution.unresolved,
-                                            ],
+                                            ])),
                                         })}
                                     >
                                         {dependencyCandidates.map((item) => (
