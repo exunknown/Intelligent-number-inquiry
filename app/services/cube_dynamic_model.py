@@ -53,12 +53,24 @@ def build_ecommerce_view(snapshot: SemanticModelSnapshot) -> dict[str, object]:
     _validate_snapshot(snapshot)
     measures: dict[str, object] = {}
     dimensions: dict[str, object] = {}
+    measure_members: dict[str, SemanticMember] = {}
+    dimension_members: dict[str, SemanticMember] = {}
     for member in snapshot.members:
         if member.member_type == "measure":
             if member.measure is None:
                 raise ValueError(
                     f"measure definition is missing: {member.qualified_name}"
                 )
+            previous_member = measure_members.get(member.member_name)
+            if (
+                previous_member is not None
+                and previous_member.cube_name != member.cube_name
+            ):
+                raise ValueError(
+                    "公开 ecommerce view 存在跨 Cube measure 名称冲突："
+                    f"{previous_member.qualified_name} 与 {member.qualified_name}"
+                )
+            measure_members[member.member_name] = member
             measure = member.measure
             measures[member.member_name] = {
                 "sql": _measure_sql(member),
@@ -72,6 +84,16 @@ def build_ecommerce_view(snapshot: SemanticModelSnapshot) -> dict[str, object]:
                 raise ValueError(
                     f"dimension definition is missing: {member.qualified_name}"
                 )
+            previous_member = dimension_members.get(member.member_name)
+            if (
+                previous_member is not None
+                and previous_member.cube_name != member.cube_name
+            ):
+                raise ValueError(
+                    "公开 ecommerce view 存在跨 Cube dimension 名称冲突："
+                    f"{previous_member.qualified_name} 与 {member.qualified_name}"
+                )
+            dimension_members[member.member_name] = member
             dimension = member.dimension
             dimensions[member.member_name] = {
                 "sql": _physical_column_sql(member),

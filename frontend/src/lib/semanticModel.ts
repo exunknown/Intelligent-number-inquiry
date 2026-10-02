@@ -161,11 +161,14 @@ export function createDraftSemanticMember(
     memberType: "measure" | "dimension" | "time_dimension",
     cubeName?: string,
 ): SemanticMember {
-    const cube =
-        (cubeName && snapshot.cubes.find((item) => item.cube_name === cubeName)) ??
-        snapshot.cubes.find((item) => item.public) ??
-        snapshot.cubes.find((item) => item.cube_name === "ecommerce") ??
-        snapshot.cubes[0];
+    const cube = cubeName
+        ? snapshot.cubes.find((item) => item.cube_name === cubeName)
+        : snapshot.cubes.find((item) => item.public) ??
+          snapshot.cubes.find((item) => item.cube_name === "ecommerce") ??
+          snapshot.cubes[0];
+    if (cubeName && !cube) {
+        throw new Error(`指定 Cube 不存在：${cubeName}`);
+    }
     if (!cube) {
         throw new Error("当前语义模型没有可用 Cube，无法创建成员。");
     }

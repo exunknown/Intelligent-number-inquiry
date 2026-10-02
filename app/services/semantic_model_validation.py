@@ -37,6 +37,7 @@ _ALLOWED_EXPRESSION_NODES = (
     exp.Sub,
 )
 _MEMBER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
+_MEMBER_ID_REFERENCE_PATTERN = re.compile(r"^[^:]+:[^:]+:[^:]+$")
 _FUNCTION_PATTERN = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(")
 _FORBIDDEN_SQL_PATTERN = re.compile(
     r"(?:;|--|/\*|\*/|\b(?:SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b)",
@@ -284,6 +285,7 @@ class SemanticModelValidator:
         issues: list[ValidationIssue] = []
         names: dict[tuple[str, str], list[int]] = defaultdict(list)
         members_by_name = {member.qualified_name: member for member in snapshot.members}
+        members_by_id = {member.member_id: member for member in snapshot.members}
         cube_names = {cube.cube_name for cube in snapshot.cubes}
         for index, member in enumerate(snapshot.members):
             names[(member.cube_name, member.member_name)].append(index)
@@ -353,7 +355,14 @@ class SemanticModelValidator:
                         )
                     )
             if member.member_type == "measure":
-                issues.extend(self._validate_measure(member, path, members_by_name))
+                issues.extend(
+                    self._validate_measure(
+                        member,
+                        path,
+                        members_by_name,
+                        members_by_id,
+                    )
+                )
             else:
                 issues.extend(self._validate_dimension(member, path))
         for (cube_name, member_name), indexes in names.items():
@@ -372,6 +381,7 @@ class SemanticModelValidator:
         member,
         path: str,
         members_by_name: dict,
+        members_by_id: dict,
     ) -> list[ValidationIssue]:
         issues: list[ValidationIssue] = []
         definition = member.measure
@@ -391,18 +401,38 @@ class SemanticModelValidator:
             )
         )
         for dependency in definition.dependency_members:
-            qualified_dependency = (
-                dependency if "." in dependency else f"{member.cube_name}.{dependency}"
+            qualified_dependency = self._resolve_dependency_name(
+                member,
+                dependency,
+                members_by_id,
             )
-            if qualified_dependency not in members_by_name:
+            if (
+                qualified_dependency is None
+                or qualified_dependency not in members_by_name
+            ):
                 issues.append(
                     ValidationIssue(
                         "missing_dependency",
                         f"{path}.measure.dependency_members",
-                        f"依赖成员不存在：{qualified_dependency}",
+                        f"依赖成员不存在：{qualified_dependency or dependency}",
                     )
                 )
         return issues
+
+    @staticmethod
+    def _resolve_dependency_name(
+        member,
+        dependency: str,
+        members_by_id: dict,
+    ) -> str | None:
+        referenced_member = members_by_id.get(dependency)
+        if referenced_member is not None:
+            return referenced_member.qualified_name
+        if _MEMBER_ID_REFERENCE_PATTERN.fullmatch(dependency):
+            return None
+        if "." in dependency:
+            return dependency
+        return f"{member.cube_name}.{dependency}"
 
     def _validate_dimension(self, member, path: str) -> list[ValidationIssue]:
         issues: list[ValidationIssue] = []
@@ -520,14 +550,21 @@ class SemanticModelValidator:
     def _validate_dependency_graph(
         snapshot: SemanticModelSnapshot,
     ) -> list[ValidationIssue]:
+        members_by_id = {member.member_id: member for member in snapshot.members}
         graph: dict[str, tuple[str, ...]] = {}
         for member in snapshot.members:
             if member.measure is not None:
                 graph[member.qualified_name] = tuple(
-                    dependency
-                    if "." in dependency
-                    else f"{member.cube_name}.{dependency}"
+                    resolved_dependency
                     for dependency in member.measure.dependency_members
+                    if (
+                        resolved_dependency
+                        := SemanticModelValidator._resolve_dependency_name(
+                            member,
+                            dependency,
+                            members_by_id,
+                        )
+                    )
                 )
         visiting: set[str] = set()
         visited: set[str] = set()
