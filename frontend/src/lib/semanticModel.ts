@@ -139,6 +139,78 @@ export type SemanticRelease = {
     snapshot?: SemanticSnapshot & { reason?: string };
 };
 
+type SemanticMemberDirectoryFilters = {
+    memberType: "all" | SemanticMemberType;
+    query: string;
+};
+
+export function createDraftSemanticMember(
+    snapshot: Pick<SemanticSnapshot, "release_version" | "cubes" | "members">,
+    memberType: "measure" | "dimension",
+): SemanticMember {
+    const prefix = memberType === "measure" ? "new_metric" : "new_dimension";
+    let sequence = 1;
+    while (snapshot.members.some((member) => member.member_name === `${prefix}_${sequence}`)) {
+        sequence += 1;
+    }
+    const memberName = `${prefix}_${sequence}`;
+    const cubeName =
+        snapshot.cubes.find((cube) => cube.public)?.cube_name ??
+        snapshot.cubes[0]?.cube_name ??
+        "ecommerce";
+    const isMeasure = memberType === "measure";
+
+    return {
+        release_version: snapshot.release_version,
+        member_id: `${memberType}:${cubeName}:${memberName}`,
+        cube_name: cubeName,
+        member_name: memberName,
+        member_type: memberType,
+        title: isMeasure ? `新指标 ${sequence}` : `新维度 ${sequence}`,
+        description: "",
+        data_type: isMeasure ? "number" : "string",
+        source_column_id: null,
+        ai_context: "",
+        aliases: [],
+        filterable: !isMeasure,
+        groupable: !isMeasure,
+        status: "draft",
+        calculation_note: "",
+        unit: "",
+        measure: isMeasure
+            ? { expression: "", aggregation_type: "sum", dependency_members: [] }
+            : null,
+        dimension: isMeasure
+            ? null
+            : { dimension_type: "string", time_granularity: null, primary_key: false },
+    };
+}
+
+export function mergeSemanticMemberSummaries(
+    baseItems: SemanticMemberSummary[],
+    workingMembers: SemanticMemberSummary[],
+    filters: SemanticMemberDirectoryFilters,
+): SemanticMemberSummary[] {
+    const members = new Map(baseItems.map((item) => [item.member_id, item]));
+    for (const item of workingMembers) members.set(item.member_id, item);
+    const query = filters.query.trim().toLocaleLowerCase();
+
+    return [...members.values()].filter((item) => {
+        if (filters.memberType !== "all" && item.member_type !== filters.memberType) return false;
+        if (!query) return true;
+        const searchable = [
+            item.title,
+            item.member_name,
+            item.description,
+            ...(item.aliases ?? []),
+            item.source_column_id ?? "",
+        ]
+            .join(" ")
+            .toLocaleLowerCase();
+        return searchable.includes(query);
+    });
+}
+
 export function createMetricEquivalenceGroup(
     snapshot: Pick<SemanticSnapshot, "metric_equivalence_groups">,
 ): SemanticMetricEquivalenceGroup {

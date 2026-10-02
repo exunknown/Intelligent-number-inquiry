@@ -348,3 +348,16 @@ class SemanticModelSnapshot:
             ),
             created_at=datetime.fromisoformat(created_at) if created_at else None,
         )
+
+
+def with_release_version(
+    snapshot: SemanticModelSnapshot, release_version: str
+) -> SemanticModelSnapshot:
+    """复制快照并同步所有规范化语义行的 release version。"""
+
+    payload = snapshot.to_dict()
+    payload["release_version"] = release_version
+    for collection_name in ("cubes", "joins", "members"):
+        for item in payload[collection_name]:
+            item["release_version"] = release_version
+    return SemanticModelSnapshot.from_dict(payload)

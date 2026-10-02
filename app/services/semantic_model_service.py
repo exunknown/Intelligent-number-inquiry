@@ -1,9 +1,15 @@
 """指标维度治理草稿、审核和发布服务。"""
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Literal
+from uuid import uuid4
 
-from app.entities.semantic_model import SemanticMember, SemanticModelSnapshot
+from app.entities.semantic_model import (
+    SemanticMember,
+    SemanticModelSnapshot,
+    with_release_version,
+)
 from app.services.semantic_model_validation import ValidationIssue
 
 DraftAction = Literal[
@@ -194,34 +200,46 @@ class SemanticModelService:
             return replay
         record = await self._require_draft(draft_id)
         self._require_status(record, {"validated"})
-        issues = tuple(self._validate(record["snapshot"]))
+        snapshot = record["snapshot"]
+        issues = tuple(self._validate(snapshot))
         if issues:
             return self._failure(
                 draft_id,
-                record["snapshot"].release_version,
+                snapshot.release_version,
                 "semantic_model_validation_failed",
                 issues,
             )
+
+        get_release = getattr(self.repository, "get_release", None)
+        replace_snapshot = getattr(
+            self.repository, "replace_draft_snapshot_for_publish", None
+        )
+        if get_release is not None and replace_snapshot is not None:
+            release = await get_release(snapshot.release_version)
+            if release is not None and release.get("active"):
+                new_version = _new_release_version()
+                snapshot = with_release_version(snapshot, new_version)
+                await replace_snapshot(draft_id, snapshot, actor_id)
         if self.release_coordinator is None:
             return self._failure(
                 draft_id,
-                record["snapshot"].release_version,
+                snapshot.release_version,
                 "semantic_model_publish_not_ready",
             )
         try:
             publication = await self.release_coordinator.publish(
-                record["snapshot"], actor_id, reason
+                snapshot, actor_id, reason
             )
             if isinstance(publication, dict) and publication.get("status") != "active":
                 return self._failure(
                     draft_id,
-                    record["snapshot"].release_version,
+                    snapshot.release_version,
                     "semantic_model_publish_failed",
                 )
         except Exception:
             return self._failure(
                 draft_id,
-                record["snapshot"].release_version,
+                snapshot.release_version,
                 "semantic_model_publish_failed",
             )
         await self.repository.set_draft_status(draft_id, "published", actor_id, reason)
@@ -231,7 +249,7 @@ class SemanticModelService:
             actor_id,
             reason,
             idempotency_key,
-            record["snapshot"],
+            snapshot,
             status="published",
         )
 
@@ -361,3 +379,10 @@ class SemanticModelService:
             draft_id=change.get("draft_id"),
             release_version=change.get("release_version"),
         )
+
+
+def _new_release_version() -> str:
+    """生成不覆盖既有 manifest 的语义模型发布版本。"""
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"semantic-{timestamp}-{uuid4().hex[:8]}"

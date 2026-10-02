@@ -24,4 +24,8 @@ SET @grant_sql = CONCAT('GRANT SELECT ON dw.* TO ', @account);
 PREPARE grant_stmt FROM @grant_sql;
 EXECUTE grant_stmt;
 DEALLOCATE PREPARE grant_stmt;
+SET @meta_grant_sql = CONCAT('GRANT SELECT ON meta.* TO ', @account);
+PREPARE meta_grant_stmt FROM @meta_grant_sql;
+EXECUTE meta_grant_stmt;
+DEALLOCATE PREPARE meta_grant_stmt;
 SQL

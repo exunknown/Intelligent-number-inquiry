@@ -14,7 +14,7 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { createSemanticModelRequestGate, formatSemanticModelError, resolveSemanticModelSnapshot, serializeSemanticSnapshot, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue } from "../lib/semanticModel";
+import { createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, mergeSemanticMemberSummaries, resolveSemanticModelSnapshot, serializeSemanticSnapshot, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue } from "../lib/semanticModel";
 import { SemanticMemberEditor } from "./SemanticMemberEditor";
 import { SemanticMemberList } from "./SemanticMemberList";
 import { SemanticReleasePanel } from "./SemanticReleasePanel";
@@ -67,7 +67,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             if (!requestGateRef.current.accepts(generation)) return;
             setSnapshot(nextSnapshot);
             setActiveSnapshot(nextSnapshot);
-            setSelectedId((current) => current && memberResponse.items.some((item) => item.member_id === current) ? current : memberResponse.items[0]?.member_id ?? nextSnapshot.members[0]?.member_id ?? null);
+            setSelectedId((current) => current ?? memberResponse.items[0]?.member_id ?? nextSnapshot.members[0]?.member_id ?? null);
             setDirty(false);
         } catch (loadError) {
             if (requestGateRef.current.accepts(generation)) {
@@ -103,6 +103,12 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             metric_equivalence_groups: groups,
             metric_attachments: attachments,
         }));
+    };
+
+    const createMember = (memberType: "measure" | "dimension") => {
+        const member = createDraftSemanticMember(workingSnapshot, memberType);
+        updateWorkingSnapshot((current) => ({ ...current, members: [...current.members, member] }));
+        setSelectedId(member.member_id);
     };
 
     const refreshDraft = async (draftId: string) => {
@@ -168,6 +174,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     };
 
     const currentDraft = draft?.snapshot ?? snapshot;
+    const directoryMembers = mergeSemanticMemberSummaries(members, currentDraft.members, filters);
     return (
         <div className="flex min-h-0 flex-1 flex-col bg-paper">
             <header className="flex min-h-16 shrink-0 items-center justify-between border-b border-ink/10 bg-white px-5 lg:px-7">
@@ -176,7 +183,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             </header>
             {error && <div role="alert" className="border-b border-oxide/20 bg-oxide/5 px-6 py-3 text-sm text-oxide">{error}</div>}
             <div className="flex min-h-0 flex-1">
-                <SemanticMemberList items={members} selectedId={selectedId} filters={filters} loading={loading} error={error && !members.length ? error : null} onSelect={setSelectedId} onFilterChange={changeFilters} />
+                <SemanticMemberList items={directoryMembers} selectedId={selectedId} filters={filters} loading={loading} disabled={busy || loading || snapshotUnavailable} error={error && !directoryMembers.length ? error : null} onSelect={setSelectedId} onFilterChange={changeFilters} onCreate={createMember} />
                 <div className="flex min-w-0 flex-1 flex-col">
                     <SemanticMemberEditor
                         member={currentDraft.members.find((member) => member.member_id === selectedId) ?? null}

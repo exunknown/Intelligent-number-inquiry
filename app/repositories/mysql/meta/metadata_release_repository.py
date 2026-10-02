@@ -136,6 +136,44 @@ class MetadataReleaseRepository:
             record = await self._activate_in_transaction(release_version)
         return record
 
+    async def activate_manifest_with_materializer(
+        self,
+        manifest: MetadataReleaseManifest,
+        materialize: Callable[[], Awaitable[object]],
+    ) -> dict:
+        """登记候选 manifest、物化语义行并在同一事务中激活。"""
+
+        await self.session.rollback()
+        async with self.session.begin():
+            await self._lock()
+            model = await self.session.get(
+                MetadataReleaseMySQL, manifest.release_version
+            )
+            now = self._now()
+            if model is None:
+                model = MetadataReleaseMySQL(
+                    release_version=manifest.release_version,
+                    manifest_json=manifest.__dict__,
+                    manifest_sha256=manifest.sha256(),
+                    status="validated",
+                    active=False,
+                    created_at=now,
+                    validated_at=now,
+                )
+                self.session.add(model)
+            else:
+                if model.active and model.manifest_sha256 != manifest.sha256():
+                    raise ValueError("active release manifest is immutable")
+                model.manifest_json = manifest.__dict__
+                model.manifest_sha256 = manifest.sha256()
+                model.status = "validated"
+                model.active = False
+                model.error_code = None
+                model.validated_at = now
+            await self.session.flush()
+            await materialize()
+            return await self._activate_in_transaction(manifest.release_version)
+
     async def activate(self, release_version: str) -> dict:
         await self.session.rollback()
         async with self.session.begin():

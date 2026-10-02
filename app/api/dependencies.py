@@ -58,10 +58,13 @@ from app.services.authorization_service import (
     AuthorizationCacheState,
     AuthorizationService,
 )
+from app.services.cube_semantic_model_compiler import CubeSemanticModelCompiler
+from app.services.metadata_release_coordinator import SemanticModelReleaseCoordinator
 from app.services.metric_candidate_service import MetricCandidateService
 from app.services.metric_catalog_service import MetricCatalogService
 from app.services.query_service import QueryService
 from app.services.semantic_metric_relation_service import SemanticMetricRelationService
+from app.services.semantic_model_release_adapter import SemanticModelReleaseAdapter
 from app.services.semantic_model_service import SemanticModelService
 
 _authorization_cache_state = AuthorizationCacheState()
@@ -187,14 +190,45 @@ async def get_query_semantic_model_repository(
     return SemanticModelRepository(session)
 
 
+async def get_embedding_client() -> HuggingFaceEndpointEmbeddings:
+    """获取应用启动阶段初始化好的 Embedding 客户端。"""
+
+    return get_embedding_client_manager().client
+
+
 async def get_semantic_model_service(
     repository: Annotated[
         SemanticModelRepository, Depends(get_semantic_model_repository)
     ],
+    embedding_client: Annotated[
+        HuggingFaceEndpointEmbeddings, Depends(get_embedding_client)
+    ],
 ) -> SemanticModelService:
     """组装语义模型治理服务。"""
 
-    return SemanticModelService(repository)
+    metadata_release_repository = MetadataReleaseRepository(repository.session)
+    adapter = SemanticModelReleaseAdapter(
+        semantic_repository=repository,
+        metadata_release_repository=metadata_release_repository,
+        qdrant_repository=CubeMemberQdrantRepository(
+            get_qdrant_client_manager().client
+        ),
+        embedding_client=embedding_client,
+        compiler=CubeSemanticModelCompiler(
+            CubeRepository(
+                get_cube_client_manager().client,
+                app_config.cube,
+            )
+        ),
+    )
+    coordinator = SemanticModelReleaseCoordinator(
+        compile_model=adapter.compile_model,
+        stage_search_index=adapter.stage_search_index,
+        persist_and_activate=adapter.persist_and_activate,
+        activate_release=adapter.activate_release,
+        rollback_release=adapter.rollback_release,
+    )
+    return SemanticModelService(repository, release_coordinator=coordinator)
 
 
 async def get_semantic_metric_relation_service() -> SemanticMetricRelationService:
@@ -241,12 +275,6 @@ async def get_metric_candidate_repository(
     """Create the request-scoped metric governance candidate repository."""
 
     return MetricCandidateRepository(session)
-
-
-async def get_embedding_client() -> HuggingFaceEndpointEmbeddings:
-    """获取应用启动阶段初始化好的 Embedding 客户端"""
-
-    return get_embedding_client_manager().client
 
 
 async def get_dw_session():

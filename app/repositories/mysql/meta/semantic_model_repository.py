@@ -338,6 +338,34 @@ class SemanticModelRepository:
             await self.session.rollback()
             raise
 
+    async def replace_draft_snapshot_for_publish(
+        self,
+        draft_id: str,
+        snapshot: SemanticModelSnapshot,
+        updated_by: str,
+    ) -> None:
+        """发布前为 active 版本草稿分配新的不可变 release version。"""
+
+        result = await self.session.execute(
+            select(SemanticModelDraftMySQL)
+            .where(SemanticModelDraftMySQL.draft_id == draft_id)
+            .with_for_update()
+        )
+        model = result.scalar_one_or_none()
+        if model is None:
+            raise ValueError("semantic model draft not found")
+        if model.status != "validated":
+            raise ValueError("only validated semantic model draft can be published")
+        model.release_version = snapshot.release_version
+        model.snapshot_json = snapshot.to_dict()
+        model.updated_by = updated_by
+        model.updated_at = self._now()
+        try:
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+
     async def persist_release_snapshot(
         self,
         snapshot: SemanticModelSnapshot,

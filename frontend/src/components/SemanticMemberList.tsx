@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import type { SemanticMemberSummary } from "../lib/semanticModel";
 
 type MemberType = "all" | "measure" | "dimension" | "time_dimension";
@@ -8,9 +8,11 @@ type SemanticMemberListProps = {
     selectedId: string | null;
     filters: { memberType: MemberType; query: string };
     loading: boolean;
+    disabled: boolean;
     error: string | null;
     onSelect: (memberId: string) => void;
     onFilterChange: (filters: { memberType: MemberType; query: string }) => void;
+    onCreate: (memberType: "measure" | "dimension") => void;
 };
 
 const typeLabels: Record<MemberType, string> = {
@@ -31,19 +33,29 @@ export function SemanticMemberList({
     selectedId,
     filters,
     loading,
+    disabled,
     error,
     onSelect,
     onFilterChange,
+    onCreate,
 }: SemanticMemberListProps) {
     return (
         <section className="flex min-h-0 w-[21rem] shrink-0 flex-col border-r border-ink/10 bg-white">
             <div className="border-b border-ink/10 p-4">
-                <div className="mb-3 flex items-center justify-between">
+                <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <p className="font-serif text-lg font-bold text-ink">成员目录</p>
                         <p className="mt-1 text-xs text-ink/50">按治理口径维护指标与维度</p>
                     </div>
-                    <span className="font-mono text-xs text-ink/45">{items.length}</span>
+                    <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => onCreate("measure")} disabled={disabled} title="新增指标" className="inline-flex min-h-8 items-center gap-1 border border-indigo/25 px-2 text-xs font-semibold text-indigo transition hover:bg-indigo/5 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40">
+                            <Plus className="h-3.5 w-3.5" aria-hidden="true" />指标
+                        </button>
+                        <button type="button" onClick={() => onCreate("dimension")} disabled={disabled} title="新增维度" className="inline-flex min-h-8 items-center gap-1 border border-pine/25 px-2 text-xs font-semibold text-pine transition hover:bg-pine/5 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40">
+                            <Plus className="h-3.5 w-3.5" aria-hidden="true" />维度
+                        </button>
+                        <span className="font-mono text-xs text-ink/45">{items.length}</span>
+                    </div>
                 </div>
                 <label className="relative block">
                     <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-ink/35" aria-hidden="true" />
