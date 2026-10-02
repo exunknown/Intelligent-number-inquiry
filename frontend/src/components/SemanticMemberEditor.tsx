@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Save } from "lucide-react";
+import { Copy, Save } from "lucide-react";
 import {
+    resolveSemanticDependencyMemberIds,
     validateSemanticMemberName,
     type SemanticMember,
     type SemanticMetricAttachment,
@@ -16,6 +17,8 @@ type SemanticMemberEditorProps = {
     onChange: (member: SemanticMember) => void;
     onMemberNameChange: (memberName: string) => void;
     members: SemanticMember[];
+    dependencyCandidates: SemanticMember[];
+    onCopy: (memberId: string) => void;
     metricEquivalenceGroups: SemanticMetricEquivalenceGroup[];
     metricAttachments: SemanticMetricAttachment[];
     onRelationsChange: (groups: SemanticMetricEquivalenceGroup[], attachments: SemanticMetricAttachment[]) => void;
@@ -32,6 +35,8 @@ export function SemanticMemberEditor({
     onChange,
     onMemberNameChange,
     members,
+    dependencyCandidates,
+    onCopy,
     metricEquivalenceGroups,
     metricAttachments,
     onRelationsChange,
@@ -54,6 +59,7 @@ export function SemanticMemberEditor({
     const update = (patch: Partial<SemanticMember>) => onChange({ ...member, ...patch });
     const updateMeasure = (patch: Partial<NonNullable<SemanticMember["measure"]>>) => update({ measure: { ...member.measure, ...patch } as NonNullable<SemanticMember["measure"]> });
     const updateDimension = (patch: Partial<NonNullable<SemanticMember["dimension"]>>) => update({ dimension: { ...member.dimension, ...patch } as NonNullable<SemanticMember["dimension"]> });
+    const dependencyResolution = resolveSemanticDependencyMemberIds(member, snapshot);
 
     return (
         <section className="min-h-0 flex-1 overflow-y-auto bg-[#eceee8]">
@@ -66,9 +72,16 @@ export function SemanticMemberEditor({
                         <h2 className="mt-2 font-serif text-2xl font-bold text-ink">{member.title || member.member_name}</h2>
                         <p className="mt-1 font-mono text-xs text-ink/45">{member.member_name} · {member.member_id}</p>
                     </div>
-                    <button type="button" onClick={onSave} disabled={disabled || Boolean(memberNameError)} className="inline-flex min-h-10 shrink-0 items-center gap-2 bg-dai px-4 text-sm font-semibold text-paper transition hover:bg-indigo disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50">
-                        <Save className="h-4 w-4" aria-hidden="true" />保存草稿
-                    </button>
+                    <div className="flex shrink-0 items-center gap-2">
+                        {member.member_type === "measure" && (
+                            <button type="button" onClick={() => onCopy(member.member_id)} disabled={disabled} title="复制指标" aria-label="复制指标" className="grid h-10 w-10 place-items-center rounded-full text-ink/60 transition hover:bg-indigo/10 hover:text-indigo disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50">
+                                <Copy className="h-4 w-4" aria-hidden="true" />
+                            </button>
+                        )}
+                        <button type="button" onClick={onSave} disabled={disabled || Boolean(memberNameError)} className="inline-flex min-h-10 shrink-0 items-center gap-2 bg-dai px-4 text-sm font-semibold text-paper transition hover:bg-indigo disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50">
+                            <Save className="h-4 w-4" aria-hidden="true" />保存草稿
+                        </button>
+                    </div>
                 </div>
 
                 <div className="grid gap-5 xl:grid-cols-2">
@@ -137,7 +150,32 @@ export function SemanticMemberEditor({
                             <p className="mb-4 font-serif font-bold text-ink">指标口径</p>
                             <div className="grid gap-5 xl:grid-cols-2">
                                 <label className="block"><span className="mb-2 block text-xs font-semibold text-ink/60">聚合方式</span><select className={inputClass} value={member.measure.aggregation_type} disabled={disabled} onChange={(event) => updateMeasure({ aggregation_type: event.target.value as NonNullable<SemanticMember["measure"]>["aggregation_type"] })}><option value="sum">求和</option><option value="count">计数</option><option value="count_distinct">去重计数</option><option value="number">表达式结果</option></select></label>
-                                <label className="block"><span className="mb-2 block text-xs font-semibold text-ink/60">依赖成员</span><input className={inputClass} value={member.measure.dependency_members.join("、")} disabled={disabled} onChange={(event) => updateMeasure({ dependency_members: event.target.value.split(/[、,，]/).map((item) => item.trim()).filter(Boolean) })} /></label>
+                                <label className="block">
+                                    <span className="mb-2 block text-xs font-semibold text-ink/60">依赖成员</span>
+                                    <select
+                                        className={`${inputClass} h-28 py-2`}
+                                        multiple
+                                        value={dependencyResolution.memberIds}
+                                        disabled={disabled}
+                                        onChange={(event) => updateMeasure({
+                                            dependency_members: [
+                                                ...Array.from(event.target.selectedOptions, (option) => option.value),
+                                                ...dependencyResolution.unresolved,
+                                            ],
+                                        })}
+                                    >
+                                        {dependencyCandidates.map((item) => (
+                                            <option key={item.member_id} value={item.member_id}>
+                                                {item.title || item.member_name} · {item.member_name} · {item.cube_name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {dependencyResolution.unresolved.length > 0 && (
+                                        <span role="alert" className="mt-2 block text-xs text-oxide">
+                                            未解析的依赖将保留：{dependencyResolution.unresolved.join("、")}
+                                        </span>
+                                    )}
+                                </label>
                                 <label className="block xl:col-span-2"><span className="mb-2 block text-xs font-semibold text-ink/60">表达式 <span className="font-normal text-ink/45">（必填）</span></span><textarea required className={`${areaClass} font-mono text-xs`} value={member.measure.expression} disabled={disabled} onChange={(event) => updateMeasure({ expression: event.target.value })} /></label>
                             </div>
                         </div>

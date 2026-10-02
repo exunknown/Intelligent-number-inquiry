@@ -14,7 +14,7 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { buildSemanticMemberId, createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, mergeSemanticMemberSummaries, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticMemberName, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
+import { buildSemanticMemberId, copySemanticMeasure, createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, mergeSemanticMemberSummaries, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticMemberName, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
 import { nextFocusableIndex } from "../lib/userManagement";
 import { SemanticMemberEditor } from "./SemanticMemberEditor";
 import { SemanticMemberList } from "./SemanticMemberList";
@@ -173,6 +173,23 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             metric_equivalence_groups: groups,
             metric_attachments: attachments,
         }));
+    };
+
+    const copyMeasure = (memberId: string) => {
+        try {
+            const baseSnapshot = draft?.snapshot ?? snapshot;
+            const { snapshot: nextSnapshot, copiedMemberId } = copySemanticMeasure(baseSnapshot, memberId);
+            setSnapshot(nextSnapshot);
+            setDraft((current) => current ? { ...current, snapshot: nextSnapshot } : current);
+            setPendingNewMemberIds((currentIds) => [
+                ...new Set([...currentIds, copiedMemberId]),
+            ]);
+            setSelectedId(copiedMemberId);
+            setDirty(true);
+            setError(null);
+        } catch (copyError) {
+            setError(formatSemanticModelError(copyError));
+        }
     };
 
     const closeCreateDialog = () => {
@@ -357,11 +374,12 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             {error && <div role="alert" className="border-b border-oxide/20 bg-oxide/5 px-6 py-3 text-sm text-oxide">{error}</div>}
             <div className="flex min-h-0 flex-1">
                 <SemanticMemberList items={directoryMembers} selectedId={selectedId} filters={filters} loading={loading} disabled={busy || loading || snapshotUnavailable} error={error && !directoryMembers.length ? error : null} onSelect={setSelectedId} onFilterChange={changeFilters} onCreate={requestCreateMember} cubes={workingSnapshot.cubes} />
-                <div className="flex min-w-0 flex-1 flex-col">
-                    <SemanticMemberEditor
+                    <div className="flex min-w-0 flex-1 flex-col">
+                        <SemanticMemberEditor
                         member={selectedMember}
                         snapshot={currentDraft}
                         members={currentDraft.members}
+                        dependencyCandidates={semanticDependencyCandidates(currentDraft, selectedMember?.member_id ?? "")}
                         metricEquivalenceGroups={currentDraft.metric_equivalence_groups ?? []}
                         metricAttachments={currentDraft.metric_attachments ?? []}
                         disabled={busy || loading || snapshotUnavailable}
@@ -369,6 +387,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
                         onMemberNameChange={(name) => {
                             if (selectedMember) changeMemberName(selectedMember.member_id, name);
                         }}
+                        onCopy={copyMeasure}
                         onRelationsChange={updateRelations}
                         onSave={() => void save()}
                     />
