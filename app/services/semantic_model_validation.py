@@ -36,6 +36,7 @@ _ALLOWED_EXPRESSION_NODES = (
     exp.Struct,
     exp.Sub,
 )
+_MEMBER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 _FUNCTION_PATTERN = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(")
 _FORBIDDEN_SQL_PATTERN = re.compile(
     r"(?:;|--|/\*|\*/|\b(?:SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b)",
@@ -281,12 +282,39 @@ class SemanticModelValidator:
         physical_column_ids: set[str] | None,
     ) -> list[ValidationIssue]:
         issues: list[ValidationIssue] = []
-        names: dict[str, list[int]] = defaultdict(list)
+        names: dict[tuple[str, str], list[int]] = defaultdict(list)
         members_by_name = {member.qualified_name: member for member in snapshot.members}
         cube_names = {cube.cube_name for cube in snapshot.cubes}
         for index, member in enumerate(snapshot.members):
-            names[member.qualified_name].append(index)
+            names[(member.cube_name, member.member_name)].append(index)
             path = f"members[{index}]"
+            if not member.member_name:
+                issues.append(
+                    ValidationIssue(
+                        "member_name_required",
+                        f"{path}.member_name",
+                        "成员名称不能为空",
+                    )
+                )
+            elif not _MEMBER_NAME_PATTERN.match(member.member_name):
+                issues.append(
+                    ValidationIssue(
+                        "invalid_member_name",
+                        f"{path}.member_name",
+                        "成员名称只能包含字母、数字和下划线",
+                    )
+                )
+            expected_member_id = (
+                f"{member.member_type}:{member.cube_name}:{member.member_name}"
+            )
+            if member.member_id != expected_member_id:
+                issues.append(
+                    ValidationIssue(
+                        "member_id_mismatch",
+                        f"{path}.member_id",
+                        "成员 ID 必须与成员类型、Cube 和名称一致",
+                    )
+                )
             if member.cube_name not in cube_names:
                 issues.append(
                     ValidationIssue(
@@ -328,13 +356,13 @@ class SemanticModelValidator:
                 issues.extend(self._validate_measure(member, path, members_by_name))
             else:
                 issues.extend(self._validate_dimension(member, path))
-        for qualified_name, indexes in names.items():
+        for (cube_name, member_name), indexes in names.items():
             if len(indexes) > 1:
                 issues.append(
                     ValidationIssue(
                         "duplicate_member_name",
                         f"members[{indexes[0]}].member_name",
-                        f"成员名称重复：{qualified_name}",
+                        f"成员名称重复：{cube_name}.{member_name}",
                     )
                 )
         return issues
