@@ -436,8 +436,10 @@ export function buildSemanticChangeSummary(
     });
     const changed = current.members.filter((member) => {
         const previous = baseMembers.get(member.member_id);
+        const isOffline = previous?.status === "published" && member.status !== "published";
         return (
             previous !== undefined &&
+            !isOffline &&
             member.member_type === "measure" &&
             measureDefinitionSignature(previous) !== measureDefinitionSignature(member)
         );

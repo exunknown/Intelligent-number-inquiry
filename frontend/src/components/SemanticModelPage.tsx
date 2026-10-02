@@ -317,8 +317,9 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         }
         const reason = "更新指标和维度治理草稿";
         const payload = asPayload(workingSnapshot, reason);
+        const editableDraftStatuses = new Set(["draft", "rejected"]);
         const result = await perform(async () => {
-            if (draft) return updateSemanticDraft(draft.draft_id, payload);
+            if (draft && editableDraftStatuses.has(draft.status)) return updateSemanticDraft(draft.draft_id, payload);
             return createSemanticDraft(payload);
         }, "");
         if (result && result.status !== "failed") {
@@ -360,9 +361,9 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
 
     const currentDraft = draft?.snapshot ?? snapshot;
     const activeRelease = releases.find((item) => item.active);
-    const canPublish = draft?.status === "validated" && !dirty;
     const activeSnapshotReady = !activeRelease || activeSnapshot.release_version === activeRelease.release_version;
-    const changeSummary = !loading && !snapshotUnavailable && canPublish && activeSnapshotReady
+    const canPublish = draft?.status === "validated" && !dirty && !loading && !snapshotUnavailable && (!activeRelease || activeSnapshot.release_version === activeRelease.release_version);
+    const changeSummary = canPublish && activeSnapshotReady
         ? buildSemanticChangeSummary(activeRelease ? activeSnapshot : emptySnapshot, currentDraft)
         : null;
     const selectedMember = currentDraft.members.find((member) => member.member_id === selectedId) ?? null;
