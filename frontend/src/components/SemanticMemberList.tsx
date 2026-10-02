@@ -12,7 +12,10 @@ type SemanticMemberListProps = {
     error: string | null;
     onSelect: (memberId: string) => void;
     onFilterChange: (filters: { memberType: MemberType; query: string }) => void;
-    onCreate: (memberType: "measure" | "dimension" | "time_dimension") => void;
+    onCreate: (
+        memberType: "measure" | "dimension" | "time_dimension",
+        trigger: HTMLButtonElement,
+    ) => void;
     cubes: SemanticCube[];
 };
 
@@ -52,13 +55,13 @@ export function SemanticMemberList({
                         <p className="mt-1 text-xs text-ink/50">按治理口径维护指标与维度</p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button type="button" onClick={() => onCreate("measure")} disabled={disabled} title={`新增指标${cubeHint}`} className="inline-flex min-h-8 items-center gap-1 border border-indigo/25 px-2 text-xs font-semibold text-indigo transition hover:bg-indigo/5 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40">
-                            <Plus className="h-3.5 w-3.5" aria-hidden="true" />指标
-                        </button>
-                        <button type="button" onClick={() => onCreate("dimension")} disabled={disabled} title={`新增维度${cubeHint}`} className="inline-flex min-h-8 items-center gap-1 border border-pine/25 px-2 text-xs font-semibold text-pine transition hover:bg-pine/5 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40">
+                            <button type="button" onClick={(event) => onCreate("measure", event.currentTarget)} disabled={disabled} title={`新增指标${cubeHint}`} className="inline-flex min-h-8 items-center gap-1 border border-indigo/25 px-2 text-xs font-semibold text-indigo transition hover:bg-indigo/5 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40">
+                                <Plus className="h-3.5 w-3.5" aria-hidden="true" />指标
+                            </button>
+                        <button type="button" onClick={(event) => onCreate("dimension", event.currentTarget)} disabled={disabled} title={`新增维度${cubeHint}`} className="inline-flex min-h-8 items-center gap-1 border border-pine/25 px-2 text-xs font-semibold text-pine transition hover:bg-pine/5 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40">
                             <Plus className="h-3.5 w-3.5" aria-hidden="true" />维度
                         </button>
-                        <button type="button" onClick={() => onCreate("time_dimension")} disabled={disabled} title={`新增时间维度${cubeHint}`} className="inline-flex min-h-8 items-center gap-1 border border-cinnabar/25 px-2 text-xs font-semibold text-cinnabar transition hover:bg-cinnabar/5 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40">
+                        <button type="button" onClick={(event) => onCreate("time_dimension", event.currentTarget)} disabled={disabled} title={`新增时间维度${cubeHint}`} className="inline-flex min-h-8 items-center gap-1 border border-cinnabar/25 px-2 text-xs font-semibold text-cinnabar transition hover:bg-cinnabar/5 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40">
                             <Calendar className="h-3.5 w-3.5" aria-hidden="true" />时间维度
                         </button>
                         <span className="font-mono text-xs text-ink/45">{items.length}</span>

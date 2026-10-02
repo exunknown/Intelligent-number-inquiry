@@ -1,5 +1,5 @@
 import { ArrowLeft, RefreshCw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
     createSemanticDraft,
     getSemanticDraft,
@@ -15,6 +15,7 @@ import {
     type SemanticDraftPayload,
 } from "../lib/agentApi";
 import { createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, mergeSemanticMemberSummaries, resolveSemanticModelSnapshot, semanticCubeOptions, serializeSemanticSnapshot, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
+import { nextFocusableIndex } from "../lib/userManagement";
 import { SemanticMemberEditor } from "./SemanticMemberEditor";
 import { SemanticMemberList } from "./SemanticMemberList";
 import { SemanticReleasePanel } from "./SemanticReleasePanel";
@@ -25,6 +26,14 @@ type Filters = { memberType: "all" | "measure" | "dimension" | "time_dimension";
 type CreateMemberType = SemanticMemberType;
 
 const emptySnapshot = resolveSemanticModelSnapshot(undefined);
+const CREATE_DIALOG_FOCUSABLE_SELECTOR = [
+    "button:not([disabled])",
+    "[href]",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    "[tabindex]:not([tabindex=\"-1\"])",
+].join(",");
 
 function asPayload(snapshot: SemanticSnapshot, reason: string): SemanticDraftPayload {
     return serializeSemanticSnapshot(snapshot, reason);
@@ -60,6 +69,9 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const [busy, setBusy] = useState(false);
     const [dirty, setDirty] = useState(false);
     const requestGateRef = useRef(createSemanticModelRequestGate());
+    const createDialogRef = useRef<HTMLDivElement | null>(null);
+    const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
+    const createTriggerRef = useRef<HTMLButtonElement | null>(null);
 
     const load = async () => {
         const generation = requestGateRef.current.start();
@@ -117,14 +129,49 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         }));
     };
 
-    const requestCreateMember = (memberType: CreateMemberType) => {
-        setCreateMemberType(memberType);
-        setCreateCubeName(defaultCubeName(semanticCubeOptions(workingSnapshot)));
-    };
-
-    const cancelCreateMember = () => {
+    const closeCreateDialog = () => {
         setCreateMemberType(null);
         setCreateCubeName("");
+        requestAnimationFrame(() => createTriggerRef.current?.focus());
+    };
+
+    const handleCreateDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            closeCreateDialog();
+            return;
+        }
+        if (event.key !== "Tab") return;
+
+        const focusableElements = Array.from(
+            createDialogRef.current?.querySelectorAll<HTMLElement>(
+                CREATE_DIALOG_FOCUSABLE_SELECTOR,
+            ) ?? [],
+        );
+        if (focusableElements.length === 0) return;
+
+        const currentIndex = focusableElements.indexOf(document.activeElement as HTMLElement);
+        const normalizedIndex = currentIndex === -1 ? (event.shiftKey ? 0 : -1) : currentIndex;
+        const targetIndex = nextFocusableIndex(
+            normalizedIndex,
+            focusableElements.length,
+            event.shiftKey ? "backward" : "forward",
+        );
+        event.preventDefault();
+        focusableElements[targetIndex]?.focus();
+    };
+
+    useEffect(() => {
+        if (createMemberType) cancelButtonRef.current?.focus();
+    }, [createMemberType]);
+
+    const requestCreateMember = (
+        memberType: CreateMemberType,
+        trigger: HTMLButtonElement,
+    ) => {
+        createTriggerRef.current = trigger;
+        setCreateMemberType(memberType);
+        setCreateCubeName(defaultCubeName(semanticCubeOptions(workingSnapshot)));
     };
 
     const createMember = (memberType: CreateMemberType, cubeName: string) => {
@@ -135,7 +182,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         const member = createDraftSemanticMember(workingSnapshot, memberType, cubeName);
         updateWorkingSnapshot((current) => ({ ...current, members: [...current.members, member] }));
         setSelectedId(member.member_id);
-        cancelCreateMember();
+        closeCreateDialog();
     };
 
     const refreshDraft = async (draftId: string) => {
@@ -229,10 +276,12 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             {createMemberType && (
                 <div className="absolute inset-0 z-20 flex items-start justify-center bg-ink/10 p-10" role="presentation">
                     <div
+                        ref={createDialogRef}
                         className="w-full max-w-xl border border-ink/15 bg-white p-6 shadow-line"
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="create-member-title"
+                        onKeyDown={handleCreateDialogKeyDown}
                     >
                         <div className="flex items-start justify-between gap-6">
                             <div>
@@ -265,7 +314,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
                             </p>
                         )}
                         <div className="mt-7 flex justify-end gap-3">
-                            <button type="button" onClick={cancelCreateMember} className="min-h-10 border border-ink/15 px-4 text-sm font-semibold text-ink/65 transition hover:bg-paper focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40">
+                            <button ref={cancelButtonRef} type="button" onClick={closeCreateDialog} className="min-h-10 border border-ink/15 px-4 text-sm font-semibold text-ink/65 transition hover:bg-paper focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40">
                                 取消
                             </button>
                             <button
