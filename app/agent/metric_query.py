@@ -500,11 +500,9 @@ def resolve_time_range(value: object, today: date) -> tuple[str, str]:
 def to_cube_query(
     query: MetricQuery,
     member_catalog: Mapping[str, CubeMember],
-    today: date | None = None,
+    today: date,
 ) -> dict:
     """Convert validated IR to the deterministic Cube REST query shape."""
-
-    today = today or _today_in_shanghai()
 
     referenced = [*query.measures, *query.dimensions]
     referenced.extend(filter_value.member for filter_value in query.filters)

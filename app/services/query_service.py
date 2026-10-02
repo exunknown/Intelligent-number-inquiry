@@ -71,6 +71,7 @@ _AUDIT_EVENT_FIELDS = (
     "sql_execution_duration_ms",
 )
 _SSE_PROTOCOL_VERSION = 1
+_SEMANTIC_SNAPSHOT_TIMEOUT_SECONDS = 1.0
 
 
 def build_query_message_snapshot(
@@ -232,6 +233,26 @@ class QueryService:
         self.sql_policy_engine = sql_policy_engine
         self.metrics = metrics or get_query_metrics()
 
+    async def _load_semantic_model_snapshot(self, budget: RequestBudget):
+        """Best-effort load on its isolated session within the request budget."""
+
+        if self.semantic_model_repository is None:
+            return None
+        timeout_seconds = min(
+            _SEMANTIC_SNAPSHOT_TIMEOUT_SECONDS,
+            budget.remaining_seconds(),
+        )
+        if timeout_seconds <= 0:
+            return None
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                return await self.semantic_model_repository.get_active_snapshot()
+        except TimeoutError:
+            logger.warning("Active semantic model snapshot read timed out")
+        except Exception:
+            logger.warning("Failed to read active semantic model snapshot")
+        return None
+
     async def _externalize_result(
         self,
         payload: dict,
@@ -350,15 +371,6 @@ class QueryService:
         if self.meta_mysql_repository is not None:
             self.meta_mysql_repository.set_release_version(metadata_release_version)
 
-        semantic_model_snapshot = None
-        if self.semantic_model_repository is not None:
-            try:
-                semantic_model_snapshot = (
-                    await self.semantic_model_repository.get_active_snapshot()
-                )
-            except Exception:
-                logger.warning("Failed to read active semantic model snapshot")
-
         request_id = str(request_id_ctx_var.get())
         user_message_persisted = False
         if self.query_message_repository is not None and session_id is not None:
@@ -392,11 +404,6 @@ class QueryService:
             resource_budget=budget,
             dependency_breakers=get_dependency_breakers(),
         )
-        if semantic_model_snapshot is not None:
-            context["semantic_model_snapshot"] = semantic_model_snapshot
-            context["semantic_metric_relation_service"] = (
-                self.semantic_metric_relation_service
-            )
         usage_callback = LLMUsageCallbackHandler()
         started_at = perf_counter()
         audit = {
@@ -441,6 +448,12 @@ class QueryService:
         graph_stream = None
         pending_chunk = None
         try:
+            semantic_model_snapshot = await self._load_semantic_model_snapshot(budget)
+            if semantic_model_snapshot is not None:
+                context["semantic_model_snapshot"] = semantic_model_snapshot
+                context["semantic_metric_relation_service"] = (
+                    self.semantic_metric_relation_service
+                )
             async with asyncio.timeout(budget.remaining_seconds()):
                 graph_stream = graph.astream(
                     input=state,

@@ -85,6 +85,13 @@ async def get_meta_session():
         yield meta_session
 
 
+async def get_query_semantic_model_session():
+    """为最佳努力语义快照读取创建隔离的请求级 Session。"""
+
+    async with meta_mysql_client_manager.session_factory() as meta_session:
+        yield meta_session
+
+
 async def get_app_user_repository(
     session: Annotated[AsyncSession, Depends(get_meta_session)],
 ) -> AppUserRepository:
@@ -168,6 +175,14 @@ async def get_semantic_model_repository(
     session: Annotated[AsyncSession, Depends(get_meta_session)],
 ) -> SemanticModelRepository:
     """创建请求级语义模型仓储。"""
+
+    return SemanticModelRepository(session)
+
+
+async def get_query_semantic_model_repository(
+    session: Annotated[AsyncSession, Depends(get_query_semantic_model_session)],
+) -> SemanticModelRepository:
+    """创建不会污染查询主 Meta Session 的语义快照仓储。"""
 
     return SemanticModelRepository(session)
 
@@ -373,7 +388,7 @@ async def get_query_service(
         MetadataReleaseRepository, Depends(get_metadata_release_repository)
     ],
     semantic_model_repository: Annotated[
-        SemanticModelRepository, Depends(get_semantic_model_repository)
+        SemanticModelRepository, Depends(get_query_semantic_model_repository)
     ],
     semantic_metric_relation_service: Annotated[
         SemanticMetricRelationService,

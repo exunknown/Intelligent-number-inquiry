@@ -5,7 +5,7 @@ from dataclasses import replace
 from langgraph.runtime import Runtime
 
 from app.agent.context import DataAgentContext
-from app.agent.metric_query import to_cube_query, validate_metric_query_result
+from app.agent.metric_query import validate_metric_query_result
 from app.agent.state import DataAgentState
 from app.conf.app_config import app_config
 from app.core.query_errors import QueryExecutionError
@@ -38,6 +38,7 @@ def _resolve_metric_relations(
     seen_names: set[str] = set()
     primary_by_requested: dict[str, str] = {}
     first_primary: CubeMember | None = None
+    explicit_metrics: list[tuple[str, CubeMember]] = []
     attached_members: list[CubeMember] = []
 
     for requested_name in decision.query.measures:
@@ -46,31 +47,56 @@ def _resolve_metric_relations(
             snapshot,
             permissions,
             member_catalog,
-            expand_attachments=state.get("include_attached_metrics", True),
+            expand_attachments=False,
         )
         if resolution.primary is None:
-            members = (
-                (member_catalog[requested_name],)
+            primary = (
+                member_catalog[requested_name]
                 if requested_name in permissions.allowed_metrics
-                else ()
+                else None
             )
             primary_by_requested[requested_name] = requested_name
         else:
-            members = resolution.members
+            primary = resolution.primary
             primary_by_requested[requested_name] = resolution.primary.name
-            if first_primary is None:
-                first_primary = resolution.primary
-            attached_members.extend(
-                attachment.member for attachment in resolution.attachments
-            )
 
-        for member in members:
-            if (
-                member.name in permissions.allowed_metrics
-                and member.name not in seen_names
-            ):
+        if primary is None or primary.name not in permissions.allowed_metrics:
+            continue
+        explicit_metrics.append((requested_name, primary))
+        if first_primary is None:
+            first_primary = primary
+        if primary.name not in seen_names:
+            seen_names.add(primary.name)
+            resolved_names.append(primary.name)
+
+    explicit_primary_names = frozenset(resolved_names)
+    if state.get("include_attached_metrics", True):
+        for requested_name, _ in explicit_metrics:
+            expanded = relation_service.resolve(
+                requested_name,
+                snapshot,
+                permissions,
+                member_catalog,
+                expand_attachments=True,
+            )
+            for attachment in expanded.attachments:
+                normalized = relation_service.resolve(
+                    attachment.member,
+                    snapshot,
+                    permissions,
+                    member_catalog,
+                    expand_attachments=False,
+                )
+                member = normalized.primary or attachment.member
+                if (
+                    member.name in explicit_primary_names
+                    or member.name not in permissions.allowed_metrics
+                    or member.name in seen_names
+                ):
+                    continue
                 seen_names.add(member.name)
                 resolved_names.append(member.name)
+                attached_members.append(member)
 
     if not resolved_names:
         raise QueryExecutionError(
@@ -93,10 +119,18 @@ def _resolve_metric_relations(
         measures=tuple(resolved_names),
         order_by=tuple(resolved_orders),
     )
+    cube_query = dict(decision.cube_query or {})
+    cube_query["measures"] = list(query.measures)
+    if query.order_by:
+        cube_query["order"] = {
+            order.member: order.direction for order in query.order_by
+        }
+    else:
+        cube_query.pop("order", None)
     resolved_decision = replace(
         decision,
         query=query,
-        cube_query=to_cube_query(query, member_catalog),
+        cube_query=cube_query,
     )
     state_updates: dict = {
         "resolved_attached_metrics": list(
