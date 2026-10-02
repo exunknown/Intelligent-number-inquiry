@@ -17,7 +17,7 @@ class QueryMessageResponse(BaseModel):
     content: str
     status: str
     steps: dict[str, str] | None
-    metrics: list[str] | None
+    metrics: list[str | dict[str, str | None]] | None
     query_mode: str | None
     route_reason: str | None
     result_preview: Any

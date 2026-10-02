@@ -3,7 +3,7 @@
  * 封装后端 /api/query SSE 流式接口请求与事件解析逻辑
  */
 import { getAccessToken } from "../auth/keycloak";
-import type { AgentEvent } from "../types/agent";
+import type { AgentEvent, MetricItem } from "../types/agent";
 import type {
     SemanticDraft,
     SemanticMember,
@@ -47,7 +47,7 @@ export type QueryMessageResponse = {
   content: string;
   status: "done" | "error" | "cancelled" | "streaming";
   steps: Record<string, string> | null;
-  metrics: string[] | null;
+  metrics: MetricItem[] | null;
   query_mode: string | null;
   route_reason: string | null;
   result_preview: unknown;

@@ -7,13 +7,17 @@ import { ChevronDown, Route } from "lucide-react";
 import { useState } from "react";
 import { StepRail } from "./StepRail";
 import { cn } from "../lib/format";
-import type { QueryMode, StepState } from "../types/agent";
+import { attachedMetricEntries, metricLabel } from "../lib/metricDisplay";
+import type { MetricItem, QueryMode, StepState } from "../types/agent";
 
 type AnalysisPanelProps = {
     steps?: StepState[];
-    metrics?: string[];
+    metrics?: MetricItem[];
     queryMode?: QueryMode;
     routeReason?: string;
+    hiddenAttachedMetricIds?: ReadonlySet<string>;
+    onToggleAttachedMetric?: (memberId: string, visible: boolean) => void;
+    onToggleAllAttachedMetrics?: (visible: boolean) => void;
 };
 
 export function AnalysisPanel({
@@ -21,6 +25,9 @@ export function AnalysisPanel({
     metrics,
     queryMode,
     routeReason,
+    hiddenAttachedMetricIds = new Set(),
+    onToggleAttachedMetric,
+    onToggleAllAttachedMetrics,
 }: AnalysisPanelProps) {
     const [open, setOpen] = useState(false);
 
@@ -28,11 +35,16 @@ export function AnalysisPanel({
 
     const runningStep = steps.find((item) => item.status === "running")?.step ?? null;
     const doneCount = steps.filter((item) => item.status === "success").length;
+    const attachedMetrics = attachedMetricEntries(metrics);
+    const summaryMetrics = metrics?.map(metricLabel) ?? [];
+    const allAttachedVisible = attachedMetrics.every(
+        (metric) => !hiddenAttachedMetricIds.has(metric.member_id),
+    );
 
     const summary = runningStep
         ? `正在执行：${runningStep}`
-        : metrics && metrics.length > 0
-          ? `查询指标：${metrics.join("，")}`
+        : summaryMetrics.length > 0
+          ? `查询指标：${summaryMetrics.join("，")}`
           : `已执行 ${doneCount} 步`;
 
     const toggle = () => {
@@ -94,8 +106,49 @@ export function AnalysisPanel({
                             <div className="font-serif text-sm font-bold text-ink">指标信息</div>
                             <p className="mt-1.5 text-sm leading-6 text-ink/70">
                                 查询指标：
-                                {metrics && metrics.length > 0 ? metrics.join("，") : "暂无"}
+                                {summaryMetrics.length > 0 ? summaryMetrics.join("，") : "暂无"}
                             </p>
+                            {attachedMetrics.length > 0 && (
+                                <div className="mt-3 space-y-2 border-t border-ink/10 pt-3">
+                                    <label className="flex items-center gap-2 text-xs font-semibold text-ink/75">
+                                        <input
+                                            type="checkbox"
+                                            checked={allAttachedVisible}
+                                            onChange={(event) =>
+                                                onToggleAllAttachedMetrics?.(event.target.checked)
+                                            }
+                                            className="h-4 w-4 accent-indigo"
+                                        />
+                                        显示附带指标
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                                        {attachedMetrics.map((metric) => {
+                                            const visible = !hiddenAttachedMetricIds.has(metric.member_id);
+                                            return (
+                                                <label
+                                                    key={metric.member_id}
+                                                    className="flex min-w-0 items-center gap-2 text-xs text-ink/65"
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={visible}
+                                                        onChange={(event) =>
+                                                            onToggleAttachedMetric?.(
+                                                                metric.member_id,
+                                                                event.target.checked,
+                                                            )
+                                                        }
+                                                        className="h-4 w-4 shrink-0 accent-indigo"
+                                                    />
+                                                    <span className="truncate" title={metricLabel(metric)}>
+                                                        {metricLabel(metric)}
+                                                    </span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

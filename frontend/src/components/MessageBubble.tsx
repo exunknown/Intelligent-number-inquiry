@@ -7,11 +7,15 @@ import { useEffect, useRef, useState } from "react";
 import { AnalysisPanel } from "./AnalysisPanel";
 import { ResultTable } from "./ResultTable";
 import { cn, formatTime, toClipboardText } from "../lib/format";
+import { attachedMetricEntries } from "../lib/metricDisplay";
 import type { ChatMessage } from "../types/agent";
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
     const isUser = message.role === "user";
     const [copied, setCopied] = useState(false);
+    const [hiddenAttachedMetricIds, setHiddenAttachedMetricIds] = useState<Set<string>>(
+        new Set(),
+    );
     const copyTimerRef = useRef<number | null>(null);
 
     useEffect(
@@ -30,6 +34,23 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
         copyTimerRef.current = window.setTimeout(() => setCopied(false), 1600);
     };
 
+    const toggleAttachedMetric = (memberId: string, visible: boolean) => {
+        setHiddenAttachedMetricIds((current) => {
+            const next = new Set(current);
+            if (visible) next.delete(memberId);
+            else next.add(memberId);
+            return next;
+        });
+    };
+
+    const toggleAllAttachedMetrics = (visible: boolean) => {
+        setHiddenAttachedMetricIds(
+            visible
+                ? new Set()
+                : new Set(attachedMetricEntries(message.metrics).map((metric) => metric.member_id)),
+        );
+    };
+
     return (
         <article className={cn("rise-in group flex gap-3", isUser && "justify-end")}>
             {!isUser && (
@@ -45,6 +66,9 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
                         metrics={message.metrics}
                         queryMode={message.queryMode}
                         routeReason={message.routeReason}
+                        hiddenAttachedMetricIds={hiddenAttachedMetricIds}
+                        onToggleAttachedMetric={toggleAttachedMetric}
+                        onToggleAllAttachedMetrics={toggleAllAttachedMetrics}
                     />
                 )}
 
@@ -119,6 +143,8 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
                                 exportId={message.exportId}
                                 rowCount={message.rowCount}
                                 truncated={message.truncated}
+                                metrics={message.metrics}
+                                hiddenAttachedMetricIds={hiddenAttachedMetricIds}
                             />
                         </>
                     )}

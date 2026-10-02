@@ -74,13 +74,39 @@ _SSE_PROTOCOL_VERSION = 1
 _SEMANTIC_SNAPSHOT_TIMEOUT_SECONDS = 1.0
 
 
+def _safe_metric_display_entry(value: object) -> dict[str, str | None] | str | None:
+    if isinstance(value, str):
+        return value
+    if not isinstance(value, dict):
+        return None
+
+    member_id = value.get("member_id")
+    title = value.get("title")
+    if not isinstance(member_id, str) or not member_id:
+        return None
+    if not isinstance(title, str) or not title:
+        return None
+
+    entry: dict[str, str | None] = {
+        "member_id": member_id,
+        "title": title,
+    }
+    role = value.get("role")
+    if role in {"primary", "attached"}:
+        entry["role"] = role
+    source_member_id = value.get("source_member_id")
+    if source_member_id is None or isinstance(source_member_id, str):
+        entry["source_member_id"] = source_member_id
+    return entry
+
+
 def build_query_message_snapshot(
     events: list[dict], terminal_event: dict
 ) -> QueryMessageSnapshot:
     """把允许展示的 SSE 事件转换成安全的会话消息快照。"""
 
     steps: dict[str, str] = {}
-    metrics: list[str] = []
+    metrics: list[str | dict[str, str | None]] = []
     query_mode = None
     route_reason = None
 
@@ -100,7 +126,11 @@ def build_query_message_snapshot(
         elif event_type == "metrics":
             data = event.get("data")
             if isinstance(data, list):
-                metrics = [item for item in data if isinstance(item, str)]
+                metrics = [
+                    item
+                    for raw_item in data
+                    if (item := _safe_metric_display_entry(raw_item)) is not None
+                ]
         elif event_type == "route":
             if isinstance(event.get("mode"), str):
                 query_mode = event["mode"]

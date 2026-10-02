@@ -12,7 +12,7 @@ class QueryMessageSnapshot:
     status: str
     content: str
     steps: dict[str, str] = field(default_factory=dict)
-    metrics: list[str] = field(default_factory=list)
+    metrics: list[str | dict[str, str | None]] = field(default_factory=list)
     query_mode: str | None = None
     route_reason: str | None = None
     result_preview: Any = None
@@ -39,7 +39,7 @@ class QueryMessage:
     content: str
     status: str
     steps: dict[str, str] | None
-    metrics: list[str] | None
+    metrics: list[str | dict[str, str | None]] | None
     query_mode: str | None
     route_reason: str | None
     result_preview: Any

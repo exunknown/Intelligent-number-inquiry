@@ -10,9 +10,18 @@ export type ProgressEvent = {
   status: ProgressStatus;
 };
 
+export type MetricDisplayEntry = {
+  member_id: string;
+  title: string;
+  role?: "primary" | "attached";
+  source_member_id?: string | null;
+};
+
+export type MetricItem = string | MetricDisplayEntry;
+
 export type MetricsEvent = {
   type: "metrics";
-  data: string[];
+  data: MetricItem[];
 };
 
 export type QueryMode = "metric" | "sql";
@@ -68,7 +77,7 @@ export type ChatMessage = {
   createdAt: number;
   status?: "streaming" | "done" | "error" | "cancelled";
   steps?: StepState[];
-  metrics?: string[];
+  metrics?: MetricItem[];
   queryMode?: QueryMode;
   routeReason?: string;
   result?: unknown;

@@ -6,6 +6,8 @@ import { Database, Download, FileJson } from "lucide-react";
 import { useState } from "react";
 import { downloadQueryExport } from "../lib/agentApi";
 import { cn } from "../lib/format";
+import { visibleMetricColumns } from "../lib/metricDisplay";
+import type { MetricItem } from "../types/agent";
 
 function normalizeRows(data: unknown): Array<Record<string, unknown>> {
     if (Array.isArray(data)) {
@@ -53,21 +55,26 @@ export function ResultTable({
     exportId,
     rowCount,
     truncated,
+    metrics = [],
+    hiddenAttachedMetricIds = new Set(),
 }: {
     data: unknown;
     exportId?: string;
     rowCount?: number;
     truncated?: boolean;
+    metrics?: MetricItem[];
+    hiddenAttachedMetricIds?: ReadonlySet<string>;
 }) {
     const [downloading, setDownloading] = useState(false);
     const [downloadError, setDownloadError] = useState<string | null>(null);
     const rows = normalizeRows(data);
-    const columns = Array.from(
+    const allColumns = Array.from(
         rows.reduce((keys, row) => {
             Object.keys(row).forEach((key) => keys.add(key));
             return keys;
         }, new Set<string>()),
     );
+    const columns = visibleMetricColumns(allColumns, metrics, hiddenAttachedMetricIds);
 
     if (columns.length === 0) {
         return null;

@@ -33,7 +33,9 @@ class QueryMessageMySQL(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     steps_json: Mapped[dict[str, str] | None] = mapped_column(JSON, nullable=True)
-    metrics_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    metrics_json: Mapped[list[str | dict[str, str | None]] | None] = mapped_column(
+        JSON, nullable=True
+    )
     query_mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
     route_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     result_preview_json: Mapped[Any | None] = mapped_column(JSON, nullable=True)
