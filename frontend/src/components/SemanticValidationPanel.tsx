@@ -21,8 +21,8 @@ export function SemanticValidationPanel({ issues, status, canReview, canPublish,
     const addedTimeDimensions = changeSummary?.added.filter((member) => member.member_type === "time_dimension") ?? [];
     return (
         <section className="border-t border-ink/10 bg-white px-6 py-4 lg:px-8">
-            {canPublish && changeSummary && <div className="mb-4 border-l-2 border-cinnabar bg-cinnabar/5 px-4 py-3" aria-label="发布前变更摘要">
-                <p className="text-xs font-semibold text-ink">发布前变更摘要</p>
+            {canPublish && changeSummary && <section className="mb-4 border-l-2 border-cinnabar bg-cinnabar/5 px-4 py-3" aria-labelledby="semantic-change-summary-title">
+                <h2 id="semantic-change-summary-title" className="text-xs font-semibold text-ink">发布前变更摘要</h2>
                 {!changeSummary.has_changes ? <p className="mt-2 text-xs text-ink/55">暂无成员或关系变更</p> : <div className="mt-2 grid gap-2 text-xs text-ink/70 lg:grid-cols-2">
                     {addedMeasures.length > 0 && <div><p className="font-semibold text-ink">新增指标</p><ul className="mt-1 space-y-1">{addedMeasures.map((item) => <li key={item.member_id}>{item.title || item.member_name} <span className="font-mono text-ink/45">({item.member_id})</span></li>)}</ul></div>}
                     {addedDimensions.length > 0 && <div><p className="font-semibold text-ink">新增维度</p><ul className="mt-1 space-y-1">{addedDimensions.map((item) => <li key={item.member_id}>{item.title || item.member_name} <span className="font-mono text-ink/45">({item.member_id})</span></li>)}</ul></div>}
@@ -32,7 +32,7 @@ export function SemanticValidationPanel({ issues, status, canReview, canPublish,
                     {changeSummary.equivalence_changed && <p>等效指标关系：已变更</p>}
                     {changeSummary.attachments_changed && <p>附带指标关系：已变更</p>}
                 </div>}
-            </div>}
+            </section>}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                     {errors.length ? <CircleAlert className="h-5 w-5 text-oxide" aria-hidden="true" /> : <CheckCircle2 className="h-5 w-5 text-pine" aria-hidden="true" />}

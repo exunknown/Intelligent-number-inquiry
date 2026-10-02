@@ -80,7 +80,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         const generation = requestGateRef.current.start();
         setLoading(true);
         setError(null);
-        setSnapshotUnavailable(false);
+        setSnapshotUnavailable(true);
         try {
             const [memberResponse, releaseResponse] = await Promise.all([listSemanticMembers(filters.memberType, directoryQuery), listSemanticReleases()]);
             if (!requestGateRef.current.accepts(generation)) return;
@@ -94,6 +94,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             if (!requestGateRef.current.accepts(generation)) return;
             setSnapshot(nextSnapshot);
             setActiveSnapshot(nextSnapshot);
+            setSnapshotUnavailable(false);
             setSelectedId((current) => current ?? memberResponse.items[0]?.member_id ?? nextSnapshot.members[0]?.member_id ?? null);
             setDirty(false);
         } catch (loadError) {
@@ -359,7 +360,11 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
 
     const currentDraft = draft?.snapshot ?? snapshot;
     const activeRelease = releases.find((item) => item.active);
-    const changeSummary = snapshotUnavailable ? null : buildSemanticChangeSummary(activeRelease ? activeSnapshot : emptySnapshot, currentDraft);
+    const canPublish = draft?.status === "validated" && !dirty;
+    const activeSnapshotReady = !activeRelease || activeSnapshot.release_version === activeRelease.release_version;
+    const changeSummary = !loading && !snapshotUnavailable && canPublish && activeSnapshotReady
+        ? buildSemanticChangeSummary(activeRelease ? activeSnapshot : emptySnapshot, currentDraft)
+        : null;
     const selectedMember = currentDraft.members.find((member) => member.member_id === selectedId) ?? null;
     const directoryMembers = mergeSemanticMemberSummaries(
         members,
@@ -393,7 +398,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
                         onRelationsChange={updateRelations}
                         onSave={() => void save()}
                     />
-                    <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} canReview={draft?.status === "pending_review"} canPublish={draft?.status === "validated"} busy={busy} changeSummary={changeSummary ?? undefined} onValidate={() => { const current = requireDraft(); if (current) void perform(() => validateSemanticDraft(current.draft_id), ""); }} onSubmit={() => { const current = requireDraft(); if (current) void perform(() => submitSemanticDraft(current.draft_id, { reason: "提交语义模型审核" }), ""); }} onReview={(decision) => { const current = requireDraft(); if (current) void perform(() => reviewSemanticDraft(current.draft_id, { decision, reason: decision === "approved" ? "审核通过" : "审核驳回" }), ""); }} onPublish={() => { const current = requireDraft(); if (current) void perform(() => publishSemanticDraft(current.draft_id, { reason: "发布语义模型版本" }), ""); }} />
+                    <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} canReview={draft?.status === "pending_review"} canPublish={canPublish} busy={busy} changeSummary={changeSummary ?? undefined} onValidate={() => { const current = requireDraft(); if (current) void perform(() => validateSemanticDraft(current.draft_id), ""); }} onSubmit={() => { const current = requireDraft(); if (current) void perform(() => submitSemanticDraft(current.draft_id, { reason: "提交语义模型审核" }), ""); }} onReview={(decision) => { const current = requireDraft(); if (current) void perform(() => reviewSemanticDraft(current.draft_id, { decision, reason: decision === "approved" ? "审核通过" : "审核驳回" }), ""); }} onPublish={() => { const current = requireDraft(); if (current) void perform(() => publishSemanticDraft(current.draft_id, { reason: "发布语义模型版本" }), ""); }} />
                 </div>
                 <SemanticReleasePanel releases={releases} activeVersion={releases.find((item) => item.active)?.release_version ?? null} activeSnapshot={activeSnapshot} disabled={busy} onRollback={handleRollback} />
             </div>

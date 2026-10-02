@@ -427,7 +427,13 @@ export function buildSemanticChangeSummary(
         current.members.map((member) => [member.member_id, member]),
     );
     const added = current.members.filter((member) => !baseMembers.has(member.member_id));
-    const removed = base.members.filter((member) => !currentMembers.has(member.member_id));
+    const removed = base.members.filter((member) => {
+        const currentMember = currentMembers.get(member.member_id);
+        return (
+            currentMember === undefined ||
+            (member.status === "published" && currentMember.status !== "published")
+        );
+    });
     const changed = current.members.filter((member) => {
         const previous = baseMembers.get(member.member_id);
         return (
