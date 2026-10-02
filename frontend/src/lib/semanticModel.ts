@@ -144,31 +144,69 @@ type SemanticMemberDirectoryFilters = {
     query: string;
 };
 
+export function buildSemanticMemberId(
+    member: Pick<SemanticMember, "member_type" | "cube_name" | "member_name">,
+): string {
+    return `${member.member_type}:${member.cube_name}:${member.member_name}`;
+}
+
+export function semanticCubeOptions(
+    snapshot: Pick<SemanticSnapshot, "cubes">,
+): SemanticCube[] {
+    return snapshot.cubes;
+}
+
 export function createDraftSemanticMember(
     snapshot: Pick<SemanticSnapshot, "release_version" | "cubes" | "members">,
-    memberType: "measure" | "dimension",
+    memberType: "measure" | "dimension" | "time_dimension",
+    cubeName?: string,
 ): SemanticMember {
-    const prefix = memberType === "measure" ? "new_metric" : "new_dimension";
+    const cube =
+        (cubeName && snapshot.cubes.find((item) => item.cube_name === cubeName)) ??
+        snapshot.cubes.find((item) => item.public) ??
+        snapshot.cubes.find((item) => item.cube_name === "ecommerce") ??
+        snapshot.cubes[0];
+    if (!cube) {
+        throw new Error("当前语义模型没有可用 Cube，无法创建成员。");
+    }
+    const resolvedCubeName = cube.cube_name;
+    const prefix =
+        memberType === "measure"
+            ? "new_metric"
+            : memberType === "time_dimension"
+              ? "new_time_dimension"
+              : "new_dimension";
     let sequence = 1;
-    while (snapshot.members.some((member) => member.member_name === `${prefix}_${sequence}`)) {
+    while (
+        snapshot.members.some(
+            (member) =>
+                member.cube_name === resolvedCubeName &&
+                member.member_name === `${prefix}_${sequence}`,
+        )
+    ) {
         sequence += 1;
     }
     const memberName = `${prefix}_${sequence}`;
-    const cubeName =
-        snapshot.cubes.find((cube) => cube.public)?.cube_name ??
-        snapshot.cubes[0]?.cube_name ??
-        "ecommerce";
     const isMeasure = memberType === "measure";
+    const isTimeDimension = memberType === "time_dimension";
 
     return {
         release_version: snapshot.release_version,
-        member_id: `${memberType}:${cubeName}:${memberName}`,
-        cube_name: cubeName,
+        member_id: buildSemanticMemberId({
+            member_type: memberType,
+            cube_name: resolvedCubeName,
+            member_name: memberName,
+        }),
+        cube_name: resolvedCubeName,
         member_name: memberName,
         member_type: memberType,
-        title: isMeasure ? `新指标 ${sequence}` : `新维度 ${sequence}`,
+        title: isMeasure
+            ? `新指标 ${sequence}`
+            : isTimeDimension
+              ? `新时间维度 ${sequence}`
+              : `新维度 ${sequence}`,
         description: "",
-        data_type: isMeasure ? "number" : "string",
+        data_type: isMeasure ? "number" : isTimeDimension ? "date" : "string",
         source_column_id: null,
         ai_context: "",
         aliases: [],
@@ -182,7 +220,84 @@ export function createDraftSemanticMember(
             : null,
         dimension: isMeasure
             ? null
-            : { dimension_type: "string", time_granularity: null, primary_key: false },
+            : {
+                  dimension_type: isTimeDimension ? "time" : "string",
+                  time_granularity: isTimeDimension ? "day" : null,
+                  primary_key: false,
+              },
+    };
+}
+
+export function validateSemanticMemberName(
+    snapshot: Pick<SemanticSnapshot, "members">,
+    member: Pick<SemanticMember, "member_id" | "cube_name">,
+    memberName: string,
+): string | null {
+    if (!memberName.trim()) return "成员编码不能为空";
+    if (!/^[A-Za-z0-9_]+$/.test(memberName)) {
+        return "成员编码只能包含字母、数字和下划线";
+    }
+    if (
+        snapshot.members.some(
+            (item) =>
+                item.member_id !== member.member_id &&
+                item.cube_name === member.cube_name &&
+                item.member_name === memberName,
+        )
+    ) {
+        return "同一 Cube 内成员编码不能重复";
+    }
+    return null;
+}
+
+export function renameSemanticMemberReferences(
+    snapshot: SemanticSnapshot,
+    previousMember: SemanticMember,
+    nextMember: SemanticMember,
+): SemanticSnapshot {
+    const previousQualifiedName = `${previousMember.cube_name}.${previousMember.member_name}`;
+    const nextQualifiedName = `${nextMember.cube_name}.${nextMember.member_name}`;
+    const bareNameReplacement =
+        previousMember.cube_name === nextMember.cube_name
+            ? nextMember.member_name
+            : nextQualifiedName;
+    const replaceDependency = (value: string): string => {
+        if (value === previousMember.member_id) return nextMember.member_id;
+        if (value === previousQualifiedName) return nextQualifiedName;
+        if (value === previousMember.member_name) return bareNameReplacement;
+        return value;
+    };
+    const replaceRelationId = (value: string): string =>
+        value === previousMember.member_id ? nextMember.member_id : value;
+
+    return {
+        ...snapshot,
+        members: snapshot.members.map((member) => {
+            if (member.member_id === previousMember.member_id) return { ...nextMember };
+            if (!member.measure) return member;
+            return {
+                ...member,
+                measure: {
+                    ...member.measure,
+                    dependency_members: member.measure.dependency_members.map(
+                        replaceDependency,
+                    ),
+                },
+            };
+        }),
+        metric_equivalence_groups: snapshot.metric_equivalence_groups?.map((group) => ({
+            ...group,
+            canonical_member_id: replaceRelationId(group.canonical_member_id),
+            members: group.members.map((member) => ({
+                ...member,
+                member_id: replaceRelationId(member.member_id),
+            })),
+        })),
+        metric_attachments: snapshot.metric_attachments?.map((attachment) => ({
+            ...attachment,
+            primary_member_id: replaceRelationId(attachment.primary_member_id),
+            attached_member_id: replaceRelationId(attachment.attached_member_id),
+        })),
     };
 }
 
