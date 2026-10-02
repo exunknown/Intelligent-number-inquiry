@@ -1,9 +1,26 @@
 """查询会话消息接口模型。"""
 
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class MetricDisplayEntryResponse(BaseModel):
+    """Strict public shape for structured metrics; unknown fields are discarded."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    member_id: str
+    title: str
+    role: Literal["primary", "attached"] | None = None
+    source_member_id: str | None = None
+
+
+MetricDisplayItemResponse = Annotated[
+    str | MetricDisplayEntryResponse,
+    Field(union_mode="left_to_right"),
+]
 
 
 class QueryMessageResponse(BaseModel):
@@ -17,7 +34,7 @@ class QueryMessageResponse(BaseModel):
     content: str
     status: str
     steps: dict[str, str] | None
-    metrics: list[str | dict[str, str | None]] | None
+    metrics: list[MetricDisplayItemResponse] | None
     query_mode: str | None
     route_reason: str | None
     result_preview: Any

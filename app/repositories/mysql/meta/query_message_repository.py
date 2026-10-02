@@ -6,6 +6,7 @@ from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.entities.metric_display import safe_metric_display_items
 from app.entities.query_message import QueryMessage, QueryMessageSnapshot
 from app.models.query_message import QueryMessageMySQL
 from app.models.query_session import QuerySessionMySQL
@@ -33,7 +34,11 @@ class QueryMessageRepository:
             content=model.content,
             status=model.status,
             steps=model.steps_json,
-            metrics=model.metrics_json,
+            metrics=(
+                safe_metric_display_items(model.metrics_json)
+                if model.metrics_json is not None
+                else None
+            ),
             query_mode=model.query_mode,
             route_reason=model.route_reason,
             result_preview=model.result_preview_json,

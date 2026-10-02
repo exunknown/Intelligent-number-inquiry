@@ -4,7 +4,7 @@
  * （靛青边条「批注」样式，附在助手气泡上方；展开后内部小节用分隔线分区，不再套卡片）
  */
 import { ChevronDown, Route } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StepRail } from "./StepRail";
 import { cn } from "../lib/format";
 import { attachedMetricEntries, metricLabel } from "../lib/metricDisplay";
@@ -31,8 +31,6 @@ export function AnalysisPanel({
 }: AnalysisPanelProps) {
     const [open, setOpen] = useState(false);
 
-    if (steps.length === 0 && !queryMode) return null;
-
     const runningStep = steps.find((item) => item.status === "running")?.step ?? null;
     const doneCount = steps.filter((item) => item.status === "success").length;
     const attachedMetrics = attachedMetricEntries(metrics);
@@ -40,6 +38,18 @@ export function AnalysisPanel({
     const allAttachedVisible = attachedMetrics.every(
         (metric) => !hiddenAttachedMetricIds.has(metric.member_id),
     );
+    const isPartiallyVisible =
+        attachedMetrics.some((metric) => !hiddenAttachedMetricIds.has(metric.member_id)) &&
+        !allAttachedVisible;
+    const allAttachedCheckboxRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (allAttachedCheckboxRef.current) {
+            allAttachedCheckboxRef.current.indeterminate = isPartiallyVisible;
+        }
+    }, [isPartiallyVisible]);
+
+    if (steps.length === 0 && !queryMode) return null;
 
     const summary = runningStep
         ? `正在执行：${runningStep}`
@@ -112,8 +122,16 @@ export function AnalysisPanel({
                                 <div className="mt-3 space-y-2 border-t border-ink/10 pt-3">
                                     <label className="flex items-center gap-2 text-xs font-semibold text-ink/75">
                                         <input
+                                            ref={allAttachedCheckboxRef}
                                             type="checkbox"
                                             checked={allAttachedVisible}
+                                            aria-checked={
+                                                isPartiallyVisible
+                                                    ? "mixed"
+                                                    : allAttachedVisible
+                                                      ? "true"
+                                                      : "false"
+                                            }
                                             onChange={(event) =>
                                                 onToggleAllAttachedMetrics?.(event.target.checked)
                                             }

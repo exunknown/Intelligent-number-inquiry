@@ -25,6 +25,10 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
         [],
     );
 
+    useEffect(() => {
+        setHiddenAttachedMetricIds(new Set());
+    }, [message.id]);
+
     const copy = async () => {
         const text =
             message.result !== undefined ? toClipboardText(message.result) : message.content;

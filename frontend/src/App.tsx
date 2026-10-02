@@ -31,6 +31,7 @@ import {
     type QuerySessionSummary,
 } from "./lib/agentApi";
 import { cn, summarizeResult } from "./lib/format";
+import { sanitizeMetricItems } from "./lib/metricDisplay";
 import { hydrateSessionMessages } from "./lib/sessionHydration";
 import { capabilityPresentation, shouldAutoScrollChat } from "./lib/userManagement";
 import type { AgentEvent, ChatMessage, StepState } from "./types/agent";
@@ -389,7 +390,7 @@ export default function App({ username }: AppProps) {
                         case "metrics":
                             return {
                                 ...message,
-                                metrics: event.data,
+                                metrics: sanitizeMetricItems(event.data),
                             };
                         case "route":
                             return {

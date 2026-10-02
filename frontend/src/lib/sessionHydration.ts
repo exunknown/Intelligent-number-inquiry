@@ -1,5 +1,6 @@
 import type {
     ChatMessage,
+    MetricDisplayEntry,
     ProgressStatus,
     QueryMode,
     StepState,
@@ -10,6 +11,37 @@ import type {
     QuerySessionDetail,
     QuerySessionMessage,
 } from "./agentApi";
+
+function sanitizeMetricItems(value: unknown): ChatMessage["metrics"] {
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((item): NonNullable<ChatMessage["metrics"]> => {
+        if (typeof item === "string") return [item];
+        if (!item || typeof item !== "object") return [];
+        const candidate = item as Record<string, unknown>;
+        if (
+            typeof candidate.member_id !== "string" ||
+            !candidate.member_id ||
+            typeof candidate.title !== "string" ||
+            !candidate.title
+        ) {
+            return [];
+        }
+        const safe: MetricDisplayEntry = {
+            member_id: candidate.member_id,
+            title: candidate.title,
+        };
+        if (candidate.role === "primary" || candidate.role === "attached") {
+            safe.role = candidate.role;
+        }
+        if (
+            candidate.source_member_id === null ||
+            typeof candidate.source_member_id === "string"
+        ) {
+            safe.source_member_id = candidate.source_member_id;
+        }
+        return [safe];
+    });
+}
 
 function messageTime(value: string) {
     const parsed = new Date(value).getTime();
@@ -62,7 +94,7 @@ function hydrateQueryMessage(message: QueryMessageResponse): ChatMessage {
     return {
         ...base,
         steps: hydrateSteps(message.steps, createdAt),
-        metrics: message.metrics ?? undefined,
+        metrics: message.metrics ? sanitizeMetricItems(message.metrics) : undefined,
         queryMode: queryMode(message.query_mode),
         routeReason: message.route_reason ?? undefined,
         ...(message.result_preview !== null && message.result_preview !== undefined

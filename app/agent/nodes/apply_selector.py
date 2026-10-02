@@ -7,7 +7,7 @@ from copy import deepcopy
 from langgraph.runtime import Runtime
 
 from app.agent.context import DataAgentContext
-from app.agent.metric_display import metric_display_entries
+from app.agent.metric_display import legacy_metric_display_entries
 from app.agent.selector import SelectorDecision
 from app.agent.state import (
     DataAgentState,
@@ -79,7 +79,7 @@ async def apply_selector(state: DataAgentState, runtime: Runtime[DataAgentContex
         writer(
             {
                 "type": "metrics",
-                "data": metric_display_entries(state),
+                "data": legacy_metric_display_entries(state),
             }
         )
         writer({"type": "progress", "step": step, "status": "success"})

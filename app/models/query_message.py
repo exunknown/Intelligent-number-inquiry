@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.entities.metric_display import MetricDisplayItem
 from app.models.base import Base
 
 
@@ -33,7 +34,7 @@ class QueryMessageMySQL(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     steps_json: Mapped[dict[str, str] | None] = mapped_column(JSON, nullable=True)
-    metrics_json: Mapped[list[str | dict[str, str | None]] | None] = mapped_column(
+    metrics_json: Mapped[list[MetricDisplayItem] | None] = mapped_column(
         JSON, nullable=True
     )
     query_mode: Mapped[str | None] = mapped_column(String(16), nullable=True)

@@ -23,8 +23,10 @@ def metric_display_entry(
     }
 
 
-def metric_display_entries(state: Mapping[str, object]) -> list[dict[str, str | None]]:
-    """Return unique primary/attached metric entries from governed state."""
+def governed_metric_display_entries(
+    state: Mapping[str, object],
+) -> list[dict[str, str | None]]:
+    """Project only the permission-filtered, relation-normalized metric state."""
 
     primary = state.get("resolved_primary_metric")
     attached = state.get("resolved_attached_metrics", [])
@@ -45,6 +47,16 @@ def metric_display_entries(state: Mapping[str, object]) -> list[dict[str, str | 
             seen.add(member.name)
         return entries
 
+    return entries
+
+
+def legacy_metric_display_entries(
+    state: Mapping[str, object],
+) -> list[dict[str, str | None]]:
+    """Project recalled measures for pre-governance selector/SQL display only."""
+
+    entries: list[dict[str, str | None]] = []
+    seen: set[str] = set()
     for member in state.get("retrieved_cube_measures", []):
         if not isinstance(member, CubeMember) or member.name in seen:
             continue

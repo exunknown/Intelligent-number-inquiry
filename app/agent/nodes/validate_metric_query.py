@@ -5,7 +5,7 @@ from dataclasses import replace
 from langgraph.runtime import Runtime
 
 from app.agent.context import DataAgentContext
-from app.agent.metric_display import metric_display_entries
+from app.agent.metric_display import governed_metric_display_entries
 from app.agent.metric_query import validate_metric_query_result
 from app.agent.state import DataAgentState
 from app.conf.app_config import app_config
@@ -182,7 +182,7 @@ async def validate_metric_query(
     runtime.stream_writer(
         {
             "type": "metrics",
-            "data": metric_display_entries({**state, **relation_state}),
+            "data": governed_metric_display_entries({**state, **relation_state}),
         }
     )
     runtime.stream_writer(
