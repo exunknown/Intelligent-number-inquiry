@@ -42,12 +42,16 @@ from app.repositories.mysql.meta.query_audit_repository import QueryAuditReposit
 from app.repositories.mysql.meta.query_export_repository import QueryExportRepository
 from app.repositories.mysql.meta.query_message_repository import QueryMessageRepository
 from app.repositories.mysql.meta.query_session_repository import QuerySessionRepository
+from app.repositories.mysql.meta.semantic_model_repository import (
+    SemanticModelRepository,
+)
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
 )
 from app.repositories.redis.sse_event_repository import SSEEventRepository
 from app.security.sql_policy import SQLPolicyEngine
+from app.services.semantic_metric_relation_service import SemanticMetricRelationService
 
 _AUDIT_EVENT_FIELDS = (
     "query_mode",
@@ -198,6 +202,8 @@ class QueryService:
         query_export_repository: QueryExportRepository | None = None,
         result_object_store: ResultObjectStore | None = None,
         metadata_release_repository: MetadataReleaseRepository | None = None,
+        semantic_model_repository: SemanticModelRepository | None = None,
+        semantic_metric_relation_service: SemanticMetricRelationService | None = None,
         metric_candidate_repository: MetricCandidateRepository | None = None,
         sql_fallback_repository: SQLFallbackRepository | None = None,
         sql_policy_engine: SQLPolicyEngine | None = None,
@@ -217,6 +223,10 @@ class QueryService:
         self.query_export_repository = query_export_repository
         self.result_object_store = result_object_store
         self.metadata_release_repository = metadata_release_repository
+        self.semantic_model_repository = semantic_model_repository
+        self.semantic_metric_relation_service = (
+            semantic_metric_relation_service or SemanticMetricRelationService()
+        )
         self.metric_candidate_repository = metric_candidate_repository
         self.sql_fallback_repository = sql_fallback_repository
         self.sql_policy_engine = sql_policy_engine
@@ -307,6 +317,7 @@ class QueryService:
         principal: QueryPrincipal,
         lease: AdmissionLease | None = None,
         session_id: str | None = None,
+        include_attached_metrics: bool = True,
     ):
         """Execute one graph run and yield SSE-formatted events."""
 
@@ -339,6 +350,15 @@ class QueryService:
         if self.meta_mysql_repository is not None:
             self.meta_mysql_repository.set_release_version(metadata_release_version)
 
+        semantic_model_snapshot = None
+        if self.semantic_model_repository is not None:
+            try:
+                semantic_model_snapshot = (
+                    await self.semantic_model_repository.get_active_snapshot()
+                )
+            except Exception:
+                logger.warning("Failed to read active semantic model snapshot")
+
         request_id = str(request_id_ctx_var.get())
         user_message_persisted = False
         if self.query_message_repository is not None and session_id is not None:
@@ -353,7 +373,10 @@ class QueryService:
             except Exception:
                 logger.warning("Failed to save query user message")
 
-        state = DataAgentState(query=query)
+        state = DataAgentState(
+            query=query,
+            include_attached_metrics=include_attached_metrics,
+        )
         context = DataAgentContext(
             column_qdrant_repository=self.column_qdrant_repository,
             embedding_client=self.embedding_client,
@@ -369,6 +392,11 @@ class QueryService:
             resource_budget=budget,
             dependency_breakers=get_dependency_breakers(),
         )
+        if semantic_model_snapshot is not None:
+            context["semantic_model_snapshot"] = semantic_model_snapshot
+            context["semantic_metric_relation_service"] = (
+                self.semantic_metric_relation_service
+            )
         usage_callback = LLMUsageCallbackHandler()
         started_at = perf_counter()
         audit = {

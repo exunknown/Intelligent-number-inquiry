@@ -61,6 +61,7 @@ from app.services.authorization_service import (
 from app.services.metric_candidate_service import MetricCandidateService
 from app.services.metric_catalog_service import MetricCatalogService
 from app.services.query_service import QueryService
+from app.services.semantic_metric_relation_service import SemanticMetricRelationService
 from app.services.semantic_model_service import SemanticModelService
 
 _authorization_cache_state = AuthorizationCacheState()
@@ -179,6 +180,12 @@ async def get_semantic_model_service(
     """组装语义模型治理服务。"""
 
     return SemanticModelService(repository)
+
+
+async def get_semantic_metric_relation_service() -> SemanticMetricRelationService:
+    """创建请求级无状态指标关系解析器。"""
+
+    return SemanticMetricRelationService()
 
 
 async def get_authz_policy_repository(
@@ -365,6 +372,13 @@ async def get_query_service(
     metadata_release_repository: Annotated[
         MetadataReleaseRepository, Depends(get_metadata_release_repository)
     ],
+    semantic_model_repository: Annotated[
+        SemanticModelRepository, Depends(get_semantic_model_repository)
+    ],
+    semantic_metric_relation_service: Annotated[
+        SemanticMetricRelationService,
+        Depends(get_semantic_metric_relation_service),
+    ],
     metric_candidate_repository: Annotated[
         MetricCandidateRepository, Depends(get_metric_candidate_repository)
     ],
@@ -391,6 +405,8 @@ async def get_query_service(
         query_export_repository=query_export_repository,
         result_object_store=result_object_store,
         metadata_release_repository=metadata_release_repository,
+        semantic_model_repository=semantic_model_repository,
+        semantic_metric_relation_service=semantic_metric_relation_service,
         metric_candidate_repository=metric_candidate_repository,
         sql_fallback_repository=sql_fallback_repository,
         sql_policy_engine=sql_policy_engine,

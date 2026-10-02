@@ -136,6 +136,7 @@ class DataAgentState(TypedDict):
     cube_member_catalog: dict[str, CubeMember]  # 当前同步版本的完整成员目录
     resolved_primary_metric: NotRequired[CubeMember]  # 语义关系解析后的主指标
     resolved_attached_metrics: NotRequired[list[CubeMember]]  # 一跳展开后的附带指标
+    include_attached_metrics: bool  # 是否展开默认展示的一跳附带指标
     metric_query_raw: dict  # 通过严格结构校验的模型原始输出
     metric_query_decision: MetricQueryDecision  # 确定性校验后的指标查询决策
     cube_query: dict  # 可直接发送给 Cube 的查询对象

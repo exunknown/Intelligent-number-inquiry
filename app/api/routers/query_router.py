@@ -70,6 +70,7 @@ async def query_handler(
                 principal=principal,
                 lease=lease,
                 session_id=query.session_id,
+                include_attached_metrics=query.include_attached_metrics,
             ):
                 yield chunk
         finally:

@@ -183,7 +183,10 @@ if __name__ == "__main__":
                 value_es_repository = ValueESRepository(es_manager.client)
 
                 # 当前只需要传入原始问题，后续节点会逐步写回召回、过滤和额外上下文结果
-                state = DataAgentState(query="统计华北地区的销售总额")
+                state = DataAgentState(
+                    query="统计华北地区的销售总额",
+                    include_attached_metrics=True,
+                )
                 context = DataAgentContext(
                     column_qdrant_repository=column_qdrant_repository,
                     embedding_client=embedding_manager.client,
