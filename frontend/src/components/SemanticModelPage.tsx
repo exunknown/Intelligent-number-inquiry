@@ -14,7 +14,7 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { buildSemanticMemberId, createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, mergeSemanticMemberSummaries, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticMemberName, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
+import { buildSemanticMemberId, createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, mergeSemanticMemberSummaries, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticMemberName, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
 import { nextFocusableIndex } from "../lib/userManagement";
 import { SemanticMemberEditor } from "./SemanticMemberEditor";
 import { SemanticMemberList } from "./SemanticMemberList";
@@ -60,6 +60,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const [draft, setDraft] = useState<SemanticDraft | null>(null);
     const [releases, setReleases] = useState<SemanticRelease[]>([]);
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [pendingNewMemberIds, setPendingNewMemberIds] = useState<string[]>([]);
     const [replacedMemberIds, setReplacedMemberIds] = useState<string[]>([]);
     const [createMemberType, setCreateMemberType] = useState<CreateMemberType | null>(null);
     const [createCubeName, setCreateCubeName] = useState("");
@@ -143,6 +144,13 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         updateWorkingSnapshot((currentSnapshot) =>
             renameSemanticMemberReferences(currentSnapshot, current, nextMember),
         );
+        setPendingNewMemberIds((currentIds) =>
+            renamePendingSemanticMemberId(
+                currentIds,
+                current.member_id,
+                nextMember.member_id,
+            ),
+        );
         setReplacedMemberIds((currentIds) =>
             currentIds.includes(current.member_id)
                 ? currentIds
@@ -212,6 +220,10 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         }
         const member = createDraftSemanticMember(workingSnapshot, memberType, cubeName);
         updateWorkingSnapshot((current) => ({ ...current, members: [...current.members, member] }));
+        setPendingNewMemberIds((currentIds) => [
+            ...currentIds,
+            member.member_id,
+        ]);
         setSelectedId(member.member_id);
         closeCreateDialog();
     };
@@ -223,7 +235,10 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         setDirty(false);
     };
 
-    const perform = async (action: () => Promise<SemanticOperation>, success: string) => {
+    const perform = async (
+        action: () => Promise<SemanticOperation>,
+        success: string,
+    ): Promise<SemanticOperation | null> => {
         setBusy(true);
         setError(null);
         try {
@@ -234,8 +249,10 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             await load();
             if (result.status === "failed") setError(formatSemanticModelError({ status: 422, message: result.error_code ?? "操作未完成" }));
             else if (success) setError(null);
+            return result;
         } catch (actionError) {
             setError(formatSemanticModelError(actionError));
+            return null;
         } finally {
             setBusy(false);
         }
@@ -261,7 +278,10 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         const missingRequiredField = workingSnapshot.members
             .map((member) => ({
                 member,
-                message: validateNewSemanticMemberFields(member),
+                message: validateNewSemanticMemberFields(
+                    member,
+                    pendingNewMemberIds.includes(member.member_id),
+                ),
             }))
             .find((item) => item.message);
         if (missingRequiredField?.message) {
@@ -272,10 +292,13 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         }
         const reason = "更新指标和维度治理草稿";
         const payload = asPayload(workingSnapshot, reason);
-        await perform(async () => {
+        const result = await perform(async () => {
             if (draft) return updateSemanticDraft(draft.draft_id, payload);
             return createSemanticDraft(payload);
         }, "");
+        if (result && result.status !== "failed") {
+            setPendingNewMemberIds([]);
+        }
     };
 
     const requireDraft = () => {
@@ -296,6 +319,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         if (dirty && !window.confirm("当前指标治理草稿尚未保存，切换筛选会丢失修改，确定继续吗？")) return;
         setDraft(null);
         setDirty(false);
+        setPendingNewMemberIds([]);
         setReplacedMemberIds([]);
         setFilters(nextFilters);
     };
@@ -304,6 +328,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         if (dirty && !window.confirm("当前指标治理草稿尚未保存，刷新会丢失修改，确定继续吗？")) return;
         setDraft(null);
         setDirty(false);
+        setPendingNewMemberIds([]);
         setReplacedMemberIds([]);
         void load();
     };

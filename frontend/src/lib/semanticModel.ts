@@ -253,15 +253,26 @@ export function validateSemanticMemberName(
 export function validateNewSemanticMemberFields(
     member: Pick<
         SemanticMember,
-        "member_type" | "status" | "source_column_id" | "measure"
+        "member_type" | "source_column_id" | "measure"
     >,
+    isNewMember: boolean,
 ): string | null {
-    if (member.status !== "draft") return null;
+    if (!isNewMember) return null;
     if (!member.source_column_id?.trim()) return "源字段 ID为必填项";
     if (member.member_type === "measure" && !member.measure?.expression.trim()) {
         return "表达式为必填项";
     }
     return null;
+}
+
+export function renamePendingSemanticMemberId(
+    pendingMemberIds: readonly string[],
+    previousMemberId: string,
+    nextMemberId: string,
+): string[] {
+    return pendingMemberIds.map((memberId) =>
+        memberId === previousMemberId ? nextMemberId : memberId,
+    );
 }
 
 export function renameSemanticMemberReferences(
@@ -286,20 +297,44 @@ export function renameSemanticMemberReferences(
         }
         return value;
     };
+    const replaceExpressionReferences = (
+        expression: string,
+        dependentCubeName: string,
+    ): string =>
+        expression.replace(/\{([^{}]+)\}/g, (reference, memberReference: string) => {
+            if (memberReference === previousQualifiedName) {
+                return `{${nextQualifiedName}}`;
+            }
+            if (
+                memberReference === previousMember.member_name &&
+                dependentCubeName === previousMember.cube_name
+            ) {
+                return `{${bareNameReplacement}}`;
+            }
+            return reference;
+        });
     const replaceRelationId = (value: string): string =>
         value === previousMember.member_id ? nextMember.member_id : value;
 
     return {
         ...snapshot,
         members: snapshot.members.map((member) => {
-            if (member.member_id === previousMember.member_id) return { ...nextMember };
-            if (!member.measure) return member;
+            const isRenamedMember = member.member_id === previousMember.member_id;
+            const nextSnapshotMember = isRenamedMember ? nextMember : member;
+            if (!nextSnapshotMember.measure) return nextSnapshotMember;
+            const dependentCubeName = isRenamedMember
+                ? previousMember.cube_name
+                : member.cube_name;
             return {
-                ...member,
+                ...nextSnapshotMember,
                 measure: {
-                    ...member.measure,
-                    dependency_members: member.measure.dependency_members.map(
-                        (value) => replaceDependency(value, member.cube_name),
+                    ...nextSnapshotMember.measure,
+                    expression: replaceExpressionReferences(
+                        nextSnapshotMember.measure.expression,
+                        dependentCubeName,
+                    ),
+                    dependency_members: nextSnapshotMember.measure.dependency_members.map(
+                        (value) => replaceDependency(value, dependentCubeName),
                     ),
                 },
             };
