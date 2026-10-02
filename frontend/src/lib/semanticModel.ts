@@ -329,7 +329,7 @@ export function copySemanticMeasure(
         member_name: copiedName,
     });
     const copiedMember: SemanticMember = {
-        ...sourceMember,
+        ...structuredClone(sourceMember),
         member_id: copiedMemberId,
         member_name: copiedName,
         title: sourceMember.title ? `${sourceMember.title} 副本` : `${copiedName} 副本`,
@@ -412,7 +412,7 @@ function measureDefinitionSignature(member: SemanticMember): string {
     return JSON.stringify({
         expression: member.measure?.expression ?? null,
         aggregation_type: member.measure?.aggregation_type ?? null,
-        dependency_members: member.measure?.dependency_members ?? [],
+        dependency_members: [...(member.measure?.dependency_members ?? [])].sort(),
         source_column_id: member.source_column_id ?? null,
         data_type: member.data_type ?? null,
     });
