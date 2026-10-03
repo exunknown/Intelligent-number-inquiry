@@ -1,6 +1,6 @@
 /**
  * Tailwind CSS 主题配置
- * 「数字账房」设计基座：账纸 / 黛蓝 / 朱砂色板，衬线报表字体
+ * 「数字账房」设计基座：冷白数据终端色板，衬线报表字体
  */
 import type { Config } from "tailwindcss";
 
@@ -26,17 +26,20 @@ export default {
                 mono: ['"JetBrains Mono"', '"SFMono-Regular"', "Consolas", "monospace"],
             },
             colors: {
-                paper: "#F4F5F1",
-                ink: "#23282F",
-                dai: "#212C3E",
-                cinnabar: "#C4402B",
-                pine: "#2F7D5C",
-                indigo: "#2F4E7A",
-                oxide: "#8E3226",
+                paper: "#F5F7FA",
+                canvas: "#EAF0F4",
+                workbench: "#EEF7FB",
+                ink: "#1F2937",
+                dai: "#155E75",
+                cinnabar: "#0E7490",
+                pine: "#21856F",
+                indigo: "#256D85",
+                amber: "#C47A18",
+                oxide: "#C24156",
             },
             boxShadow: {
-                line: "0 1px 2px rgba(35, 40, 47, 0.08), 0 6px 16px rgba(35, 40, 47, 0.07)",
-                panel: "0 24px 70px rgba(33, 44, 62, 0.14)",
+                line: "0 1px 2px rgba(31, 41, 55, 0.08), 0 6px 16px rgba(31, 41, 55, 0.07)",
+                panel: "0 24px 70px rgba(15, 61, 76, 0.14)",
             },
         },
     },
