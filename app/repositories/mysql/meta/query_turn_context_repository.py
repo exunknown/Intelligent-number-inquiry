@@ -1,13 +1,12 @@
 """查询轮次上下文仓储。"""
 
-import json
-
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.entities.query_turn_context import QueryTurnContext
 from app.models.query_turn_context import QueryTurnContextMySQL
+from app.services.conversation_context import ConversationContextBuilder
 
 
 class QueryTurnContextRepository:
@@ -34,27 +33,11 @@ class QueryTurnContextRepository:
             created_at=model.created_at,
         )
 
-    @staticmethod
-    def _payload(context: QueryTurnContext) -> dict[str, object]:
-        return {
-            "effective_query": context.effective_query,
-            "query_mode": context.query_mode,
-            "context": context.context,
-            "result_summary": context.result_summary,
-            "metadata_release_version": context.metadata_release_version,
-            "created_at": context.created_at.isoformat(),
-        }
-
     @classmethod
     def _serialized_length(cls, contexts: list[QueryTurnContext]) -> int:
         return len(
             "\n".join(
-                json.dumps(
-                    cls._payload(context),
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                    sort_keys=True,
-                )
+                ConversationContextBuilder.serialize_context(context)
                 for context in contexts
             )
         )
@@ -66,12 +49,7 @@ class QueryTurnContextRepository:
         args = getattr(original, "args", ())
         values.extend(str(value) for value in args)
         message = " ".join(values).lower()
-        return (
-            "1062" in message and ("duplicate" in message or "unique" in message)
-        ) or (
-            "duplicate" in message
-            and ("request_id" in message or "uq_query_turn_context_request" in message)
-        )
+        return "request_id" in message or "uq_query_turn_context_request" in message
 
     async def list_recent_successful(
         self,

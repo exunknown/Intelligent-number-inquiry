@@ -32,6 +32,26 @@ class ConversationContextBuilder:
             "secret",
             "password",
             "authorization",
+            "connection",
+            "connection_info",
+            "connection_string",
+            "database",
+            "database_url",
+            "db",
+            "db_host",
+            "db_url",
+            "data",
+            "dsn",
+            "full_result",
+            "host",
+            "hostname",
+            "items",
+            "port",
+            "raw_result",
+            "records",
+            "result",
+            "result_rows",
+            "rows",
         }
     )
     _ALLOWED_FIELDS = (
@@ -64,20 +84,35 @@ class ConversationContextBuilder:
         return value
 
     @classmethod
-    def _payload(cls, context: QueryTurnContext) -> dict[str, object]:
-        return {
-            "effective_query": cls._sanitize_value(context.effective_query),
-            "query_mode": cls._sanitize_value(context.query_mode),
-            "context": cls._sanitize_value(context.context),
-            "result_summary": cls._sanitize_value(context.result_summary),
-            "metadata_release_version": cls._sanitize_value(
-                context.metadata_release_version
-            ),
-            "created_at": cls._sanitize_value(context.created_at),
-        }
+    def _sanitize_result_summary(cls, value: Any) -> dict[str, object] | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            return {}
+        result: dict[str, object] = {}
+        for key, item in value.items():
+            normalized_key = cls._normalize_key(key)
+            if normalized_key in cls._SENSITIVE_KEYS:
+                continue
+            sanitized = cls._sanitize_value(item)
+            if isinstance(sanitized, (str, int, float, bool)) or sanitized is None:
+                result[str(key)] = sanitized
+        return result
 
     @classmethod
-    def _serialize(cls, context: QueryTurnContext) -> str:
+    def _payload(cls, context: QueryTurnContext) -> dict[str, object]:
+        payload: dict[str, object] = {}
+        for field in cls._ALLOWED_FIELDS:
+            value = getattr(context, field)
+            payload[field] = (
+                cls._sanitize_result_summary(value)
+                if field == "result_summary"
+                else cls._sanitize_value(value)
+            )
+        return payload
+
+    @classmethod
+    def serialize_context(cls, context: QueryTurnContext) -> str:
         return json.dumps(
             cls._payload(context),
             ensure_ascii=False,
@@ -97,7 +132,7 @@ class ConversationContextBuilder:
         candidates = contexts[-3:]
         selected: list[str] = []
         for context in reversed(candidates):
-            serialized = cls._serialize(context)
+            serialized = cls.serialize_context(context)
             candidate = [serialized, *selected]
             prompt_context = "\n".join(candidate)
             if len(prompt_context) > max_chars:
@@ -117,8 +152,13 @@ class ConversationContextBuilder:
             raise ValueError("unsupported conversation mode")
         if not resolution.effective_query.strip():
             raise ValueError("effective query must not be blank")
+        context_ids = {context.context_id for context in contexts}
+        if (
+            resolution.inherited_context_id is not None
+            and resolution.inherited_context_id not in context_ids
+        ):
+            raise ValueError("inherited context is not available")
         if resolution.mode == "follow_up":
-            context_ids = {context.context_id for context in contexts}
-            if resolution.inherited_context_id not in context_ids:
+            if resolution.inherited_context_id is None:
                 raise ValueError("inherited context is not available")
         return resolution
