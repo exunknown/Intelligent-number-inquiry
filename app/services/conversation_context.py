@@ -55,6 +55,7 @@ class ConversationContextBuilder:
         }
     )
     _ALLOWED_FIELDS = (
+        "context_id",
         "effective_query",
         "query_mode",
         "context",
@@ -122,14 +123,17 @@ class ConversationContextBuilder:
 
     @classmethod
     def build_prompt_context(
-        cls, contexts: list[QueryTurnContext], max_chars: int
+        cls,
+        contexts: list[QueryTurnContext],
+        max_chars: int,
+        recent_turns: int = 3,
     ) -> str:
-        """保留最近三轮并按字符预算输出换行分隔的确定性 JSON。"""
+        """保留最近若干轮并按字符预算输出换行分隔的确定性 JSON。"""
 
-        if max_chars <= 0 or not contexts:
+        if max_chars <= 0 or recent_turns <= 0 or not contexts:
             return ""
 
-        candidates = contexts[-3:]
+        candidates = contexts[-recent_turns:]
         selected: list[str] = []
         for context in reversed(candidates):
             serialized = cls.serialize_context(context)

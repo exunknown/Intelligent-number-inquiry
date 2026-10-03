@@ -98,6 +98,7 @@ def _build_prompt(query: str, contexts: list[QueryTurnContext]) -> str:
     context_text = ConversationContextBuilder.build_prompt_context(
         contexts,
         app_config.conversation.max_context_chars,
+        recent_turns=app_config.conversation.recent_turns,
     )
     return "\n".join(
         (
