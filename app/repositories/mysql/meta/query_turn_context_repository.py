@@ -45,11 +45,15 @@ class QueryTurnContextRepository:
     @staticmethod
     def _is_duplicate_request_error(error: IntegrityError) -> bool:
         original = error.orig
-        values = [str(original), str(error)]
         args = getattr(original, "args", ())
-        values.extend(str(value) for value in args)
-        message = " ".join(values).lower()
-        return "request_id" in message or "uq_query_turn_context_request" in message
+        message = " ".join(str(value) for value in args).lower()
+        if not message:
+            message = str(original).lower()
+        return (
+            "1062" in message
+            and "duplicate" in message
+            and ("request_id" in message or "uq_query_turn_context_request" in message)
+        )
 
     async def list_recent_successful(
         self,
