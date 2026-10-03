@@ -19,6 +19,12 @@ _ALLOWED_ATTACHMENT_RELATION_TYPES = {
     "efficiency",
     "breakdown",
 }
+_ALLOWED_JOIN_RELATIONSHIPS = {
+    "many_to_one",
+    "one_to_many",
+    "one_to_one",
+    "many_to_many",
+}
 _ALLOWED_DIMENSION_TYPES = {"string", "number", "time"}
 _ALLOWED_FUNCTIONS = {"NULLIF"}
 _ALLOWED_TIME_TYPES = {"date", "datetime", "timestamp"}
@@ -526,13 +532,44 @@ class SemanticModelValidator:
         snapshot: SemanticModelSnapshot,
     ) -> list[ValidationIssue]:
         issues: list[ValidationIssue] = []
-        cube_names = {cube.cube_name for cube in snapshot.cubes}
+        cube_names: set[str] = set()
+        for index, cube in enumerate(snapshot.cubes):
+            cube_path = f"cubes[{index}]"
+            if not cube.cube_name.strip():
+                issues.append(
+                    ValidationIssue(
+                        "cube_name_required",
+                        f"{cube_path}.cube_name",
+                        "Cube 名称不能为空",
+                    )
+                )
+            if cube.cube_name in cube_names:
+                issues.append(
+                    ValidationIssue(
+                        "duplicate_cube_name",
+                        f"{cube_path}.cube_name",
+                        f"Cube 名称不能重复：{cube.cube_name}",
+                    )
+                )
+            else:
+                cube_names.add(cube.cube_name)
+            if not cube.sql_table.strip():
+                issues.append(
+                    ValidationIssue(
+                        "cube_sql_table_required",
+                        f"{cube_path}.sql_table",
+                        "Cube 来源表不能为空",
+                    )
+                )
+
+        join_pairs: set[tuple[str, str]] = set()
         for index, join in enumerate(snapshot.joins):
+            join_path = f"joins[{index}]"
             if join.cube_name not in cube_names:
                 issues.append(
                     ValidationIssue(
                         "join_source_cube_not_found",
-                        f"joins[{index}].cube_name",
+                        f"{join_path}.cube_name",
                         f"Join 来源 Cube 不存在：{join.cube_name}",
                     )
                 )
@@ -540,10 +577,54 @@ class SemanticModelValidator:
                 issues.append(
                     ValidationIssue(
                         "join_target_cube_not_found",
-                        f"joins[{index}].target_cube_name",
+                        f"{join_path}.target_cube_name",
                         f"Join 目标 Cube 不存在：{join.target_cube_name}",
                     )
                 )
+            if join.cube_name == join.target_cube_name:
+                issues.append(
+                    ValidationIssue(
+                        "join_self_reference",
+                        f"{join_path}.target_cube_name",
+                        "Join 来源 Cube 和目标 Cube 不能相同",
+                    )
+                )
+            if not join.sql_expression.strip():
+                issues.append(
+                    ValidationIssue(
+                        "join_expression_required",
+                        f"{join_path}.sql_expression",
+                        "Join 表达式不能为空",
+                    )
+                )
+            if not join.relationship.strip():
+                issues.append(
+                    ValidationIssue(
+                        "join_relationship_required",
+                        f"{join_path}.relationship",
+                        "Join 关系类型不能为空",
+                    )
+                )
+            elif join.relationship not in _ALLOWED_JOIN_RELATIONSHIPS:
+                issues.append(
+                    ValidationIssue(
+                        "join_relationship_invalid",
+                        f"{join_path}.relationship",
+                        "Join 关系类型不在允许范围内",
+                    )
+                )
+
+            pair = (join.cube_name, join.target_cube_name)
+            if pair in join_pairs:
+                issues.append(
+                    ValidationIssue(
+                        "duplicate_join",
+                        join_path,
+                        "相同来源和目标 Cube 的 Join 不能重复",
+                    )
+                )
+            else:
+                join_pairs.add(pair)
         return issues
 
     @staticmethod
