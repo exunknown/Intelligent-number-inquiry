@@ -23,6 +23,7 @@ import { SemanticBuildToolbar } from "./SemanticBuildToolbar";
 import { SemanticMemberEditDialog } from "./SemanticMemberEditDialog";
 import { SemanticReleasePanel } from "./SemanticReleasePanel";
 import { SemanticValidationPanel } from "./SemanticValidationPanel";
+import { SemanticVersionActionBar } from "./SemanticVersionActionBar";
 
 type SemanticModelPageProps = { onBack: () => void; onDirtyChange?: (dirty: boolean) => void };
 type Filters = { memberType: "all" | "measure" | "dimension" | "time_dimension"; query: string };
@@ -517,6 +518,8 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const activeRelease = releases.find((item) => item.active);
     const activeSnapshotReady = !activeRelease || activeSnapshot.release_version === activeRelease.release_version;
     const canPublish = draft?.status === "validated" && !dirty && !loading && !snapshotUnavailable && !publishBlocked && (!activeRelease || activeSnapshot.release_version === activeRelease.release_version);
+    const canRollback = !loading && !snapshotUnavailable && activeSnapshotReady;
+    const hasValidationErrors = operationIssues(operation).some((issue) => issue.severity === "error");
     const changeSummary = canPublish && activeSnapshotReady
         ? buildSemanticChangeSummary(activeRelease ? activeSnapshot : emptySnapshot, currentDraft)
         : null;
@@ -575,9 +578,27 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             <SemanticBuildToolbar tab={activeTab} query={filters.query} memberType={filters.memberType} count={visibleMembers.length} disabled={busy || loading || snapshotUnavailable} onQueryChange={(query) => setFilters((current) => ({ ...current, query }))} onMemberTypeChange={handleMemberTypeChange} onRefresh={refresh} onCreate={requestCreateMember} />
             <div className="min-h-0 flex-1 overflow-auto">
                 {activeTab === "metrics" ? <MetricBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={(memberId, trigger) => openEditMember(memberId, trigger)} onCopy={(memberId, trigger) => openCopyMember(memberId, trigger)} /> : <DimensionBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={(memberId, trigger) => openEditMember(memberId, trigger)} onCopy={(memberId, trigger) => openCopyMember(memberId, trigger)} />}
-                <div className="border-b border-ink/10 bg-paper px-5 py-6 lg:px-7">
-                    <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} canReview={draft?.status === "pending_review"} canPublish={canPublish} busy={busy} changeSummary={changeSummary ?? undefined} onValidate={() => { const current = requireDraft(); if (current) void perform(() => validateSemanticDraft(current.draft_id), ""); }} onSubmit={() => { const current = requireDraft(); if (current) void perform(() => submitSemanticDraft(current.draft_id, { reason: "提交语义模型审核" }), ""); }} onReview={(decision) => { const current = requireDraft(); if (current) void perform(() => reviewSemanticDraft(current.draft_id, { decision, reason: decision === "approved" ? "审核通过" : "审核驳回" }), ""); }} onPublish={() => void handlePublish()} />
-                    <SemanticReleasePanel releases={releases} activeVersion={activeRelease?.release_version ?? null} activeSnapshot={snapshotUnavailable || !activeSnapshotReady ? null : activeSnapshot} disabled={busy || loading || snapshotUnavailable || !activeSnapshotReady} dirty={dirty} onRollback={handleRollback} />
+                <div className="border-b border-ink/10 bg-paper">
+                    <div className="px-5 py-6 lg:px-7">
+                        <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} changeSummary={changeSummary ?? undefined} />
+                    </div>
+                    <SemanticReleasePanel releases={releases} activeVersion={activeRelease?.release_version ?? null} activeSnapshot={snapshotUnavailable || !activeSnapshotReady ? null : activeSnapshot} />
+                    <SemanticVersionActionBar
+                        releases={releases}
+                        draftStatus={draft?.status ?? null}
+                        dirty={dirty}
+                        busy={busy}
+                        canReview={draft?.status === "pending_review"}
+                        canPublish={canPublish}
+                        canRollback={canRollback}
+                        hasValidationErrors={hasValidationErrors}
+                        onSave={save}
+                        onValidate={() => { const current = requireDraft(); if (current) void perform(() => validateSemanticDraft(current.draft_id), ""); }}
+                        onSubmit={() => { const current = requireDraft(); if (current) void perform(() => submitSemanticDraft(current.draft_id, { reason: "提交语义模型审核" }), ""); }}
+                        onReview={(decision) => { const current = requireDraft(); if (current) void perform(() => reviewSemanticDraft(current.draft_id, { decision, reason: decision === "approved" ? "审核通过" : "审核驳回" }), ""); }}
+                        onPublish={() => void handlePublish()}
+                        onRollback={handleRollback}
+                    />
                 </div>
             </div>
             {memberDialog && (
