@@ -17,6 +17,10 @@ export function semanticMemberTypesForBuildTab(
     return tab === "dimensions" ? ["dimension", "time_dimension"] : ["measure"];
 }
 
+export function semanticDirectoryLoadAllowed(dirty: boolean): boolean {
+    return !dirty;
+}
+
 export function isAgentManagementPath(pathname: string): boolean {
     return pathname === "/semantic-model" || pathname.startsWith("/agent-management/");
 }

@@ -14,7 +14,7 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { buildSemanticChangeSummary, buildSemanticMemberId, copySemanticMeasure, createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, semanticMemberTypesForBuildTab, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticMemberName, type SemanticBuildTab, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
+import { buildSemanticChangeSummary, buildSemanticMemberId, copySemanticMeasure, createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, semanticDirectoryLoadAllowed, semanticMemberTypesForBuildTab, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticMemberName, type SemanticBuildTab, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
 import { nextFocusableIndex } from "../lib/userManagement";
 import { SemanticMemberEditor } from "./SemanticMemberEditor";
 import { AgentManagementTabs } from "./AgentManagementTabs";
@@ -81,6 +81,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const createDialogRef = useRef<HTMLDivElement | null>(null);
     const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
     const createTriggerRef = useRef<HTMLButtonElement | null>(null);
+    const buildActionTriggerRef = useRef<HTMLButtonElement | null>(null);
 
     const load = async () => {
         const generation = requestGateRef.current.start();
@@ -129,7 +130,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         }, 280);
         return () => window.clearTimeout(timer);
     }, [filters.query]);
-    useEffect(() => { void load(); }, [filters.memberType, directoryQuery]);
+    useEffect(() => { if (semanticDirectoryLoadAllowed(dirty)) void load(); }, [filters.memberType, directoryQuery, dirty]);
     useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
 
     const workingSnapshot = draft?.snapshot ?? snapshot;
@@ -197,7 +198,8 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         }));
     };
 
-    const copyMeasure = (memberId: string) => {
+    const copyMeasure = (memberId: string, trigger?: HTMLButtonElement) => {
+        buildActionTriggerRef.current = trigger ?? null;
         try {
             beginLocalEdit();
             const baseSnapshot = draft?.snapshot ?? snapshot;
@@ -421,6 +423,10 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         await perform(() => publishSemanticDraft(current.draft_id, { reason: "发布语义模型版本" }), "");
         setBusy(false);
     };
+    const selectBuildMember = (memberId: string, trigger?: HTMLButtonElement) => {
+        buildActionTriggerRef.current = trigger ?? null;
+        setSelectedId(memberId);
+    };
     const selectedMember = currentDraft.members.find((member) => member.member_id === selectedId) ?? null;
     const normalizedQuery = filters.query.trim().toLowerCase();
     const visibleMembers = currentDraft.members.filter((member) => {
@@ -448,7 +454,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             <AgentManagementTabs activeTab={activeTab} onChange={handleTabChange} disabled={busy} />
             <SemanticBuildToolbar tab={activeTab} query={filters.query} memberType={filters.memberType} count={visibleMembers.length} disabled={busy || loading || snapshotUnavailable} onQueryChange={(query) => setFilters((current) => ({ ...current, query }))} onMemberTypeChange={handleMemberTypeChange} onRefresh={refresh} onCreate={requestCreateMember} />
             <div className="min-h-0 flex-1 overflow-auto">
-                {activeTab === "metrics" ? <MetricBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={(memberId) => setSelectedId(memberId)} onCopy={(memberId) => copyMeasure(memberId)} /> : <DimensionBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={(memberId) => setSelectedId(memberId)} onCopy={(memberId) => setSelectedId(memberId)} />}
+                {activeTab === "metrics" ? <MetricBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={(memberId, trigger) => selectBuildMember(memberId, trigger)} onCopy={(memberId, trigger) => copyMeasure(memberId, trigger)} /> : <DimensionBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={(memberId, trigger) => selectBuildMember(memberId, trigger)} onCopy={(memberId, trigger) => selectBuildMember(memberId, trigger)} />}
                 <div className="border-b border-ink/10 bg-paper px-5 py-6 lg:px-7">
                     <div className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-ink/45">成员编辑</div>
                     <div className="border border-ink/10 bg-white">
