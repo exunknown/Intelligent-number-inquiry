@@ -100,6 +100,35 @@ export function validateSemanticJoin(
     return null;
 }
 
+export function upsertSemanticJoin(
+    snapshot: SemanticSnapshot,
+    join: SemanticJoin,
+    originalKey?: string,
+): SemanticSnapshot {
+    if (validateSemanticJoin(join, snapshot, originalKey)) return snapshot;
+    return {
+        ...snapshot,
+        joins: originalKey
+            ? snapshot.joins.map((item) =>
+                  semanticJoinKey(item) === originalKey ? join : item,
+              )
+            : [...snapshot.joins, join],
+    };
+}
+
+export function removeSemanticJoin(
+    snapshot: SemanticSnapshot,
+    join: SemanticJoin,
+): SemanticSnapshot {
+    if (!canDeleteSemanticJoin(join)) return snapshot;
+    const index = snapshot.joins.indexOf(join);
+    if (index < 0) return snapshot;
+    return {
+        ...snapshot,
+        joins: snapshot.joins.filter((_, itemIndex) => itemIndex !== index),
+    };
+}
+
 export function semanticDirectoryLoadAllowed(dirty: boolean): boolean {
     return !dirty;
 }

@@ -20,7 +20,7 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { buildSemanticChangeSummary, buildSemanticMemberId, canDeleteSemanticCube, canDeleteSemanticJoin, canEditSemanticJoin, cloneSemanticSnapshot, copySemanticMeasure, copySemanticMember, createDraftSemanticCube, createDraftSemanticMember, createSemanticModelRequestGate, cubeHasReferences, formatSemanticModelError, removeSemanticCube, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, semanticDirectoryLoadAllowed, semanticJoinKey, semanticMemberTypesForBuildTab, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticCube, validateSemanticJoin, validateSemanticMemberName, type SemanticBuildTab, type SemanticDraft, type SemanticJoin, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
+import { buildSemanticChangeSummary, buildSemanticMemberId, canDeleteSemanticCube, canDeleteSemanticJoin, canEditSemanticJoin, cloneSemanticSnapshot, copySemanticMeasure, copySemanticMember, createDraftSemanticCube, createDraftSemanticMember, createSemanticModelRequestGate, cubeHasReferences, formatSemanticModelError, removeSemanticCube, removeSemanticJoin, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, semanticDirectoryLoadAllowed, semanticJoinKey, semanticMemberTypesForBuildTab, serializeSemanticSnapshot, upsertSemanticJoin, validateNewSemanticMemberFields, validateSemanticCube, validateSemanticJoin, validateSemanticMemberName, type SemanticBuildTab, type SemanticDraft, type SemanticJoin, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
 import { nextFocusableIndex } from "../lib/userManagement";
 import { AgentManagementTabs } from "./AgentManagementTabs";
 import { CubeBuildTable } from "./CubeBuildTable";
@@ -318,26 +318,16 @@ export function SemanticModelPage({
             setError(validationError);
             return;
         }
-        updateWorkingSnapshot((current) => ({
-            ...current,
-            joins:
-                joinDialog.mode === "edit" && joinDialog.originalKey
-                    ? current.joins.map((item) =>
-                          semanticJoinKey(item) === joinDialog.originalKey ? join : item,
-                      )
-                    : [...current.joins, join],
-        }));
+        updateWorkingSnapshot((current) =>
+            upsertSemanticJoin(current, join, joinDialog.originalKey ?? undefined),
+        );
         closeJoinDialog();
     };
 
     const deleteJoin = (join: SemanticJoin, trigger: HTMLButtonElement) => {
         if (!canDeleteSemanticJoin(join)) return;
         if (!window.confirm(`确定删除 Join ${join.cube_name} 到 ${join.target_cube_name} 吗？删除会先作用于当前草稿。`)) return;
-        updateWorkingSnapshot((current) => {
-            const index = current.joins.indexOf(join);
-            if (index < 0) return current;
-            return { ...current, joins: current.joins.filter((_, itemIndex) => itemIndex !== index) };
-        });
+        updateWorkingSnapshot((current) => removeSemanticJoin(current, join));
         requestAnimationFrame(() => {
             if (trigger.isConnected) {
                 trigger.focus();
