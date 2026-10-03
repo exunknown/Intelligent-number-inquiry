@@ -20,7 +20,7 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { buildSemanticChangeSummary, buildSemanticMemberId, canDeleteSemanticCube, cloneSemanticSnapshot, copySemanticMeasure, copySemanticMember, createDraftSemanticCube, createDraftSemanticMember, createSemanticModelRequestGate, cubeHasReferences, formatSemanticModelError, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, semanticDirectoryLoadAllowed, semanticMemberTypesForBuildTab, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticCube, validateSemanticMemberName, type SemanticBuildTab, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
+import { buildSemanticChangeSummary, buildSemanticMemberId, canDeleteSemanticCube, cloneSemanticSnapshot, copySemanticMeasure, copySemanticMember, createDraftSemanticCube, createDraftSemanticMember, createSemanticModelRequestGate, cubeHasReferences, formatSemanticModelError, removeSemanticCube, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, semanticDirectoryLoadAllowed, semanticMemberTypesForBuildTab, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticCube, validateSemanticMemberName, type SemanticBuildTab, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
 import { nextFocusableIndex } from "../lib/userManagement";
 import { AgentManagementTabs } from "./AgentManagementTabs";
 import { CubeBuildTable } from "./CubeBuildTable";
@@ -266,11 +266,14 @@ export function SemanticModelPage({
             requestAnimationFrame(() => trigger.focus());
             return;
         }
-        updateWorkingSnapshot((current) => ({
-            ...current,
-            cubes: current.cubes.filter((item) => item.cube_name !== cubeName),
-        }));
-        requestAnimationFrame(() => trigger.focus());
+        updateWorkingSnapshot((current) => removeSemanticCube(current, cubeName));
+        requestAnimationFrame(() => {
+            if (trigger.isConnected) {
+                trigger.focus();
+                return;
+            }
+            document.getElementById("semantic-model-refresh")?.focus();
+        });
     };
 
     const handleSelectionChange = (memberId: string, selected: boolean) => {

@@ -42,6 +42,14 @@ export function canDeleteSemanticCube(
     return references.memberCount === 0 && references.joinCount === 0;
 }
 
+export function removeSemanticCube(snapshot: SemanticSnapshot, cubeName: string): SemanticSnapshot {
+    if (!canDeleteSemanticCube(snapshot, cubeName)) return snapshot;
+    return {
+        ...snapshot,
+        cubes: snapshot.cubes.filter((cube) => cube.cube_name !== cubeName),
+    };
+}
+
 export function canEditSemanticJoin(join: Pick<SemanticJoin, "editable">): boolean {
     return join.editable;
 }
