@@ -221,7 +221,16 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const closeMemberDialog = () => {
         setMemberDialog(null);
         setError(null);
-        requestAnimationFrame(() => memberDialog?.trigger?.focus());
+        requestAnimationFrame(() => {
+            if (memberDialog?.trigger?.isConnected) {
+                memberDialog.trigger.focus();
+                return;
+            }
+            const fallbackFocusTarget =
+                document.getElementById("semantic-model-refresh") ??
+                document.querySelector<HTMLElement>("#semantic-model-page [role='tab']");
+            fallbackFocusTarget?.focus();
+        });
     };
 
     const changeMemberName = (memberName: string) => {
@@ -234,7 +243,10 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             );
             if (validationError) {
                 setError(validationError);
-                return current;
+                return {
+                    ...current,
+                    member: { ...current.member, member_name: memberName },
+                };
             }
             const nextMember = {
                 ...current.member,
@@ -550,10 +562,10 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         changeFilters({ ...filters, memberType });
     };
     return (
-        <div className="relative flex min-h-0 flex-1 flex-col bg-paper">
+        <div id="semantic-model-page" className="relative flex min-h-0 flex-1 flex-col bg-paper">
             <header className="flex min-h-16 shrink-0 items-center justify-between border-b border-ink/10 bg-white px-5 lg:px-7">
                 <div className="flex min-w-0 items-center gap-4"><button type="button" onClick={onBack} disabled={busy} title="返回问数工作台" aria-label="返回问数工作台" className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink/60 hover:bg-ink/5 disabled:opacity-40"><ArrowLeft className="h-4 w-4" aria-hidden="true" /></button><div className="min-w-0"><p className="font-serif text-xl font-bold text-ink">Agent 管理</p></div></div>
-                <div className="flex items-center gap-3"><span className="hidden text-xs text-ink/50 lg:inline">生效版本：<span className="font-mono text-ink">{releases.find((item) => item.active)?.release_version ?? "暂无"}</span></span><button type="button" onClick={refresh} disabled={loading || busy} title="刷新治理数据" aria-label="刷新治理数据" className="grid h-10 w-10 place-items-center rounded-full text-ink/60 hover:bg-ink/5 disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" /></button></div>
+                <div className="flex items-center gap-3"><span className="hidden text-xs text-ink/50 lg:inline">生效版本：<span className="font-mono text-ink">{releases.find((item) => item.active)?.release_version ?? "暂无"}</span></span><button id="semantic-model-refresh" type="button" onClick={refresh} disabled={loading || busy} title="刷新建设数据" aria-label="刷新建设数据" className="grid h-10 w-10 place-items-center rounded-full text-ink/60 hover:bg-ink/5 disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" /></button></div>
             </header>
             {error && <div role="alert" className="border-b border-oxide/20 bg-oxide/5 px-6 py-3 text-sm text-oxide">{error}</div>}
             <AgentManagementTabs activeTab={activeTab} onChange={handleTabChange} disabled={busy} />

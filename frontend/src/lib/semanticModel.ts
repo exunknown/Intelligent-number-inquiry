@@ -551,6 +551,23 @@ export function validateSemanticMemberName(
     return null;
 }
 
+export function semanticMemberDialogHasChanges(
+    initialMember: SemanticMember | null,
+    currentMember: SemanticMember | null,
+    initialMetricEquivalenceGroups: SemanticMetricEquivalenceGroup[],
+    currentMetricEquivalenceGroups: SemanticMetricEquivalenceGroup[],
+    initialMetricAttachments: SemanticMetricAttachment[],
+    currentMetricAttachments: SemanticMetricAttachment[],
+): boolean {
+    return (
+        JSON.stringify(initialMember) !== JSON.stringify(currentMember) ||
+        JSON.stringify(initialMetricEquivalenceGroups) !==
+            JSON.stringify(currentMetricEquivalenceGroups) ||
+        JSON.stringify(initialMetricAttachments) !==
+            JSON.stringify(currentMetricAttachments)
+    );
+}
+
 export function validateNewSemanticMemberFields(
     member: Pick<
         SemanticMember,

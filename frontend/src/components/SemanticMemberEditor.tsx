@@ -84,12 +84,13 @@ export function SemanticMemberEditor({
                             className={`${inputClass} ${memberNameError ? "border-oxide focus:border-oxide focus:ring-oxide/15" : ""}`}
                             value={memberNameDraft}
                             disabled={disabled}
-                            onChange={(event) => setMemberNameDraft(event.target.value)}
+                            onChange={(event) => {
+                                const nextMemberName = event.target.value;
+                                setMemberNameDraft(nextMemberName);
+                                onMemberNameChange(nextMemberName);
+                            }}
                             onBlur={() => {
-                                if (
-                                    !memberNameError &&
-                                    memberNameDraft !== member.member_name
-                                ) {
+                                if (memberNameDraft !== member.member_name) {
                                     onMemberNameChange(memberNameDraft);
                                 }
                             }}

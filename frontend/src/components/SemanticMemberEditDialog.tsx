@@ -5,6 +5,8 @@ import {
     type SemanticMetricAttachment,
     type SemanticMetricEquivalenceGroup,
     type SemanticSnapshot,
+    semanticMemberDialogHasChanges,
+    validateSemanticMemberName,
 } from "../lib/semanticModel";
 import { nextFocusableIndex } from "../lib/userManagement";
 import { SemanticMemberEditor } from "./SemanticMemberEditor";
@@ -67,12 +69,29 @@ export function SemanticMemberEditDialog({
     onRelationsChange,
 }: SemanticMemberEditDialogProps) {
     const dialogRef = useRef<HTMLDivElement | null>(null);
-    const initialMemberRef = useRef(member ? JSON.stringify(member) : "");
-    const hasChanges = member ? JSON.stringify(member) !== initialMemberRef.current : false;
+    const initialMemberRef = useRef(member ? structuredClone(member) : null);
+    const initialMetricEquivalenceGroupsRef = useRef(structuredClone(metricEquivalenceGroups));
+    const initialMetricAttachmentsRef = useRef(structuredClone(metricAttachments));
+    const memberNameError = member
+        ? validateSemanticMemberName(snapshot, member, member.member_name)
+        : null;
+    const hasChanges = semanticMemberDialogHasChanges(
+        initialMemberRef.current,
+        member,
+        initialMetricEquivalenceGroupsRef.current,
+        metricEquivalenceGroups,
+        initialMetricAttachmentsRef.current,
+        metricAttachments,
+    );
 
     const handleCancel = () => {
         if (hasChanges && !window.confirm("当前成员编辑尚未保存，确定放弃修改吗？")) return;
         onCancel();
+    };
+
+    const handleSave = () => {
+        if (memberNameError) return;
+        onSave();
     };
 
     const handleDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -149,7 +168,7 @@ export function SemanticMemberEditDialog({
                         showActions={false}
                     />
                 </div>
-                {error && <p role="alert" className="shrink-0 border-t border-oxide/20 bg-oxide/5 px-6 py-3 text-sm text-oxide">{error}</p>}
+                {(error || memberNameError) && <p role="alert" className="shrink-0 border-t border-oxide/20 bg-oxide/5 px-6 py-3 text-sm text-oxide">{error || memberNameError}</p>}
                 <footer className="flex shrink-0 justify-end gap-3 border-t border-ink/10 bg-paper px-6 py-4">
                     <button
                         type="button"
@@ -161,8 +180,8 @@ export function SemanticMemberEditDialog({
                     </button>
                     <button
                         type="button"
-                        onClick={onSave}
-                        disabled={disabled}
+                        onClick={handleSave}
+                        disabled={disabled || Boolean(memberNameError)}
                         className="min-h-10 bg-dai px-4 text-sm font-semibold text-paper transition hover:bg-dai/90 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
                     >
                         保存成员
