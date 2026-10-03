@@ -553,7 +553,7 @@ class SemanticModelValidator:
                 )
             else:
                 cube_names.add(cube.cube_name)
-            if not cube.sql_table.strip():
+            if not cube.public and not cube.sql_table.strip():
                 issues.append(
                     ValidationIssue(
                         "cube_sql_table_required",
