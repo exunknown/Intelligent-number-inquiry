@@ -14,6 +14,7 @@ from app.entities.column_info import ColumnInfo
 from app.entities.cube_member import CubeMember
 from app.entities.metric_info import MetricInfo
 from app.entities.metric_query import MetricQueryDecision, SemanticMissReason
+from app.entities.query_turn_context import QueryTurnContext
 from app.entities.value_info import ValueInfo
 
 
@@ -116,6 +117,12 @@ class DataAgentState(TypedDict):
     """一次问数链路中的核心状态"""
 
     query: str  # 用户输入的查询
+    original_query: NotRequired[str]  # 用户原始问题，供多轮解析失败时回退
+    effective_query: NotRequired[str]  # 会话解析后的完整问题
+    recent_turn_contexts: NotRequired[list[QueryTurnContext]]  # 当前会话最近上下文
+    conversation_mode: NotRequired[Literal["standalone", "follow_up", "clarification"]]
+    inherited_from_context_id: NotRequired[str | None]
+    conversation_reason: NotRequired[str]
     keywords: list[str]  # 抽取的关键词
     retrieved_column_infos: list[ColumnInfo]  # 检索到的字段信息
     retrieved_metric_infos: list[MetricInfo]  # 检索到的指标信息

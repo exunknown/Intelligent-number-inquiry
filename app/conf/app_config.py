@@ -151,6 +151,17 @@ class SelectorConfig:
 
 
 @dataclass
+class ConversationConfig:
+    """多轮问数会话解析配置。"""
+
+    enabled: bool
+    recent_turns: int
+    max_context_chars: int
+    clarification_enabled: bool
+    resolver_timeout_seconds: float
+
+
+@dataclass
 class CubeConfig:
     """Cube 问数服务配置"""
 
@@ -243,6 +254,7 @@ class AppConfig:
     llm: LLMConfig
     ini: IniConfig
     selector: SelectorConfig
+    conversation: ConversationConfig
     cube: CubeConfig
     auth: AuthConfig
     sql_safety: SQLSafetyConfig

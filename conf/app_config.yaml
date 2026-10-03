@@ -90,6 +90,13 @@ selector:
   schema_token_threshold: 4000
   token_estimate_chars_per_token: 2.0
 
+conversation:
+  enabled: ${oc.env:CONVERSATION_ENABLED,true}
+  recent_turns: ${oc.env:CONVERSATION_RECENT_TURNS,3}
+  max_context_chars: ${oc.env:CONVERSATION_MAX_CONTEXT_CHARS,12000}
+  clarification_enabled: ${oc.env:CONVERSATION_CLARIFICATION_ENABLED,true}
+  resolver_timeout_seconds: ${oc.env:CONVERSATION_RESOLVER_TIMEOUT_SECONDS,8}
+
 cube:
   base_url: http://127.0.0.1:4000/cubejs-api
   api_secret: ${oc.env:CUBE_API_SECRET}
