@@ -1,5 +1,11 @@
 import { ArrowLeft, RefreshCw } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+    type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import {
     createSemanticDraft,
     getSemanticDraft,
@@ -102,7 +108,7 @@ export function SemanticModelPage({
     const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
     const createTriggerRef = useRef<HTMLButtonElement | null>(null);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         setActiveTab(initialTab);
     }, [initialTab]);
 
