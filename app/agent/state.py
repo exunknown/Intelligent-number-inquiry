@@ -10,6 +10,9 @@ SQL 生成闭环会继续写入候选 SQL 以及校验错误信息，用于控�
 from dataclasses import asdict, is_dataclass
 from typing import Any, Literal, NotRequired, TypedDict
 
+import sqlglot
+from sqlglot import exp
+
 from app.agent.selector import SelectorDecision
 from app.entities.column_info import ColumnInfo
 from app.entities.cube_member import CubeMember
@@ -279,11 +282,79 @@ def _sql_turn_context(state: DataAgentState) -> dict[str, object]:
         "columns": columns,
         "filters": filters,
     }
+    context.update(_sql_shape_summary(state.get("normalized_sql")))
     for key in ("group_by", "order_by", "limit"):
         value = state.get(f"sql_{key}") or state.get(key)
         if value is not None:
             context[key] = _safe_context_value(value)
     return context
+
+
+def _sql_expression_summary(expression: exp.Expression) -> str | None:
+    """把已通过 SQL 策略校验的单个表达式压缩为结构摘要。"""
+
+    try:
+        summary = expression.sql(dialect="mysql").strip()
+    except Exception:
+        return None
+    if not summary or len(summary) > 128:
+        return None
+    return summary
+
+
+def _sql_shape_summary(normalized_sql: object) -> dict[str, object]:
+    """从策略校验后的 SQL 中提取分组、排序和条数摘要，不保存 SQL 原文。"""
+
+    if not isinstance(normalized_sql, str) or not normalized_sql.strip():
+        return {}
+    try:
+        expression = sqlglot.parse_one(normalized_sql, read="mysql")
+    except (sqlglot.ParseError, sqlglot.TokenError, ValueError):
+        return {}
+
+    query = expression
+    if isinstance(expression, exp.Union):
+        query = expression.this
+    if not isinstance(query, exp.Select):
+        return {}
+
+    summary: dict[str, object] = {}
+    group = query.args.get("group")
+    if group is not None:
+        group_by = [
+            item_summary
+            for item in group.expressions
+            if (item_summary := _sql_expression_summary(item)) is not None
+        ]
+        if group_by:
+            summary["group_by"] = group_by
+
+    order = query.args.get("order")
+    if order is not None:
+        order_by: list[dict[str, str]] = []
+        for item in order.expressions:
+            expression_summary = _sql_expression_summary(item.this)
+            if expression_summary is None:
+                continue
+            order_by.append(
+                {
+                    "expression": expression_summary,
+                    "direction": "desc" if item.args.get("desc") else "asc",
+                }
+            )
+        if order_by:
+            summary["order_by"] = order_by
+
+    limit = query.args.get("limit")
+    limit_expression = limit.args.get("expression") if limit is not None else None
+    if isinstance(limit_expression, exp.Literal) and not limit_expression.is_string:
+        try:
+            limit_value = int(limit_expression.this)
+        except (TypeError, ValueError):
+            limit_value = None
+        if limit_value is not None and limit_value >= 0:
+            summary["limit"] = limit_value
+    return summary
 
 
 def build_turn_context_payload(
