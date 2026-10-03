@@ -87,13 +87,12 @@ type AppProps = {
 type AppPath =
     | "/"
     | "/history"
-    | "/user-management"
     | "/agent-management/metrics"
-    | "/agent-management/dimensions";
+    | "/agent-management/dimensions"
+    | "/agent-management/cubes";
 
 function readAppPath(): AppPath {
     if (window.location.pathname === "/history") return "/history";
-    if (window.location.pathname === "/user-management") return "/user-management";
     if (window.location.pathname === "/semantic-model") {
         window.history.replaceState({}, "", "/agent-management/metrics");
         return "/agent-management/metrics";
@@ -103,6 +102,9 @@ function readAppPath(): AppPath {
     }
     if (window.location.pathname === "/agent-management/dimensions") {
         return "/agent-management/dimensions";
+    }
+    if (window.location.pathname === "/agent-management/cubes") {
+        return "/agent-management/cubes";
     }
     return "/";
 }
@@ -124,12 +126,12 @@ export default function App({ username }: AppProps) {
     const [canManageUsers, setCanManageUsers] = useState<boolean | null>(null);
     const [canManageSemanticModel, setCanManageSemanticModel] = useState<boolean | null>(null);
     const [capabilityError, setCapabilityError] = useState<unknown>(null);
+    const [managementOpen, setManagementOpen] = useState(false);
     const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
     const [semanticModelDirty, setSemanticModelDirty] = useState(false);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const desktopNewSessionRef = useRef<HTMLButtonElement | null>(null);
     const userMenuRef = useRef<UserAvatarMenuHandle | null>(null);
-    const mobileUserMenuRef = useRef<UserAvatarMenuHandle | null>(null);
     const desktopLogoutRef = {
         current: { focus: () => userMenuRef.current?.focusTrigger() },
     };
@@ -142,6 +144,13 @@ export default function App({ username }: AppProps) {
     const canSubmit = draft.trim().length > 0 && !isStreaming;
     const managementCapability = capabilityPresentation(canManageUsers, capabilityError);
     const semanticModelCapability = canManageSemanticModel === true;
+
+    const closeManagement = () => {
+        setManagementOpen(false);
+        requestAnimationFrame(() => {
+            userMenuRef.current?.focusTrigger();
+        });
+    };
 
     const closeMobileSessions = () => {
         setMobileSessionsOpen(false);
@@ -230,12 +239,12 @@ export default function App({ username }: AppProps) {
     }, []);
 
     useEffect(() => {
-        if (!shouldAutoScrollChat(path !== "/")) return;
+        if (!shouldAutoScrollChat(managementOpen)) return;
         scrollRef.current?.scrollTo({
             top: scrollRef.current.scrollHeight,
             behavior: "smooth",
         });
-    }, [messages, path]);
+    }, [messages]);
 
     const openSession = async (targetSessionId: string) => {
         if (isStreaming || loadingSessionId !== null) return false;
@@ -266,14 +275,14 @@ export default function App({ username }: AppProps) {
         setSessionsLoading(true);
         setSessionsError(null);
         try {
-            const nextSessions = await listQuerySessions(10, 0);
+            const nextSessions = await listQuerySessions(8, 0);
             if (generation !== sessionsRefreshGenerationRef.current) return;
             setSessions(nextSessions);
             let historyError: string | null = null;
             try {
-                const page = await searchQuerySessions("", 1, 10);
+                const page = await searchQuerySessions("", 1, 8);
                 if (generation !== sessionsRefreshGenerationRef.current) return;
-                setHasMoreSessions(page.total > 10);
+                setHasMoreSessions(page.total > 8);
             } catch (error) {
                 if (generation !== sessionsRefreshGenerationRef.current) return;
                 setHasMoreSessions(false);
@@ -437,10 +446,7 @@ export default function App({ username }: AppProps) {
                             return {
                                 ...message,
                                 status: "error",
-                                content:
-                                    event.code === "conversation_clarification_required"
-                                        ? event.message
-                                        : "这次查询没有成功。",
+                                content: "这次查询没有成功。",
                                 error: event.message,
                                 errorCode: event.code,
                                 retryable: event.retryable,
@@ -530,37 +536,10 @@ export default function App({ username }: AppProps) {
         }
     };
 
-    const pageTitle =
-        path === "/user-management"
-            ? "用户管理"
-            : path === "/history"
-              ? "历史对话"
-              : isAgentManagementPath(path)
-                ? "Agent 管理"
-                : "问数工作台";
-    const pageSubtitle =
-        path === "/user-management"
-            ? "管理应用角色、账号状态和有效权限摘要"
-            : path === "/history"
-              ? "检索、恢复和维护历史问数会话"
-              : isAgentManagementPath(path)
-                ? "统一维护可被问数智能体调用的指标与维度"
-                : "自然语言直连数仓";
-    const isAgentManagementPage = isAgentManagementPath(path);
-    const isAdminShell = path === "/user-management" || isAgentManagementPath(path);
-
     return (
         <div className="h-dvh overflow-hidden bg-paper text-ink">
-            <div
-                className={cn(
-                    "relative grid h-full min-h-0 overflow-hidden",
-                    isAgentManagementPage
-                        ? "lg:grid-cols-1"
-                        : "lg:grid-cols-[300px_minmax(0,1fr)]",
-                )}
-            >
-                {!isAgentManagementPage && (
-                <aside inert={mobileSessionsOpen} className="hidden min-h-0 border-r border-ink/10 bg-paper text-ink lg:flex lg:flex-col">
+            <div className="relative grid h-full min-h-0 overflow-hidden lg:grid-cols-[300px_minmax(0,1fr)]">
+                <aside inert={managementOpen || mobileSessionsOpen} className="hidden min-h-0 border-r border-ink/10 bg-paper text-ink lg:flex lg:flex-col">
                     <div className="border-b border-ink/10 px-5 py-5">
                         <div className="flex items-center gap-3">
                             <Seal className="h-10 w-10 text-xl" />
@@ -571,131 +550,46 @@ export default function App({ username }: AppProps) {
                         </div>
                     </div>
 
-                        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-                            {isAdminShell ? (
-                                <nav aria-label="工作区" className="space-y-2">
-                                    <p className="px-1 pb-2 text-xs font-semibold text-ink/45">工作区</p>
-                                    <button
-                                        type="button"
-                                        onClick={() => navigateTo("/")}
-                                        className="flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm font-semibold text-ink transition hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50"
-                                    >
-                                        问数工作台
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => navigateTo("/history")}
-                                        className="flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm font-semibold text-ink transition hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50"
-                                    >
-                                        历史对话
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => navigateTo("/agent-management/metrics")}
-                                        aria-current={isAgentManagementPath(path) ? "page" : undefined}
-                                        className={cn(
-                                            "flex min-h-11 w-full flex-col items-start justify-center rounded-lg px-3 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50",
-                                            isAgentManagementPath(path)
-                                                ? "border border-indigo/25 bg-indigo/10 text-indigo"
-                                                : "text-ink hover:bg-ink/5",
-                                        )}
-                                    >
-                                        <span>Agent 管理</span>
-                                        {isAgentManagementPath(path) && (
-                                            <span className="mt-0.5 text-xs font-normal text-ink/55">
-                                                {path.endsWith("/dimensions") ? "维度建设" : "指标建设"}
-                                            </span>
-                                        )}
-                                    </button>
-                                    {managementCapability.showEntry && (
-                                        <button
-                                            type="button"
-                                            onClick={() => navigateTo("/user-management")}
-                                            aria-current={path === "/user-management" ? "page" : undefined}
-                                            className={cn(
-                                                "flex min-h-11 w-full flex-col items-start justify-center rounded-lg px-3 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50",
-                                                path === "/user-management"
-                                                    ? "border border-indigo/25 bg-indigo/10 text-indigo"
-                                                    : "text-ink hover:bg-ink/5",
-                                            )}
-                                        >
-                                            <span>用户管理</span>
-                                            {path === "/user-management" && (
-                                                <span className="mt-0.5 text-xs font-normal text-ink/55">账号与权限</span>
-                                            )}
-                                        </button>
-                                    )}
-                                </nav>
-                            ) : (
-                                <>
-                                    <button
-                                        ref={desktopNewSessionRef}
-                                        type="button"
-                                        onClick={clearConversation}
-                                        disabled={isStreaming}
-                                        className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-cinnabar text-sm font-semibold text-paper transition hover:bg-[#0B6178] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/60 focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:bg-cinnabar/40"
-                                    >
-                                        <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
-                                        新会话
-                                    </button>
+                        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-4">
+                            <button
+                                ref={desktopNewSessionRef}
+                                type="button"
+                                onClick={clearConversation}
+                                disabled={isStreaming}
+                                className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-cinnabar text-sm font-semibold text-paper transition hover:bg-[#ad3a26] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/60 focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:cursor-not-allowed disabled:bg-cinnabar/40"
+                            >
+                                <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
+                                新会话
+                            </button>
 
-                                    <div className="mt-6">
-                                        <SessionList
-                                            sessions={sessions}
-                                            selectedSessionId={sessionId}
-                                            loading={sessionsLoading || loadingSessionId !== null}
-                                            loadingSessionId={loadingSessionId}
-                                            disabled={isStreaming}
-                                            error={sessionsError}
-                                            onSelect={(targetSessionId) => void openSession(targetSessionId)}
-                                            onRename={renameSession}
-                                            onArchive={archiveSession}
-                                            onDelete={removeSession}
-                                            showHistoryLink={hasMoreSessions}
-                                            onOpenHistory={() => navigateTo("/history")}
-                                        />
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                        <div className="shrink-0 border-t border-ink/10 px-4 py-4">
-                            <div className="flex items-center gap-3">
-                                <UserAvatarMenu
-                                    ref={userMenuRef}
-                                    username={username}
-                                    showManagement={managementCapability.showEntry}
-                                    onOpenManagement={() => navigateTo("/user-management")}
-                                    showGovernance={semanticModelCapability}
-                                    onOpenGovernance={() => navigateTo("/agent-management/metrics")}
-                                    onLogout={() => void handleLogout()}
-                                    menuPlacement="above"
-                                />
-                                <div className="min-w-0">
-                                    <p className="truncate text-sm font-semibold text-ink" title={username}>
-                                        {username}
-                                    </p>
-                                    <p className="text-xs text-ink/45">当前账号</p>
-                                </div>
-                            </div>
-                        </div>
+                        <SessionList
+                            sessions={sessions}
+                            selectedSessionId={sessionId}
+                            loading={sessionsLoading || loadingSessionId !== null}
+                            loadingSessionId={loadingSessionId}
+                            disabled={isStreaming}
+                            error={sessionsError}
+                            onSelect={(targetSessionId) => void openSession(targetSessionId)}
+                            onRename={renameSession}
+                            onArchive={archiveSession}
+                            onDelete={removeSession}
+                            showHistoryLink={hasMoreSessions}
+                            onOpenHistory={() => navigateTo("/history")}
+                        />
+                    </div>
 
                 </aside>
-                )}
 
                 <main className="relative flex min-h-0 min-w-0 flex-col overflow-hidden">
-                    {!isAgentManagementPage && <header inert={mobileSessionsOpen} className="flex h-16 shrink-0 items-center justify-between border-b border-ink/10 bg-paper px-4 lg:px-6">
+                    <header inert={managementOpen || mobileSessionsOpen} className="flex h-16 shrink-0 items-center justify-between border-b border-ink/10 bg-paper px-4 lg:px-6">
                         <div className="flex min-w-0 items-center gap-3">
                             <Seal className="h-9 w-9 text-lg lg:hidden" />
                             <div className="min-w-0">
                                 <div className="truncate font-serif text-base font-bold text-ink">
-                                    {path === "/" ? (
-                                        <>
-                                            <span className="lg:hidden">慧答</span>
-                                            <span className="hidden lg:inline">{pageTitle}</span>
-                                        </>
-                                    ) : pageTitle}
+                                    <span className="lg:hidden">慧答</span>
+                                    <span className="hidden lg:inline">问数工作台</span>
                                 </div>
-                                <div className="truncate text-xs text-ink/45">{pageSubtitle}</div>
+                                <div className="truncate text-xs text-ink/45">自然语言直连数仓</div>
                             </div>
                         </div>
                         <div className="flex items-center gap-1 sm:gap-3">
@@ -711,38 +605,34 @@ export default function App({ username }: AppProps) {
                                 <MessageCircle className="h-4 w-4" aria-hidden="true" />
                             </button>
                             <span
-                                className="hidden max-w-20 truncate text-xs text-ink/60 sm:block sm:max-w-40 lg:hidden"
+                                className="hidden max-w-20 truncate text-xs text-ink/60 sm:block sm:max-w-40"
                                 title={username}
                             >
                                 {username}
                             </span>
-                            {path === "/" && (
-                                <button
-                                    type="button"
-                                    onClick={clearConversation}
-                                    disabled={messages.length === 0 || isStreaming}
-                                    className="grid h-9 w-9 place-items-center rounded-full text-ink/55 transition hover:bg-ink/5 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 disabled:cursor-not-allowed disabled:opacity-35 lg:hidden"
-                                    title="清空"
-                                    aria-label="清空"
-                                >
-                                    <Eraser className="h-4 w-4" aria-hidden="true" />
-                                </button>
-                            )}
+                            <button
+                                type="button"
+                                onClick={clearConversation}
+                                disabled={messages.length === 0 || isStreaming}
+                                className="grid h-9 w-9 place-items-center rounded-full text-ink/55 transition hover:bg-ink/5 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 disabled:cursor-not-allowed disabled:opacity-35"
+                                title="清空"
+                                aria-label="清空"
+                            >
+                                <Eraser className="h-4 w-4" aria-hidden="true" />
+                            </button>
                             <UserAvatarMenu
-                                ref={mobileUserMenuRef}
+                                ref={userMenuRef}
                                 username={username}
                                 showManagement={managementCapability.showEntry}
-                                onOpenManagement={() => navigateTo("/user-management")}
+                                onOpenManagement={() => setManagementOpen(true)}
                                 showGovernance={semanticModelCapability}
                                 onOpenGovernance={() => navigateTo("/agent-management/metrics")}
                                 onLogout={() => void handleLogout()}
-                                menuPlacement="below"
-                                className="lg:hidden"
                             />
                         </div>
-                    </header>}
+                    </header>
 
-                    {managementCapability.hint && path === "/" && (
+                    {managementCapability.hint && (
                         <p role="status" aria-live="polite" className="border-b border-ink/10 bg-paper px-4 py-2 text-sm text-oxide">
                             {managementCapability.hint} 聊天仍可继续使用。
                         </p>
@@ -773,14 +663,6 @@ export default function App({ username }: AppProps) {
                             externalError={sessionDetailError}
                             onClearExternalError={() => setSessionDetailError(null)}
                         />
-                        ) : path === "/user-management" ? (
-                            canManageUsers === null && capabilityError === null ? (
-                                <div className="grid min-h-0 flex-1 place-items-center bg-canvas px-6 text-center"><p className="text-sm text-ink/60">正在读取用户管理权限…</p></div>
-                            ) : managementCapability.showEntry ? (
-                                <UserManagementPanel onBack={() => navigateTo("/")} />
-                            ) : (
-                                <div className="grid min-h-0 flex-1 place-items-center bg-canvas px-6 text-center"><div><p className="font-serif text-xl font-bold text-ink">没有用户管理权限</p><p className="mt-2 text-sm text-ink/55">请联系平台管理员申请用户管理权限。</p></div></div>
-                            )
                         ) : isAgentManagementPath(path) ? (
                         semanticModelCapability ? (
                             <SemanticModelPage
@@ -790,11 +672,11 @@ export default function App({ username }: AppProps) {
                                 onTabChange={(tab) => navigateTo(semanticBuildPath(tab))}
                             />
                         ) : (
-                            <div className="grid min-h-0 flex-1 place-items-center bg-canvas px-6 text-center"><div><p className="font-serif text-xl font-bold text-ink">没有 Agent 管理权限</p><p className="mt-2 text-sm text-ink/55">请联系平台管理员申请语义模型操作权限。</p></div></div>
+                            <div className="grid min-h-0 flex-1 place-items-center bg-[#dfe0d8] px-6 text-center"><div><p className="font-serif text-xl font-bold text-ink">没有 Agent 管理权限</p><p className="mt-2 text-sm text-ink/55">请联系平台管理员申请语义模型操作权限。</p></div></div>
                         )
                     ) : (
                         <>
-                            <div inert={mobileSessionsOpen} ref={scrollRef} className="workbench-mist min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                            <div inert={managementOpen || mobileSessionsOpen} ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#dfe0d8]">
                                 {messages.length === 0 ? (
                                     <EmptyState examples={examples} onUseExample={(example) => setDraft(example)} />
                                 ) : (
@@ -806,7 +688,7 @@ export default function App({ username }: AppProps) {
                                 )}
                             </div>
 
-                            <div inert={mobileSessionsOpen} className="shrink-0">
+                            <div inert={managementOpen || mobileSessionsOpen} className="shrink-0">
                                 <Composer
                                     value={draft}
                                     disabled={!canSubmit}
@@ -817,6 +699,9 @@ export default function App({ username }: AppProps) {
                                 />
                             </div>
                         </>
+                    )}
+                    {managementOpen && managementCapability.showEntry && (
+                        <UserManagementPanel onClose={closeManagement} />
                     )}
                     {mobileSessionsOpen && (
                         <MobileSessionDrawer

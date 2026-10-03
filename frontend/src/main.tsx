@@ -30,7 +30,7 @@ function AuthFailure() {
                 </p>
                 <button
                     type="button"
-                    className="mt-6 h-11 rounded-lg bg-cinnabar px-5 text-sm font-semibold text-paper transition hover:bg-[#0B6178] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/60 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+                    className="mt-6 h-11 rounded-lg bg-cinnabar px-5 text-sm font-semibold text-paper transition hover:bg-[#ad3a26] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/60 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                     onClick={() => window.location.reload()}
                 >
                     重新登录

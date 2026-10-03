@@ -3,7 +3,7 @@
 from langgraph.runtime import Runtime
 
 from app.agent.context import DataAgentContext
-from app.agent.state import DataAgentState, build_turn_context_payload
+from app.agent.state import DataAgentState
 from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
 
@@ -50,10 +50,6 @@ async def run_sql(state: DataAgentState, runtime: Runtime[DataAgentContext]):
             "result_bytes": result.result_bytes,
             "result_truncated": result.truncated,
             "sql_execution_duration_ms": result.duration_ms,
-            "turn_context": build_turn_context_payload(
-                {**state, "query_mode": "sql"},
-                stats,
-            ),
         }
     )
     writer({"type": "progress", "step": step, "status": "success"})

@@ -1,22 +1,45 @@
 export type SemanticMemberType = "measure" | "dimension" | "time_dimension";
-export type SemanticBuildTab = "metrics" | "dimensions";
+export type SemanticBuildTab = "metrics" | "dimensions" | "cubes";
 
 export function semanticBuildTabForPath(pathname: string): SemanticBuildTab {
-    return pathname === "/agent-management/dimensions" ? "dimensions" : "metrics";
+    if (pathname === "/agent-management/cubes") return "cubes";
+    if (pathname === "/agent-management/dimensions") return "dimensions";
+    return "metrics";
 }
 
 export function semanticBuildPath(
     tab: SemanticBuildTab,
-): "/agent-management/metrics" | "/agent-management/dimensions" {
-    return tab === "dimensions"
-        ? "/agent-management/dimensions"
-        : "/agent-management/metrics";
+): "/agent-management/metrics" | "/agent-management/dimensions" | "/agent-management/cubes" {
+    if (tab === "dimensions") return "/agent-management/dimensions";
+    if (tab === "cubes") return "/agent-management/cubes";
+    return "/agent-management/metrics";
 }
 
 export function semanticMemberTypesForBuildTab(
     tab: SemanticBuildTab,
 ): SemanticMemberType[] {
+    if (tab === "cubes") return [];
     return tab === "dimensions" ? ["dimension", "time_dimension"] : ["measure"];
+}
+
+export function cubeHasReferences(
+    snapshot: Pick<SemanticSnapshot, "members" | "joins">,
+    cubeName: string,
+): { memberCount: number; joinCount: number } {
+    return {
+        memberCount: snapshot.members.filter((member) => member.cube_name === cubeName).length,
+        joinCount: snapshot.joins.filter(
+            (join) => join.cube_name === cubeName || join.target_cube_name === cubeName,
+        ).length,
+    };
+}
+
+export function canEditSemanticJoin(join: Pick<SemanticJoin, "editable">): boolean {
+    return join.editable;
+}
+
+export function canDeleteSemanticJoin(join: Pick<SemanticJoin, "editable">): boolean {
+    return join.editable;
 }
 
 export function semanticDirectoryLoadAllowed(dirty: boolean): boolean {

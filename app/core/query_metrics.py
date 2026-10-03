@@ -24,8 +24,6 @@ _DEPENDENCIES = {
     "sql_fallback",
 }
 _NODE_NAMES = {
-    "解析会话上下文",
-    "澄清会话上下文",
     "抽取关键词",
     "召回字段信息",
     "召回指标信息",
@@ -50,7 +48,6 @@ _NODE_NAMES = {
 }
 _ERROR_CODES = {
     "capacity_exhausted",
-    "conversation_clarification_required",
     "cube_unauthorized",
     "cube_timeout",
     "cube_unavailable",

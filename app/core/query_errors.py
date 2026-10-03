@@ -1,7 +1,5 @@
 """问数执行过程中的可分类异常。"""
 
-CONVERSATION_CLARIFICATION_REQUIRED = "conversation_clarification_required"
-
 
 class QueryExecutionError(RuntimeError):
     """携带机器可读错误码和重试语义的执行异常。"""

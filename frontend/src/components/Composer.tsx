@@ -71,7 +71,7 @@ export function Composer({
                         "grid h-11 w-11 shrink-0 place-items-center rounded-full text-paper transition focus:outline-none focus:ring-2 focus:ring-cinnabar/40 focus:ring-offset-2",
                         isStreaming
                             ? "bg-oxide hover:bg-oxide/90"
-                            : "bg-cinnabar hover:bg-[#0B6178] disabled:cursor-not-allowed disabled:bg-cinnabar/30",
+                            : "bg-cinnabar hover:bg-[#ad3a26] disabled:cursor-not-allowed disabled:bg-cinnabar/30",
                     )}
                     title={isStreaming ? "停止" : "发送"}
                     aria-label={isStreaming ? "停止" : "发送"}

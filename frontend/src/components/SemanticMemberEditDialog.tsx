@@ -133,16 +133,16 @@ export function SemanticMemberEditDialog({
     if (!member) return null;
 
     return (
-        <div className="fixed inset-0 z-30 grid place-items-center bg-ink/20 p-6 backdrop-blur-[2px]" role="presentation">
+        <div className="fixed inset-0 z-30 grid place-items-center bg-ink/20 p-6" role="presentation">
             <div
                 ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="semantic-member-dialog-title"
-                className="w-full max-w-5xl rounded-2xl flex max-h-[calc(100vh-3rem)] flex-col overflow-hidden bg-white shadow-line"
+                className="flex max-h-[calc(100vh-3rem)] w-full max-w-5xl flex-col overflow-hidden bg-white shadow-line"
                 onKeyDown={handleDialogKeyDown}
             >
-                <header className="flex shrink-0 items-start justify-between gap-6 border-b border-ink/10 bg-white px-8 py-6">
+                <header className="flex shrink-0 items-start justify-between gap-6 border-b border-ink/10 bg-white px-6 py-5">
                     <div>
                         <p id="semantic-member-dialog-title" className="font-serif text-xl font-bold text-ink">
                             {dialogTitle(mode, member)}
@@ -178,13 +178,13 @@ export function SemanticMemberEditDialog({
                         showActions={false}
                     />
                 </div>
-                {(error || memberNameError) && <p role="alert" className="shrink-0 border-t border-oxide/20 bg-oxide/5 px-8 py-3 text-sm text-oxide">{error || memberNameError}</p>}
-                <footer className="flex shrink-0 justify-end gap-3 border-t border-ink/10 bg-paper px-8 py-5">
+                {(error || memberNameError) && <p role="alert" className="shrink-0 border-t border-oxide/20 bg-oxide/5 px-6 py-3 text-sm text-oxide">{error || memberNameError}</p>}
+                <footer className="flex shrink-0 justify-end gap-3 border-t border-ink/10 bg-paper px-6 py-4">
                     <button
                         type="button"
                         onClick={handleCancel}
                         disabled={disabled}
-                        className="min-h-11 rounded-xl border border-ink/15 px-5 text-sm font-semibold text-ink/65 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
+                        className="min-h-10 border border-ink/15 px-4 text-sm font-semibold text-ink/65 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
                     >
                         取消
                     </button>
@@ -192,7 +192,7 @@ export function SemanticMemberEditDialog({
                         type="button"
                         onClick={handleSave}
                         disabled={disabled || Boolean(memberNameError)}
-                        className="min-h-11 rounded-xl bg-dai px-5 text-sm font-semibold text-paper transition hover:bg-dai/90 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
+                        className="min-h-10 bg-dai px-4 text-sm font-semibold text-paper transition hover:bg-dai/90 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
                     >
                         保存成员
                     </button>

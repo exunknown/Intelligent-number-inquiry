@@ -7,18 +7,13 @@ State 是 LangGraph 各节点之间传递和更新的共享数据
 SQL 生成闭环会继续写入候选 SQL 以及校验错误信息，用于控制校正或执行分支
 """
 
-from dataclasses import asdict, is_dataclass
-from typing import Any, Literal, NotRequired, TypedDict
-
-import sqlglot
-from sqlglot import exp
+from typing import Literal, NotRequired, TypedDict
 
 from app.agent.selector import SelectorDecision
 from app.entities.column_info import ColumnInfo
 from app.entities.cube_member import CubeMember
 from app.entities.metric_info import MetricInfo
 from app.entities.metric_query import MetricQueryDecision, SemanticMissReason
-from app.entities.query_turn_context import QueryTurnContext
 from app.entities.value_info import ValueInfo
 
 
@@ -121,12 +116,6 @@ class DataAgentState(TypedDict):
     """一次问数链路中的核心状态"""
 
     query: str  # 用户输入的查询
-    original_query: NotRequired[str]  # 用户原始问题，供多轮解析失败时回退
-    effective_query: NotRequired[str]  # 会话解析后的完整问题
-    recent_turn_contexts: NotRequired[list[QueryTurnContext]]  # 当前会话最近上下文
-    conversation_mode: NotRequired[Literal["standalone", "follow_up", "clarification"]]
-    inherited_from_context_id: NotRequired[str | None]
-    conversation_reason: NotRequired[str]
     keywords: list[str]  # 抽取的关键词
     retrieved_column_infos: list[ColumnInfo]  # 检索到的字段信息
     retrieved_metric_infos: list[MetricInfo]  # 检索到的指标信息
@@ -168,213 +157,3 @@ class DataAgentState(TypedDict):
     sql_correction_attempts: int  # 当前自动修正次数，最多一次
     sql_cost_estimate: dict  # estimated_rows 与 query_cost
     sql_result_stats: dict  # 行数、字节数、截断标记和耗时
-
-
-def _safe_context_value(value: Any) -> Any:
-    """把上下文投影为可持久化的业务标量、列表和对象。"""
-
-    if is_dataclass(value):
-        return _safe_context_value(asdict(value))
-    if isinstance(value, dict):
-        return {
-            str(key): _safe_context_value(item)
-            for key, item in value.items()
-            if str(key).strip().lower()
-            not in {
-                "data",
-                "executable_sql",
-                "authorization",
-                "connection",
-                "connection_info",
-                "connection_string",
-                "database",
-                "database_url",
-                "db",
-                "db_host",
-                "db_url",
-                "dsn",
-                "full_result",
-                "host",
-                "hostname",
-                "normalized_sql",
-                "password",
-                "prompt",
-                "raw_sql",
-                "raw_result",
-                "records",
-                "result",
-                "result_rows",
-                "rows",
-                "secret",
-                "sql",
-                "token",
-            }
-        }
-    if isinstance(value, (list, tuple)):
-        return [_safe_context_value(item) for item in value]
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    return None
-
-
-def _metric_turn_context(state: DataAgentState) -> dict[str, object]:
-    decision = state.get("metric_query_decision")
-    query = getattr(decision, "query", None)
-    if query is None:
-        return {}
-    return _safe_context_value(query)
-
-
-def _sql_turn_context(state: DataAgentState) -> dict[str, object]:
-    tables: list[str] = []
-    columns: list[str] = []
-    for table in state.get("table_infos", []):
-        if not isinstance(table, dict) or not isinstance(table.get("name"), str):
-            continue
-        table_name = table["name"]
-        tables.append(table_name)
-        for column in table.get("columns", []):
-            if isinstance(column, dict) and isinstance(column.get("name"), str):
-                columns.append(f"{table_name}.{column['name']}")
-
-    candidates = state.get("selector_candidates") or {}
-    column_names = {
-        column["id"]: f"{table['name']}.{column['name']}"
-        for table in candidates.get("tables", [])
-        if isinstance(table, dict) and isinstance(table.get("name"), str)
-        for column in table.get("columns", [])
-        if isinstance(column, dict)
-        and isinstance(column.get("id"), str)
-        and isinstance(column.get("name"), str)
-    }
-    values_by_id = {
-        item["id"]: item
-        for item in candidates.get("values", [])
-        if isinstance(item, dict) and isinstance(item.get("id"), str)
-    }
-    selector_decision = state.get("selector_decision") or {}
-    selected_values = (
-        selector_decision.get("keep_values", [])
-        if isinstance(selector_decision, dict)
-        else []
-    )
-    filters: list[dict[str, object]] = []
-    for selected in selected_values:
-        if not isinstance(selected, dict):
-            continue
-        value_id = selected.get("value_id")
-        selected_column_id = selected.get("column_id")
-        item = values_by_id.get(value_id)
-        if item is None:
-            continue
-        value = item.get("value")
-        column_id = selected_column_id or item.get("column_id")
-        if isinstance(column_id, str) and isinstance(value, (str, int, float, bool)):
-            filters.append(
-                {
-                    "column": column_names.get(column_id, column_id),
-                    "value": value,
-                }
-            )
-
-    context: dict[str, object] = {
-        "tables": tables,
-        "columns": columns,
-        "filters": filters,
-    }
-    context.update(_sql_shape_summary(state.get("normalized_sql")))
-    for key in ("group_by", "order_by", "limit"):
-        value = state.get(f"sql_{key}") or state.get(key)
-        if value is not None:
-            context[key] = _safe_context_value(value)
-    return context
-
-
-def _sql_expression_summary(expression: exp.Expression) -> str | None:
-    """把已通过 SQL 策略校验的单个表达式压缩为结构摘要。"""
-
-    try:
-        summary = expression.sql(dialect="mysql").strip()
-    except Exception:
-        return None
-    if not summary or len(summary) > 128:
-        return None
-    return summary
-
-
-def _sql_shape_summary(normalized_sql: object) -> dict[str, object]:
-    """从策略校验后的 SQL 中提取分组、排序和条数摘要，不保存 SQL 原文。"""
-
-    if not isinstance(normalized_sql, str) or not normalized_sql.strip():
-        return {}
-    try:
-        expression = sqlglot.parse_one(normalized_sql, read="mysql")
-    except (sqlglot.ParseError, sqlglot.TokenError, ValueError):
-        return {}
-
-    query = expression
-    if isinstance(expression, exp.Union):
-        query = expression.this
-    if not isinstance(query, exp.Select):
-        return {}
-
-    summary: dict[str, object] = {}
-    group = query.args.get("group")
-    if group is not None:
-        group_by = [
-            item_summary
-            for item in group.expressions
-            if (item_summary := _sql_expression_summary(item)) is not None
-        ]
-        if group_by:
-            summary["group_by"] = group_by
-
-    order = query.args.get("order")
-    if order is not None:
-        order_by: list[dict[str, str]] = []
-        for item in order.expressions:
-            expression_summary = _sql_expression_summary(item.this)
-            if expression_summary is None:
-                continue
-            order_by.append(
-                {
-                    "expression": expression_summary,
-                    "direction": "desc" if item.args.get("desc") else "asc",
-                }
-            )
-        if order_by:
-            summary["order_by"] = order_by
-
-    limit = query.args.get("limit")
-    limit_expression = limit.args.get("expression") if limit is not None else None
-    if isinstance(limit_expression, exp.Literal) and not limit_expression.is_string:
-        try:
-            limit_value = int(limit_expression.this)
-        except (TypeError, ValueError):
-            limit_value = None
-        if limit_value is not None and limit_value >= 0:
-            summary["limit"] = limit_value
-    return summary
-
-
-def build_turn_context_payload(
-    state: DataAgentState, result_summary: dict[str, object] | None
-) -> dict[str, object]:
-    """构造不含 SQL 和原始结果的内部轮次上下文事件。"""
-
-    query_mode = state.get("query_mode")
-    if query_mode not in {"metric", "sql"}:
-        query_mode = "sql" if state.get("raw_sql") else "metric"
-    context = (
-        _metric_turn_context(state)
-        if query_mode == "metric"
-        else _sql_turn_context(state)
-    )
-    return {
-        "effective_query": state.get("effective_query") or state.get("query", ""),
-        "query_mode": query_mode,
-        "context": context,
-        "result_summary": _safe_context_value(result_summary),
-        "metadata_release_version": state.get("metadata_release_version"),
-        "inherited_from_context_id": state.get("inherited_from_context_id"),
-    }

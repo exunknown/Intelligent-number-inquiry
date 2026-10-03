@@ -24,15 +24,8 @@ type SemanticMemberEditorProps = {
     showActions?: boolean;
 };
 
-const inputClass = "h-11 w-full rounded-xl border border-ink/15 bg-white px-4 text-sm text-ink outline-none transition focus:border-indigo/60 focus:ring-2 focus:ring-indigo/15 disabled:bg-paper disabled:text-ink/50";
-const areaClass = "min-h-28 w-full resize-y rounded-xl border border-ink/15 bg-white px-4 py-3 text-sm leading-6 text-ink outline-none transition focus:border-indigo/60 focus:ring-2 focus:ring-indigo/15 disabled:bg-paper disabled:text-ink/50";
-const dataTypeOptions = [
-    ["string", "文本"],
-    ["number", "数值"],
-    ["date", "日期"],
-    ["datetime", "日期时间"],
-    ["timestamp", "时间戳"],
-] as const;
+const inputClass = "h-10 w-full border border-ink/15 bg-white px-3 text-sm text-ink outline-none focus:border-indigo/60 focus:ring-2 focus:ring-indigo/15 disabled:bg-paper disabled:text-ink/50";
+const areaClass = "min-h-24 w-full resize-y border border-ink/15 bg-white px-3 py-2 text-sm leading-6 text-ink outline-none focus:border-indigo/60 focus:ring-2 focus:ring-indigo/15 disabled:bg-paper disabled:text-ink/50";
 
 export function SemanticMemberEditor({
     member,
@@ -71,11 +64,9 @@ export function SemanticMemberEditor({
     const updateDimension = (patch: Partial<NonNullable<SemanticMember["dimension"]>>) => update({ dimension: { ...member.dimension, ...patch } as NonNullable<SemanticMember["dimension"]> });
     const dependencyResolution = resolveSemanticDependencyMemberIds(member, snapshot);
     const preservedResolvedDependencyIds = dependencyResolution.memberIds.filter((memberId) => !dependencyCandidates.some((candidate) => candidate.member_id === memberId));
-    const selectedDataType = member.member_type === "time_dimension" ? "date" : member.data_type;
-    const hasKnownDataType = dataTypeOptions.some(([value]) => value === selectedDataType);
 
     return (
-        <div className="p-8">
+        <div className="p-6">
             <div className="mx-auto max-w-4xl">
                 <div className="mb-6">
                     <div>
@@ -90,7 +81,7 @@ export function SemanticMemberEditor({
                 <div className="grid gap-5 xl:grid-cols-2">
                     <label className="block">
                         <span className="mb-2 block text-xs font-semibold text-ink/60">{member.member_type === "measure" ? "指标名称" : "展示名称"}</span>
-                        <input className={inputClass} value={member.title} placeholder="请输入展示名称" disabled={disabled} onChange={(event) => update({ title: event.target.value })} />
+                        <input className={inputClass} value={member.title} disabled={disabled} onChange={(event) => update({ title: event.target.value })} />
                     </label>
                     <label className="block">
                         <span className="mb-2 block text-xs font-semibold text-ink/60">
@@ -99,7 +90,6 @@ export function SemanticMemberEditor({
                         <input
                             className={`${inputClass} ${memberNameError ? "border-oxide focus:border-oxide focus:ring-oxide/15" : ""}`}
                             value={memberNameDraft}
-                            placeholder="请输入成员编码"
                             disabled={disabled}
                             onChange={(event) => {
                                 const nextMemberName = event.target.value;
@@ -112,7 +102,6 @@ export function SemanticMemberEditor({
                                 }
                             }}
                             aria-invalid={Boolean(memberNameError)}
-                            aria-required="true"
                             aria-describedby="member-name-help member-name-error"
                         />
                         <span id="member-name-help" className="mt-1 block text-xs text-ink/45">
@@ -126,24 +115,21 @@ export function SemanticMemberEditor({
                     </label>
                     <label className="block">
                         <span className="mb-2 block text-xs font-semibold text-ink/60">数据类型</span>
-                        <select className={inputClass} value={selectedDataType} disabled={disabled || member.member_type === "time_dimension"} onChange={(event) => update({ data_type: event.target.value })}>
-                            {!hasKnownDataType && <option value={selectedDataType}>{selectedDataType}（当前值）</option>}
-                            {dataTypeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                        </select>
+                        <input className={inputClass} value={member.member_type === "time_dimension" ? "date" : member.data_type} disabled={disabled || member.member_type === "time_dimension"} onChange={(event) => update({ data_type: event.target.value })} />
                     </label>
                     <label className="block xl:col-span-2">
                         <span className="mb-2 block text-xs font-semibold text-ink/60">业务描述</span>
-                        <textarea className={areaClass} value={member.description} placeholder="补充业务口径、统计范围或使用说明" disabled={disabled} onChange={(event) => update({ description: event.target.value })} />
+                        <textarea className={areaClass} value={member.description} disabled={disabled} onChange={(event) => update({ description: event.target.value })} />
                     </label>
                     <label className="block xl:col-span-2">
                         <span className="mb-2 block text-xs font-semibold text-ink/60">AI 上下文</span>
-                        <textarea className={areaClass} value={member.ai_context} placeholder="补充问数模型需要理解的业务上下文" disabled={disabled} onChange={(event) => update({ ai_context: event.target.value })} />
+                        <textarea className={areaClass} value={member.ai_context} disabled={disabled} onChange={(event) => update({ ai_context: event.target.value })} />
                     </label>
                     <label className="block">
                         <span className="mb-2 block text-xs font-semibold text-ink/60">
                             源字段 ID <span className="font-normal text-ink/45">（必填）</span>
                         </span>
-                        <input required aria-required="true" className={inputClass} value={member.source_column_id ?? ""} placeholder="请输入源字段 ID" disabled={disabled} onChange={(event) => update({ source_column_id: event.target.value || null })} />
+                        <input required className={inputClass} value={member.source_column_id ?? ""} disabled={disabled} onChange={(event) => update({ source_column_id: event.target.value || null })} />
                     </label>
                     <label className="block">
                         <span className="mb-2 block text-xs font-semibold text-ink/60">别名</span>
@@ -155,7 +141,7 @@ export function SemanticMemberEditor({
                     </div>
 
                     {member.member_type === "measure" && member.measure && (
-                        <div className="rounded-2xl border border-indigo/15 bg-indigo/5 p-5 xl:col-span-2">
+                        <div className="border-t-2 border-indigo/30 pt-4 xl:col-span-2">
                             <p className="mb-4 font-serif font-bold text-ink">指标口径</p>
                             <div className="grid gap-5 xl:grid-cols-2">
                                 <label className="block"><span className="mb-2 block text-xs font-semibold text-ink/60">聚合方式</span><select className={inputClass} value={member.measure.aggregation_type} disabled={disabled} onChange={(event) => updateMeasure({ aggregation_type: event.target.value as NonNullable<SemanticMember["measure"]>["aggregation_type"] })}><option value="sum">求和</option><option value="count">计数</option><option value="count_distinct">去重计数</option><option value="number">表达式结果</option></select></label>
@@ -186,7 +172,7 @@ export function SemanticMemberEditor({
                                         </span>
                                     )}
                                 </label>
-                                <label className="block xl:col-span-2"><span className="mb-2 block text-xs font-semibold text-ink/60">表达式 <span className="font-normal text-ink/45">（必填）</span></span><textarea required aria-required="true" className={`${areaClass} font-mono text-xs`} value={member.measure.expression} placeholder="请输入指标计算表达式" disabled={disabled} onChange={(event) => updateMeasure({ expression: event.target.value })} /></label>
+                                <label className="block xl:col-span-2"><span className="mb-2 block text-xs font-semibold text-ink/60">表达式 <span className="font-normal text-ink/45">（必填）</span></span><textarea required className={`${areaClass} font-mono text-xs`} value={member.measure.expression} disabled={disabled} onChange={(event) => updateMeasure({ expression: event.target.value })} /></label>
                             </div>
                         </div>
                     )}
@@ -203,7 +189,7 @@ export function SemanticMemberEditor({
                     )}
 
                     {member.member_type !== "measure" && member.dimension && (
-                        <div className="rounded-2xl border border-pine/15 bg-pine/5 p-5 xl:col-span-2">
+                        <div className="border-t-2 border-pine/30 pt-4 xl:col-span-2">
                             <p className="mb-4 font-serif font-bold text-ink">维度属性</p>
                             <div className="grid gap-5 xl:grid-cols-2">
                                 <label className="block"><span className="mb-2 block text-xs font-semibold text-ink/60">维度类型</span><select className={inputClass} value={member.dimension.dimension_type} disabled={disabled || member.member_type === "time_dimension"} onChange={(event) => updateDimension({ dimension_type: event.target.value as NonNullable<SemanticMember["dimension"]>["dimension_type"] })}>{member.member_type === "time_dimension" ? <option value="time">时间</option> : <><option value="string">文本</option><option value="number">数值</option><option value="time">时间</option></>}</select></label>

@@ -42,9 +42,6 @@ from app.repositories.mysql.meta.query_audit_repository import QueryAuditReposit
 from app.repositories.mysql.meta.query_export_repository import QueryExportRepository
 from app.repositories.mysql.meta.query_message_repository import QueryMessageRepository
 from app.repositories.mysql.meta.query_session_repository import QuerySessionRepository
-from app.repositories.mysql.meta.query_turn_context_repository import (
-    QueryTurnContextRepository,
-)
 from app.repositories.mysql.meta.semantic_model_repository import (
     SemanticModelRepository,
 )
@@ -144,14 +141,6 @@ async def get_query_message_repository(
     """创建请求级查询消息仓储。"""
 
     return QueryMessageRepository(session)
-
-
-async def get_query_turn_context_repository(
-    session: Annotated[AsyncSession, Depends(get_meta_session)],
-) -> QueryTurnContextRepository:
-    """创建请求级查询轮次上下文仓储。"""
-
-    return QueryTurnContextRepository(session)
 
 
 async def get_sse_event_repository() -> SSEEventRepository:
@@ -440,9 +429,6 @@ async def get_query_service(
         SQLFallbackRepository | None, Depends(get_sql_fallback_repository)
     ],
     sql_policy_engine: Annotated[SQLPolicyEngine, Depends(get_sql_policy_engine)],
-    query_turn_context_repository: Annotated[
-        QueryTurnContextRepository, Depends(get_query_turn_context_repository)
-    ],
 ) -> QueryService:
     """组装一次查询所需的业务服务"""
 
@@ -467,5 +453,4 @@ async def get_query_service(
         metric_candidate_repository=metric_candidate_repository,
         sql_fallback_repository=sql_fallback_repository,
         sql_policy_engine=sql_policy_engine,
-        query_turn_context_repository=query_turn_context_repository,
     )
