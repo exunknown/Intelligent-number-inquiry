@@ -14,10 +14,13 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { buildSemanticChangeSummary, buildSemanticMemberId, copySemanticMeasure, createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, mergeSemanticMemberSummaries, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticMemberName, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
+import { buildSemanticChangeSummary, buildSemanticMemberId, copySemanticMeasure, createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, semanticMemberTypesForBuildTab, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticMemberName, type SemanticBuildTab, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
 import { nextFocusableIndex } from "../lib/userManagement";
 import { SemanticMemberEditor } from "./SemanticMemberEditor";
-import { SemanticMemberList } from "./SemanticMemberList";
+import { AgentManagementTabs } from "./AgentManagementTabs";
+import { DimensionBuildTable } from "./DimensionBuildTable";
+import { MetricBuildTable } from "./MetricBuildTable";
+import { SemanticBuildToolbar } from "./SemanticBuildToolbar";
 import { SemanticReleasePanel } from "./SemanticReleasePanel";
 import { SemanticValidationPanel } from "./SemanticValidationPanel";
 
@@ -54,6 +57,7 @@ function defaultCubeName(cubes: SemanticCube[]): string {
 
 export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPageProps) {
     const [filters, setFilters] = useState<Filters>({ memberType: "all", query: "" });
+    const [activeTab, setActiveTab] = useState<SemanticBuildTab>("metrics");
     const [directoryQuery, setDirectoryQuery] = useState("");
     const [members, setMembers] = useState<SemanticMemberSummary[]>([]);
     const [snapshot, setSnapshot] = useState<SemanticSnapshot>(emptySnapshot);
@@ -418,22 +422,36 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         setBusy(false);
     };
     const selectedMember = currentDraft.members.find((member) => member.member_id === selectedId) ?? null;
-    const directoryMembers = mergeSemanticMemberSummaries(
-        members,
-        currentDraft.members,
-        filters,
-        replacedMemberIds,
-    );
+    const normalizedQuery = filters.query.trim().toLowerCase();
+    const visibleMembers = currentDraft.members.filter((member) => {
+        if (!semanticMemberTypesForBuildTab(activeTab).includes(member.member_type)) return false;
+        if (filters.memberType !== "all" && member.member_type !== filters.memberType) return false;
+        if (!normalizedQuery) return true;
+        return [member.title, member.member_name, member.cube_name]
+            .some((value) => value.toLowerCase().includes(normalizedQuery));
+    });
+    const handleTabChange = (tab: SemanticBuildTab) => {
+        setActiveTab(tab);
+        setFilters((current) => ({ ...current, memberType: "all" }));
+    };
+    const handleMemberTypeChange = (memberType: Filters["memberType"]) => {
+        if (memberType !== "all" && !semanticMemberTypesForBuildTab(activeTab).includes(memberType)) return;
+        changeFilters({ ...filters, memberType });
+    };
     return (
         <div className="relative flex min-h-0 flex-1 flex-col bg-paper">
             <header className="flex min-h-16 shrink-0 items-center justify-between border-b border-ink/10 bg-white px-5 lg:px-7">
-                <div className="flex min-w-0 items-center gap-4"><button type="button" onClick={onBack} disabled={busy} title="返回问数工作台" aria-label="返回问数工作台" className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink/60 hover:bg-ink/5 disabled:opacity-40"><ArrowLeft className="h-4 w-4" aria-hidden="true" /></button><div className="min-w-0"><p className="font-serif text-xl font-bold text-ink">指标与维度治理</p><p className="truncate text-xs text-ink/50">维护统一语义成员，发布后供问数链路使用</p></div></div>
+                <div className="flex min-w-0 items-center gap-4"><button type="button" onClick={onBack} disabled={busy} title="返回问数工作台" aria-label="返回问数工作台" className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink/60 hover:bg-ink/5 disabled:opacity-40"><ArrowLeft className="h-4 w-4" aria-hidden="true" /></button><div className="min-w-0"><p className="font-serif text-xl font-bold text-ink">Agent 管理</p></div></div>
                 <div className="flex items-center gap-3"><span className="hidden text-xs text-ink/50 lg:inline">生效版本：<span className="font-mono text-ink">{releases.find((item) => item.active)?.release_version ?? "暂无"}</span></span><button type="button" onClick={refresh} disabled={loading || busy} title="刷新治理数据" aria-label="刷新治理数据" className="grid h-10 w-10 place-items-center rounded-full text-ink/60 hover:bg-ink/5 disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" /></button></div>
             </header>
             {error && <div role="alert" className="border-b border-oxide/20 bg-oxide/5 px-6 py-3 text-sm text-oxide">{error}</div>}
-            <div className="flex min-h-0 flex-1">
-                <SemanticMemberList items={directoryMembers} selectedId={selectedId} filters={filters} loading={loading} disabled={busy || loading || snapshotUnavailable} error={error && !directoryMembers.length ? error : null} onSelect={setSelectedId} onFilterChange={changeFilters} onCreate={requestCreateMember} cubes={workingSnapshot.cubes} />
-                    <div className="flex min-w-0 flex-1 flex-col">
+            <AgentManagementTabs activeTab={activeTab} onChange={handleTabChange} disabled={busy} />
+            <SemanticBuildToolbar tab={activeTab} query={filters.query} memberType={filters.memberType} count={visibleMembers.length} disabled={busy || loading || snapshotUnavailable} onQueryChange={(query) => setFilters((current) => ({ ...current, query }))} onMemberTypeChange={handleMemberTypeChange} onRefresh={refresh} onCreate={requestCreateMember} />
+            <div className="min-h-0 flex-1 overflow-auto">
+                {activeTab === "metrics" ? <MetricBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={(memberId) => setSelectedId(memberId)} onCopy={(memberId) => copyMeasure(memberId)} /> : <DimensionBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={(memberId) => setSelectedId(memberId)} onCopy={(memberId) => setSelectedId(memberId)} />}
+                <div className="border-b border-ink/10 bg-paper px-5 py-6 lg:px-7">
+                    <div className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-ink/45">成员编辑</div>
+                    <div className="border border-ink/10 bg-white">
                         <SemanticMemberEditor
                         member={selectedMember}
                         snapshot={currentDraft}
@@ -450,9 +468,10 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
                         onRelationsChange={updateRelations}
                         onSave={() => void save()}
                     />
-                    <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} canReview={draft?.status === "pending_review"} canPublish={canPublish} busy={busy} changeSummary={changeSummary ?? undefined} onValidate={() => { const current = requireDraft(); if (current) void perform(() => validateSemanticDraft(current.draft_id), ""); }} onSubmit={() => { const current = requireDraft(); if (current) void perform(() => submitSemanticDraft(current.draft_id, { reason: "提交语义模型审核" }), ""); }} onReview={(decision) => { const current = requireDraft(); if (current) void perform(() => reviewSemanticDraft(current.draft_id, { decision, reason: decision === "approved" ? "审核通过" : "审核驳回" }), ""); }} onPublish={() => void handlePublish()} />
+                        <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} canReview={draft?.status === "pending_review"} canPublish={canPublish} busy={busy} changeSummary={changeSummary ?? undefined} onValidate={() => { const current = requireDraft(); if (current) void perform(() => validateSemanticDraft(current.draft_id), ""); }} onSubmit={() => { const current = requireDraft(); if (current) void perform(() => submitSemanticDraft(current.draft_id, { reason: "提交语义模型审核" }), ""); }} onReview={(decision) => { const current = requireDraft(); if (current) void perform(() => reviewSemanticDraft(current.draft_id, { decision, reason: decision === "approved" ? "审核通过" : "审核驳回" }), ""); }} onPublish={() => void handlePublish()} />
+                    </div>
+                    <SemanticReleasePanel releases={releases} activeVersion={activeRelease?.release_version ?? null} activeSnapshot={snapshotUnavailable || !activeSnapshotReady ? null : activeSnapshot} disabled={busy || loading || snapshotUnavailable || !activeSnapshotReady} dirty={dirty} onRollback={handleRollback} />
                 </div>
-                <SemanticReleasePanel releases={releases} activeVersion={activeRelease?.release_version ?? null} activeSnapshot={snapshotUnavailable || !activeSnapshotReady ? null : activeSnapshot} disabled={busy || loading || snapshotUnavailable || !activeSnapshotReady} dirty={dirty} onRollback={handleRollback} />
             </div>
             {createMemberType && (
                 <div className="absolute inset-0 z-20 flex items-start justify-center bg-ink/10 p-10" role="presentation">
