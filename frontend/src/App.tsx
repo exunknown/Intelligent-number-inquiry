@@ -437,7 +437,10 @@ export default function App({ username }: AppProps) {
                             return {
                                 ...message,
                                 status: "error",
-                                content: "这次查询没有成功。",
+                                content:
+                                    event.code === "conversation_clarification_required"
+                                        ? event.message
+                                        : "这次查询没有成功。",
                                 error: event.message,
                                 errorCode: event.code,
                                 retryable: event.retryable,

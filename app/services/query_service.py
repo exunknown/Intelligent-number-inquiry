@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 
+from app.agent import state as agent_state
 from app.agent.context import DataAgentContext
 from app.agent.graph import graph
 from app.agent.state import DataAgentState
@@ -27,6 +28,7 @@ from app.entities.auth import QueryPrincipal
 from app.entities.metric_display import MetricDisplayItem, safe_metric_display_items
 from app.entities.query_audit import QueryAuditRecord
 from app.entities.query_message import QueryMessageSnapshot
+from app.entities.query_turn_context import QueryTurnContext
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.minio.result_object_store import ResultObjectStore
@@ -43,6 +45,9 @@ from app.repositories.mysql.meta.query_audit_repository import QueryAuditReposit
 from app.repositories.mysql.meta.query_export_repository import QueryExportRepository
 from app.repositories.mysql.meta.query_message_repository import QueryMessageRepository
 from app.repositories.mysql.meta.query_session_repository import QuerySessionRepository
+from app.repositories.mysql.meta.query_turn_context_repository import (
+    QueryTurnContextRepository,
+)
 from app.repositories.mysql.meta.semantic_model_repository import (
     SemanticModelRepository,
 )
@@ -52,6 +57,7 @@ from app.repositories.qdrant.cube_member_qdrant_repository import (
 )
 from app.repositories.redis.sse_event_repository import SSEEventRepository
 from app.security.sql_policy import SQLPolicyEngine
+from app.services.conversation_context import ConversationContextBuilder
 from app.services.semantic_metric_relation_service import SemanticMetricRelationService
 
 _AUDIT_EVENT_FIELDS = (
@@ -70,9 +76,101 @@ _AUDIT_EVENT_FIELDS = (
     "result_bytes",
     "result_truncated",
     "sql_execution_duration_ms",
+    "turn_context",
 )
 _SSE_PROTOCOL_VERSION = 1
 _SEMANTIC_SNAPSHOT_TIMEOUT_SECONDS = 1.0
+
+
+def build_turn_context_payload(
+    state: DataAgentState, result_summary: dict[str, object] | None
+) -> dict[str, object]:
+    """公开安全轮次上下文构造器，供服务和测试复用。"""
+
+    return agent_state.build_turn_context_payload(state, result_summary)
+
+
+def _safe_turn_context_event(value: object) -> dict[str, object] | None:
+    """只接收内部事件中的安全轮次上下文字段。"""
+
+    if not isinstance(value, dict):
+        return None
+    effective_query = value.get("effective_query")
+    query_mode = value.get("query_mode")
+    context = value.get("context")
+    if not isinstance(effective_query, str) or not isinstance(query_mode, str):
+        return None
+    if not isinstance(context, dict):
+        context = {}
+    safe_context = {
+        key: item
+        for key, item in ConversationContextBuilder._sanitize_value(context).items()
+    }
+    result_summary = ConversationContextBuilder._sanitize_result_summary(
+        value.get("result_summary")
+    )
+    metadata_release_version = value.get("metadata_release_version")
+    inherited_from_context_id = value.get("inherited_from_context_id")
+    return {
+        "effective_query": effective_query,
+        "query_mode": query_mode,
+        "context": safe_context,
+        "result_summary": result_summary,
+        "metadata_release_version": (
+            metadata_release_version
+            if isinstance(metadata_release_version, str)
+            else None
+        ),
+        "inherited_from_context_id": (
+            inherited_from_context_id
+            if isinstance(inherited_from_context_id, str)
+            else None
+        ),
+    }
+
+
+def _terminal_result_summary(event: dict) -> dict[str, object]:
+    """从结果终态提取行数等摘要，绝不保存结果行。"""
+
+    data = event.get("data")
+    row_count = event.get("row_count")
+    if row_count is None and isinstance(data, list):
+        row_count = len(data)
+    summary: dict[str, object] = {}
+    if isinstance(row_count, int) and not isinstance(row_count, bool):
+        summary["row_count"] = row_count
+    if isinstance(event.get("truncated"), bool):
+        summary["truncated"] = event["truncated"]
+    return summary
+
+
+async def _lookup_user_message_sequence(
+    repository: QueryMessageRepository | None,
+    session_id: str,
+    user_id: str,
+    request_id: str,
+) -> int | None:
+    """兼容仓储提供的可空序列查询，不让上下文写入影响查询完成。"""
+
+    if repository is None:
+        return None
+    for method_name in (
+        "get_user_message_sequence",
+        "get_user_message_sequence_no",
+        "find_user_message_sequence",
+    ):
+        method = getattr(repository, method_name, None)
+        if not callable(method):
+            continue
+        try:
+            value = await method(session_id, user_id, request_id)
+        except Exception:
+            logger.warning("Failed to lookup query user message sequence")
+            return None
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        return None
+    return None
 
 
 def build_query_message_snapshot(
@@ -209,6 +307,7 @@ class QueryService:
         metric_candidate_repository: MetricCandidateRepository | None = None,
         sql_fallback_repository: SQLFallbackRepository | None = None,
         sql_policy_engine: SQLPolicyEngine | None = None,
+        query_turn_context_repository: QueryTurnContextRepository | None = None,
         metrics: QueryMetrics | None = None,
     ):
         self.meta_mysql_repository = meta_mysql_repository
@@ -232,6 +331,7 @@ class QueryService:
         self.metric_candidate_repository = metric_candidate_repository
         self.sql_fallback_repository = sql_fallback_repository
         self.sql_policy_engine = sql_policy_engine
+        self.query_turn_context_repository = query_turn_context_repository
         self.metrics = metrics or get_query_metrics()
 
     async def _load_semantic_model_snapshot(self, budget: RequestBudget):
@@ -372,8 +472,27 @@ class QueryService:
         if self.meta_mysql_repository is not None:
             self.meta_mysql_repository.set_release_version(metadata_release_version)
 
+        recent_turn_contexts = []
+        if (
+            app_config.conversation.enabled
+            and self.query_turn_context_repository is not None
+            and session_id is not None
+        ):
+            try:
+                recent_turn_contexts = (
+                    await self.query_turn_context_repository.list_recent_successful(
+                        session_id,
+                        principal.auth.user_id,
+                        limit=app_config.conversation.recent_turns,
+                        max_context_chars=app_config.conversation.max_context_chars,
+                    )
+                )
+            except Exception:
+                logger.warning("Failed to load query turn context")
+
         request_id = str(request_id_ctx_var.get())
         user_message_persisted = False
+        user_message_sequence_no = None
         if self.query_message_repository is not None and session_id is not None:
             try:
                 user_message = await self.query_message_repository.append_user_message(
@@ -383,11 +502,27 @@ class QueryService:
                     query,
                 )
                 user_message_persisted = user_message is not None
+                if user_message is not None:
+                    sequence_no = getattr(user_message, "sequence_no", None)
+                    if isinstance(sequence_no, int) and not isinstance(
+                        sequence_no, bool
+                    ):
+                        user_message_sequence_no = sequence_no
+                if user_message_sequence_no is None:
+                    user_message_sequence_no = await _lookup_user_message_sequence(
+                        self.query_message_repository,
+                        session_id,
+                        principal.auth.user_id,
+                        request_id,
+                    )
             except Exception:
                 logger.warning("Failed to save query user message")
 
         state = DataAgentState(
             query=query,
+            original_query=query,
+            effective_query=query,
+            recent_turn_contexts=recent_turn_contexts,
             include_attached_metrics=include_attached_metrics,
         )
         context = DataAgentContext(
@@ -426,12 +561,14 @@ class QueryService:
             "result_bytes": None,
             "result_truncated": None,
             "sql_execution_duration_ms": None,
+            "turn_context": None,
         }
         node_started_at: dict[str, float] = {}
         event_sequence = 0
         terminal_sent = False
         snapshot_events: list[dict] = []
         terminal_event: dict = {"type": "error", "code": "internal_error"}
+        turn_context_payload: dict[str, object] | None = None
 
         async def serialize(payload: dict) -> str:
             nonlocal event_sequence
@@ -479,7 +616,15 @@ class QueryService:
                     pending_chunk = asyncio.create_task(graph_stream.__anext__())
                     budget.check()
                     if isinstance(chunk, dict) and chunk.get("type") == "audit":
+                        event_turn_context = _safe_turn_context_event(
+                            chunk.get("turn_context")
+                        )
+                        if event_turn_context is not None:
+                            turn_context_payload = event_turn_context
+                            audit["turn_context"] = event_turn_context
                         for field in _AUDIT_EVENT_FIELDS:
+                            if field == "turn_context":
+                                continue
                             if chunk.get(field) is not None:
                                 audit[field] = chunk[field]
                         continue
@@ -531,6 +676,18 @@ class QueryService:
                     elif isinstance(chunk, dict) and chunk.get("type") == "result":
                         audit["outcome"] = "success"
                         audit["verified"] = chunk.get("verified")
+                        if turn_context_payload is not None:
+                            result_summary = _terminal_result_summary(chunk)
+                            existing_summary = turn_context_payload.get(
+                                "result_summary"
+                            )
+                            merged_summary = (
+                                dict(existing_summary)
+                                if isinstance(existing_summary, dict)
+                                else {}
+                            )
+                            merged_summary.update(result_summary)
+                            turn_context_payload["result_summary"] = merged_summary
                     yield await serialize(chunk)
                 if not terminal_sent:
                     terminal_sent = True
@@ -682,7 +839,61 @@ class QueryService:
                     )
                 except Exception:
                     logger.warning("Failed to save query assistant message")
-            elif self.query_session_repository is not None and session_id is not None:
+            if (
+                self.query_turn_context_repository is not None
+                and session_id is not None
+                and terminal_event.get("type") == "result"
+                and audit["outcome"] == "success"
+                and turn_context_payload is not None
+                and user_message_sequence_no is not None
+            ):
+                try:
+                    context_payload = dict(turn_context_payload)
+                    context_payload["metadata_release_version"] = (
+                        context_payload.get("metadata_release_version")
+                        or metadata_release_version
+                    )
+                    turn_context = QueryTurnContext(
+                        context_id=str(uuid4()),
+                        session_id=session_id,
+                        user_id=principal.auth.user_id,
+                        request_id=request_id,
+                        user_message_sequence_no=user_message_sequence_no,
+                        effective_query=str(
+                            context_payload.get("effective_query") or query
+                        ),
+                        query_mode=str(
+                            context_payload.get("query_mode") or audit["query_mode"]
+                        ),
+                        context=(
+                            context_payload.get("context")
+                            if isinstance(context_payload.get("context"), dict)
+                            else {}
+                        ),
+                        result_summary=(
+                            context_payload.get("result_summary")
+                            if isinstance(context_payload.get("result_summary"), dict)
+                            else None
+                        ),
+                        metadata_release_version=context_payload.get(
+                            "metadata_release_version"
+                        ),
+                        inherited_from_context_id=context_payload.get(
+                            "inherited_from_context_id"
+                        ),
+                        context_schema_version=1,
+                        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                    )
+                    await self.query_turn_context_repository.save_if_absent(
+                        turn_context
+                    )
+                except Exception:
+                    logger.warning("Failed to save query turn context")
+            if (
+                (self.query_message_repository is None or not user_message_persisted)
+                and self.query_session_repository is not None
+                and session_id is not None
+            ):
                 try:
                     await self.query_session_repository.touch(
                         session_id,

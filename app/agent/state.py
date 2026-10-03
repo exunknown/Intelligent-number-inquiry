@@ -7,7 +7,8 @@ State 是 LangGraph 各节点之间传递和更新的共享数据
 SQL 生成闭环会继续写入候选 SQL 以及校验错误信息，用于控制校正或执行分支
 """
 
-from typing import Literal, NotRequired, TypedDict
+from dataclasses import asdict, is_dataclass
+from typing import Any, Literal, NotRequired, TypedDict
 
 from app.agent.selector import SelectorDecision
 from app.entities.column_info import ColumnInfo
@@ -164,3 +165,145 @@ class DataAgentState(TypedDict):
     sql_correction_attempts: int  # 当前自动修正次数，最多一次
     sql_cost_estimate: dict  # estimated_rows 与 query_cost
     sql_result_stats: dict  # 行数、字节数、截断标记和耗时
+
+
+def _safe_context_value(value: Any) -> Any:
+    """把上下文投影为可持久化的业务标量、列表和对象。"""
+
+    if is_dataclass(value):
+        return _safe_context_value(asdict(value))
+    if isinstance(value, dict):
+        return {
+            str(key): _safe_context_value(item)
+            for key, item in value.items()
+            if str(key).strip().lower()
+            not in {
+                "data",
+                "executable_sql",
+                "authorization",
+                "connection",
+                "connection_info",
+                "connection_string",
+                "database",
+                "database_url",
+                "db",
+                "db_host",
+                "db_url",
+                "dsn",
+                "full_result",
+                "host",
+                "hostname",
+                "normalized_sql",
+                "password",
+                "prompt",
+                "raw_sql",
+                "raw_result",
+                "records",
+                "result",
+                "result_rows",
+                "rows",
+                "secret",
+                "sql",
+                "token",
+            }
+        }
+    if isinstance(value, (list, tuple)):
+        return [_safe_context_value(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return None
+
+
+def _metric_turn_context(state: DataAgentState) -> dict[str, object]:
+    decision = state.get("metric_query_decision")
+    query = getattr(decision, "query", None)
+    if query is None:
+        return {}
+    return _safe_context_value(query)
+
+
+def _sql_turn_context(state: DataAgentState) -> dict[str, object]:
+    tables: list[str] = []
+    columns: list[str] = []
+    for table in state.get("table_infos", []):
+        if not isinstance(table, dict) or not isinstance(table.get("name"), str):
+            continue
+        table_name = table["name"]
+        tables.append(table_name)
+        for column in table.get("columns", []):
+            if isinstance(column, dict) and isinstance(column.get("name"), str):
+                columns.append(f"{table_name}.{column['name']}")
+
+    candidates = state.get("selector_candidates") or {}
+    column_names = {
+        column["id"]: f"{table['name']}.{column['name']}"
+        for table in candidates.get("tables", [])
+        if isinstance(table, dict) and isinstance(table.get("name"), str)
+        for column in table.get("columns", [])
+        if isinstance(column, dict)
+        and isinstance(column.get("id"), str)
+        and isinstance(column.get("name"), str)
+    }
+    values_by_id = {
+        item["id"]: item
+        for item in candidates.get("values", [])
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    selector_decision = state.get("selector_decision") or {}
+    selected_values = (
+        selector_decision.get("keep_values", [])
+        if isinstance(selector_decision, dict)
+        else []
+    )
+    filters: list[dict[str, object]] = []
+    for selected in selected_values:
+        if not isinstance(selected, dict):
+            continue
+        value_id = selected.get("value_id")
+        selected_column_id = selected.get("column_id")
+        item = values_by_id.get(value_id)
+        if item is None:
+            continue
+        value = item.get("value")
+        column_id = selected_column_id or item.get("column_id")
+        if isinstance(column_id, str) and isinstance(value, (str, int, float, bool)):
+            filters.append(
+                {
+                    "column": column_names.get(column_id, column_id),
+                    "value": value,
+                }
+            )
+
+    context: dict[str, object] = {
+        "tables": tables,
+        "columns": columns,
+        "filters": filters,
+    }
+    for key in ("group_by", "order_by", "limit"):
+        value = state.get(f"sql_{key}") or state.get(key)
+        if value is not None:
+            context[key] = _safe_context_value(value)
+    return context
+
+
+def build_turn_context_payload(
+    state: DataAgentState, result_summary: dict[str, object] | None
+) -> dict[str, object]:
+    """构造不含 SQL 和原始结果的内部轮次上下文事件。"""
+
+    query_mode = state.get("query_mode")
+    if query_mode not in {"metric", "sql"}:
+        query_mode = "sql" if state.get("raw_sql") else "metric"
+    context = (
+        _metric_turn_context(state)
+        if query_mode == "metric"
+        else _sql_turn_context(state)
+    )
+    return {
+        "effective_query": state.get("effective_query") or state.get("query", ""),
+        "query_mode": query_mode,
+        "context": context,
+        "result_summary": _safe_context_value(result_summary),
+        "metadata_release_version": state.get("metadata_release_version"),
+        "inherited_from_context_id": state.get("inherited_from_context_id"),
+    }

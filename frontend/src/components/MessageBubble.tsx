@@ -12,6 +12,8 @@ import type { ChatMessage } from "../types/agent";
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
     const isUser = message.role === "user";
+    const isClarificationRequired =
+        !isUser && message.errorCode === "conversation_clarification_required";
     const [copied, setCopied] = useState(false);
     const [hiddenAttachedMetricIds, setHiddenAttachedMetricIds] = useState<Set<string>>(
         new Set(),
@@ -120,7 +122,20 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
                     </div>
 
                     {message.error && (
-                        <div className="mt-4 rounded-xl border border-oxide/25 bg-oxide/5 px-4 py-3 text-sm text-oxide">
+                        <div
+                            role={isClarificationRequired ? "status" : undefined}
+                            className={cn(
+                                "mt-4 rounded-xl px-4 py-3 text-sm",
+                                isClarificationRequired
+                                    ? "border border-cinnabar/30 bg-cinnabar/5 text-ink"
+                                    : "border border-oxide/25 bg-oxide/5 text-oxide",
+                            )}
+                        >
+                            {isClarificationRequired && (
+                                <div className="mb-1 text-xs font-semibold text-cinnabar">
+                                    需要确认会话上下文
+                                </div>
+                            )}
                             {message.error}
                             {message.retryable && message.errorCode?.startsWith("cube_") && (
                                 <span className="ml-2 whitespace-nowrap font-semibold">可重试</span>
