@@ -58,6 +58,48 @@ export function canDeleteSemanticJoin(join: Pick<SemanticJoin, "editable">): boo
     return join.editable;
 }
 
+export function semanticJoinKey(
+    join: Pick<SemanticJoin, "cube_name" | "target_cube_name">,
+): string {
+    return `${join.cube_name}->${join.target_cube_name}`;
+}
+
+export function validateSemanticJoin(
+    join: Pick<
+        SemanticJoin,
+        "cube_name" | "target_cube_name" | "sql_expression" | "relationship"
+    >,
+    snapshot: Pick<SemanticSnapshot, "cubes" | "joins">,
+    originalKey?: string,
+): string | null {
+    const cubeNames = new Set(snapshot.cubes.map((cube) => cube.cube_name));
+    if (!cubeNames.has(join.cube_name)) return `Join 来源 Cube 不存在：${join.cube_name}`;
+    if (!cubeNames.has(join.target_cube_name)) {
+        return `Join 目标 Cube 不存在：${join.target_cube_name}`;
+    }
+    if (join.cube_name === join.target_cube_name) return "Join 来源和目标不能相同";
+    if (!join.sql_expression.trim()) return "Join 表达式不能为空";
+    if (!join.relationship.trim()) return "Join 关系类型不能为空";
+    if (
+        !["many_to_one", "one_to_many", "one_to_one", "many_to_many"].includes(
+            join.relationship,
+        )
+    ) {
+        return "Join 关系类型不受支持";
+    }
+    const nextKey = semanticJoinKey(join);
+    if (
+        snapshot.joins.some(
+            (item) =>
+                semanticJoinKey(item) === nextKey &&
+                semanticJoinKey(item) !== originalKey,
+        )
+    ) {
+        return "同一来源和目标的 Join 已存在";
+    }
+    return null;
+}
+
 export function semanticDirectoryLoadAllowed(dirty: boolean): boolean {
     return !dirty;
 }

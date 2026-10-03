@@ -20,12 +20,14 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { buildSemanticChangeSummary, buildSemanticMemberId, canDeleteSemanticCube, cloneSemanticSnapshot, copySemanticMeasure, copySemanticMember, createDraftSemanticCube, createDraftSemanticMember, createSemanticModelRequestGate, cubeHasReferences, formatSemanticModelError, removeSemanticCube, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, semanticDirectoryLoadAllowed, semanticMemberTypesForBuildTab, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticCube, validateSemanticMemberName, type SemanticBuildTab, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
+import { buildSemanticChangeSummary, buildSemanticMemberId, canDeleteSemanticCube, canDeleteSemanticJoin, canEditSemanticJoin, cloneSemanticSnapshot, copySemanticMeasure, copySemanticMember, createDraftSemanticCube, createDraftSemanticMember, createSemanticModelRequestGate, cubeHasReferences, formatSemanticModelError, removeSemanticCube, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, semanticDirectoryLoadAllowed, semanticJoinKey, semanticMemberTypesForBuildTab, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticCube, validateSemanticJoin, validateSemanticMemberName, type SemanticBuildTab, type SemanticDraft, type SemanticJoin, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
 import { nextFocusableIndex } from "../lib/userManagement";
 import { AgentManagementTabs } from "./AgentManagementTabs";
 import { CubeBuildTable } from "./CubeBuildTable";
 import { CubeEditDialog } from "./CubeEditDialog";
 import { DimensionBuildTable } from "./DimensionBuildTable";
+import { JoinBuildTable } from "./JoinBuildTable";
+import { JoinEditDialog } from "./JoinEditDialog";
 import { MetricBuildTable } from "./MetricBuildTable";
 import { SemanticBuildToolbar } from "./SemanticBuildToolbar";
 import { SemanticMemberEditDialog } from "./SemanticMemberEditDialog";
@@ -53,6 +55,12 @@ type CubeDialogState = {
     mode: "create" | "edit";
     cube: SemanticCube;
     originalCubeName: string | null;
+    trigger: HTMLButtonElement | null;
+} | null;
+type JoinDialogState = {
+    mode: "create" | "edit";
+    join: SemanticJoin;
+    originalKey: string | null;
     trigger: HTMLButtonElement | null;
 } | null;
 
@@ -113,6 +121,8 @@ export function SemanticModelPage({
     const [createCubeName, setCreateCubeName] = useState("");
     const [memberDialog, setMemberDialog] = useState<MemberDialogState>(null);
     const [cubeDialog, setCubeDialog] = useState<CubeDialogState>(null);
+    const [joinDialog, setJoinDialog] = useState<JoinDialogState>(null);
+    const [joinSourceFilter, setJoinSourceFilter] = useState("");
     const [releaseDialogOpen, setReleaseDialogOpen] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -253,6 +263,88 @@ export function SemanticModelPage({
                     : [...current.cubes, cube],
         }));
         closeCubeDialog();
+    };
+
+    const openCreateJoin = (trigger: HTMLButtonElement) => {
+        const [source, target] = workingSnapshot.cubes.map((cube) => cube.cube_name);
+        setError(null);
+        setJoinDialog({
+            mode: "create",
+            join: {
+                release_version: workingSnapshot.release_version,
+                cube_name: source ?? "",
+                target_cube_name: target ?? "",
+                sql_expression: "",
+                relationship: "many_to_one",
+                editable: true,
+            },
+            originalKey: null,
+            trigger,
+        });
+    };
+
+    const openEditJoin = (join: SemanticJoin, trigger: HTMLButtonElement) => {
+        if (!canEditSemanticJoin(join)) return;
+        setError(null);
+        setJoinDialog({
+            mode: "edit",
+            join: structuredClone(join),
+            originalKey: semanticJoinKey(join),
+            trigger,
+        });
+    };
+
+    const closeJoinDialog = () => {
+        const trigger = joinDialog?.trigger;
+        setJoinDialog(null);
+        setError(null);
+        requestAnimationFrame(() => {
+            if (trigger?.isConnected) {
+                trigger.focus();
+                return;
+            }
+            document.getElementById("semantic-model-refresh")?.focus();
+        });
+    };
+
+    const saveJoin = (join: SemanticJoin) => {
+        if (!joinDialog) return;
+        const validationError = validateSemanticJoin(
+            join,
+            workingSnapshot,
+            joinDialog.originalKey ?? undefined,
+        );
+        if (validationError) {
+            setError(validationError);
+            return;
+        }
+        updateWorkingSnapshot((current) => ({
+            ...current,
+            joins:
+                joinDialog.mode === "edit" && joinDialog.originalKey
+                    ? current.joins.map((item) =>
+                          semanticJoinKey(item) === joinDialog.originalKey ? join : item,
+                      )
+                    : [...current.joins, join],
+        }));
+        closeJoinDialog();
+    };
+
+    const deleteJoin = (join: SemanticJoin, trigger: HTMLButtonElement) => {
+        if (!canDeleteSemanticJoin(join)) return;
+        if (!window.confirm(`确定删除 Join ${join.cube_name} 到 ${join.target_cube_name} 吗？删除会先作用于当前草稿。`)) return;
+        updateWorkingSnapshot((current) => {
+            const index = current.joins.indexOf(join);
+            if (index < 0) return current;
+            return { ...current, joins: current.joins.filter((_, itemIndex) => itemIndex !== index) };
+        });
+        requestAnimationFrame(() => {
+            if (trigger.isConnected) {
+                trigger.focus();
+                return;
+            }
+            document.getElementById("semantic-model-refresh")?.focus();
+        });
     };
 
     const deleteCube = (cubeName: string, trigger: HTMLButtonElement) => {
@@ -776,6 +868,12 @@ export function SemanticModelPage({
         }
         return counts;
     }, {});
+    const visibleJoins = workingSnapshot.joins.filter(
+        (join) => !joinSourceFilter || join.cube_name === joinSourceFilter,
+    );
+    const cubeTitles = Object.fromEntries(
+        workingSnapshot.cubes.map((cube) => [cube.cube_name, cube.title]),
+    );
     const handleTabChange = (tab: SemanticBuildTab) => {
         setActiveTab(tab);
         setFilters((current) => ({ ...current, memberType: "all" }));
@@ -808,7 +906,37 @@ export function SemanticModelPage({
                 <SemanticBuildToolbar tab={activeTab} query={filters.query} memberType={filters.memberType} count={visibleMembers.length} selectedCount={visibleMembers.filter((member) => selectedMemberIds.includes(member.member_id)).length} disabled={busy || loading || snapshotUnavailable} onQueryChange={(query) => setFilters((current) => ({ ...current, query }))} onMemberTypeChange={handleMemberTypeChange} onRefresh={refresh} onCreate={requestCreateMember} />
             )}
             <div className="min-h-0 flex-1 overflow-y-auto bg-paper">
-                {activeTab === "cubes" ? <CubeBuildTable items={visibleCubes} memberCounts={cubeMemberCounts} joinCounts={cubeJoinCounts} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={openEditCube} onDelete={deleteCube} /> : activeTab === "metrics" ? <MetricBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} selectedIds={selectedMemberIds} onSelectionChange={handleSelectionChange} onEdit={(memberId, trigger) => openEditMember(memberId, trigger)} onDelete={deleteMember} /> : <DimensionBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} selectedIds={selectedMemberIds} onSelectionChange={handleSelectionChange} onEdit={(memberId, trigger) => openEditMember(memberId, trigger)} onDelete={deleteMember} />}
+                {activeTab === "cubes" ? (
+                    <>
+                        <CubeBuildTable items={visibleCubes} memberCounts={cubeMemberCounts} joinCounts={cubeJoinCounts} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={openEditCube} onDelete={deleteCube} />
+                        <section aria-labelledby="join-management-title" className="mx-8 mb-6 lg:mx-12">
+                            <div className="flex flex-wrap items-center gap-3 border-b border-ink/10 pb-4">
+                                <div className="mr-auto">
+                                    <h2 id="join-management-title" className="font-serif text-lg font-bold text-ink">Join 管理</h2>
+                                    <p className="mt-1 text-xs text-ink/50">管理 Cube 之间的关联关系，保留导入模型的只读 Join。</p>
+                                </div>
+                                <label className="min-w-[220px] text-xs font-semibold text-ink/60">
+                                    <span className="sr-only">来源 Cube 筛选</span>
+                                    <select
+                                        value={joinSourceFilter}
+                                        onChange={(event) => setJoinSourceFilter(event.target.value)}
+                                        disabled={busy || loading || snapshotUnavailable}
+                                        className="h-10 w-full rounded-xl border border-ink/15 bg-white px-3 text-sm font-normal text-ink outline-none transition focus:border-indigo/60 focus:ring-2 focus:ring-indigo/15 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        <option value="">全部来源 Cube</option>
+                                        {workingSnapshot.cubes.map((cube) => (
+                                            <option key={cube.cube_name} value={cube.cube_name}>
+                                                {cube.cube_name}{cube.title ? ` · ${cube.title}` : ""}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <button type="button" onClick={(event) => openCreateJoin(event.currentTarget)} disabled={busy || loading || snapshotUnavailable || workingSnapshot.cubes.length < 2} className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-dai px-3 text-sm font-semibold text-paper transition hover:bg-dai/90 disabled:cursor-not-allowed disabled:opacity-45"><Plus className="h-4 w-4" aria-hidden="true" />新增 Join</button>
+                            </div>
+                            <JoinBuildTable items={visibleJoins} cubeTitles={cubeTitles} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={openEditJoin} onDelete={deleteJoin} />
+                        </section>
+                    </>
+                ) : activeTab === "metrics" ? <MetricBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} selectedIds={selectedMemberIds} onSelectionChange={handleSelectionChange} onEdit={(memberId, trigger) => openEditMember(memberId, trigger)} onDelete={deleteMember} /> : <DimensionBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} selectedIds={selectedMemberIds} onSelectionChange={handleSelectionChange} onEdit={(memberId, trigger) => openEditMember(memberId, trigger)} onDelete={deleteMember} />}
                 {showValidationNotice && <div className="border-b border-ink/10 bg-paper">
                     <div className="px-5 py-6 lg:px-7">
                         <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} changeSummary={changeSummary ?? undefined} onClose={() => setValidationNoticeOpen(false)} />
@@ -864,6 +992,18 @@ export function SemanticModelPage({
                     onCancel={closeCubeDialog}
                     onSave={saveCube}
                     onChange={(cube) => setCubeDialog((current) => current ? { ...current, cube } : current)}
+                />
+            )}
+            {joinDialog && (
+                <JoinEditDialog
+                    mode={joinDialog.mode}
+                    join={joinDialog.join}
+                    cubes={workingSnapshot.cubes}
+                    disabled={busy || loading || snapshotUnavailable}
+                    error={error}
+                    onCancel={closeJoinDialog}
+                    onSave={saveJoin}
+                    onChange={(join) => setJoinDialog((current) => current ? { ...current, join } : current)}
                 />
             )}
             {memberDialog && (
