@@ -15,6 +15,7 @@ type SemanticMemberEditorProps = {
     disabled: boolean;
     onChange: (member: SemanticMember) => void;
     onMemberNameChange: (memberName: string) => void;
+    memberNameValidationId: string;
     members: SemanticMember[];
     dependencyCandidates: SemanticMember[];
     metricEquivalenceGroups: SemanticMetricEquivalenceGroup[];
@@ -32,6 +33,7 @@ export function SemanticMemberEditor({
     disabled,
     onChange,
     onMemberNameChange,
+    memberNameValidationId,
     members,
     dependencyCandidates,
     metricEquivalenceGroups,
@@ -45,7 +47,12 @@ export function SemanticMemberEditor({
     }, [member?.member_id, member?.member_name]);
 
     const memberNameError = member
-        ? validateSemanticMemberName(snapshot, member, memberNameDraft)
+        ? validateSemanticMemberName(
+              snapshot,
+              member,
+              memberNameDraft,
+              memberNameValidationId,
+          )
         : null;
 
     if (!member) {

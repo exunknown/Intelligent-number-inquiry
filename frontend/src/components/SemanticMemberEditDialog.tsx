@@ -72,8 +72,17 @@ export function SemanticMemberEditDialog({
     const initialMemberRef = useRef(member ? structuredClone(member) : null);
     const initialMetricEquivalenceGroupsRef = useRef(structuredClone(metricEquivalenceGroups));
     const initialMetricAttachmentsRef = useRef(structuredClone(metricAttachments));
+    const memberNameValidationId =
+        mode === "edit"
+            ? initialMemberRef.current?.member_id ?? member?.member_id ?? ""
+            : member?.member_id ?? "";
     const memberNameError = member
-        ? validateSemanticMemberName(snapshot, member, member.member_name)
+        ? validateSemanticMemberName(
+              snapshot,
+              member,
+              member.member_name,
+              memberNameValidationId,
+          )
         : null;
     const hasChanges = semanticMemberDialogHasChanges(
         initialMemberRef.current,
@@ -164,6 +173,7 @@ export function SemanticMemberEditDialog({
                         disabled={disabled}
                         onChange={onChange}
                         onMemberNameChange={onMemberNameChange}
+                        memberNameValidationId={memberNameValidationId}
                         onRelationsChange={onRelationsChange}
                         showActions={false}
                     />

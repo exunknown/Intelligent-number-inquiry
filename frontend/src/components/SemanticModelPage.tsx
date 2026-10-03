@@ -240,6 +240,9 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
                 workingSnapshot,
                 current.member,
                 memberName,
+                current.mode === "edit"
+                    ? current.originalMember.member_id
+                    : current.member.member_id,
             );
             if (validationError) {
                 setError(validationError);

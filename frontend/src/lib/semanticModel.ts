@@ -533,6 +533,7 @@ export function validateSemanticMemberName(
     snapshot: Pick<SemanticSnapshot, "members">,
     member: Pick<SemanticMember, "member_id" | "cube_name">,
     memberName: string,
+    excludeMemberId = member.member_id,
 ): string | null {
     if (!memberName.trim()) return "成员编码不能为空";
     if (!/^[A-Za-z0-9_]+$/.test(memberName)) {
@@ -541,7 +542,7 @@ export function validateSemanticMemberName(
     if (
         snapshot.members.some(
             (item) =>
-                item.member_id !== member.member_id &&
+                item.member_id !== excludeMemberId &&
                 item.cube_name === member.cube_name &&
                 item.member_name === memberName,
         )
