@@ -1,4 +1,26 @@
 export type SemanticMemberType = "measure" | "dimension" | "time_dimension";
+export type SemanticBuildTab = "metrics" | "dimensions";
+
+export function semanticBuildTabForPath(pathname: string): SemanticBuildTab {
+    return pathname === "/agent-management/dimensions" ? "dimensions" : "metrics";
+}
+
+export function semanticBuildPath(tab: SemanticBuildTab): string {
+    return tab === "dimensions"
+        ? "/agent-management/dimensions"
+        : "/agent-management/metrics";
+}
+
+export function semanticMemberTypesForBuildTab(
+    tab: SemanticBuildTab,
+): SemanticMemberType[] {
+    return tab === "dimensions" ? ["dimension", "time_dimension"] : ["measure"];
+}
+
+export function isAgentManagementPath(pathname: string): boolean {
+    return pathname === "/semantic-model" || pathname.startsWith("/agent-management/");
+}
+
 export type SemanticMetricEquivalenceMatchType = "exact" | "compatible";
 export type SemanticMetricAttachmentRelationType =
     | "supporting"

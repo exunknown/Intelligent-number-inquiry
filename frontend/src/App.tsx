@@ -33,6 +33,7 @@ import {
 import { cn, summarizeResult } from "./lib/format";
 import { sanitizeMetricItems } from "./lib/metricDisplay";
 import { hydrateSessionMessages } from "./lib/sessionHydration";
+import { isAgentManagementPath } from "./lib/semanticModel";
 import { capabilityPresentation, shouldAutoScrollChat } from "./lib/userManagement";
 import type { AgentEvent, ChatMessage, StepState } from "./types/agent";
 
@@ -79,11 +80,22 @@ type AppProps = {
     username: string;
 };
 
-type AppPath = "/" | "/history" | "/semantic-model";
+type AppPath =
+    | "/"
+    | "/history"
+    | "/semantic-model"
+    | "/agent-management/metrics"
+    | "/agent-management/dimensions";
 
 function readAppPath(): AppPath {
     if (window.location.pathname === "/history") return "/history";
     if (window.location.pathname === "/semantic-model") return "/semantic-model";
+    if (window.location.pathname === "/agent-management/metrics") {
+        return "/agent-management/metrics";
+    }
+    if (window.location.pathname === "/agent-management/dimensions") {
+        return "/agent-management/dimensions";
+    }
     return "/";
 }
 
@@ -143,7 +155,7 @@ export default function App({ username }: AppProps) {
             setNavigationError("查询进行中，请先停止查询后再切换页面。");
             return;
         }
-        if (path === "/semantic-model" && semanticModelDirty) {
+        if (isAgentManagementPath(path) && semanticModelDirty) {
             if (!window.confirm("当前指标治理草稿尚未保存，确定离开吗？")) return;
             setSemanticModelDirty(false);
         }
@@ -159,7 +171,7 @@ export default function App({ username }: AppProps) {
                 setNavigationError("查询进行中，请先停止查询后再切换页面。");
                 return;
             }
-            if (path === "/semantic-model" && semanticModelDirty) {
+            if (isAgentManagementPath(path) && semanticModelDirty) {
                 window.history.pushState({}, "", path);
                 setNavigationError("当前指标治理草稿尚未保存，请先保存或确认离开。");
                 return;
@@ -632,7 +644,7 @@ export default function App({ username }: AppProps) {
                             externalError={sessionDetailError}
                             onClearExternalError={() => setSessionDetailError(null)}
                         />
-                    ) : path === "/semantic-model" ? (
+                        ) : isAgentManagementPath(path) ? (
                         semanticModelCapability ? (
                             <SemanticModelPage
                                 onBack={() => navigateTo("/")}
