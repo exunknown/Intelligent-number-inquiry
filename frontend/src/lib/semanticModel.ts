@@ -416,6 +416,43 @@ export function copySemanticMeasure(
     return { snapshot: nextSnapshot, copiedMemberId };
 }
 
+export function copySemanticMember(
+    snapshot: SemanticSnapshot,
+    memberId: string,
+): SemanticMember {
+    const sourceMember = snapshot.members.find((item) => item.member_id === memberId);
+    if (!sourceMember || sourceMember.member_type === "measure") {
+        throw new Error("只能复制维度成员。");
+    }
+
+    const prefix = sourceMember.member_type === "time_dimension"
+        ? "new_time_dimension"
+        : "new_dimension";
+    let sequence = 1;
+    let copiedName = `${prefix}_${sequence}`;
+    while (
+        snapshot.members.some(
+            (item) =>
+                item.cube_name === sourceMember.cube_name &&
+                item.member_name === copiedName,
+        )
+    ) {
+        sequence += 1;
+        copiedName = `${prefix}_${sequence}`;
+    }
+
+    return {
+        ...structuredClone(sourceMember),
+        member_id: buildSemanticMemberId({
+            ...sourceMember,
+            member_name: copiedName,
+        }),
+        member_name: copiedName,
+        title: sourceMember.title ? `${sourceMember.title} 副本` : `${copiedName} 副本`,
+        status: "draft",
+    };
+}
+
 function sortedRelationSignature(value: unknown): string {
     if (Array.isArray(value)) {
         return JSON.stringify(

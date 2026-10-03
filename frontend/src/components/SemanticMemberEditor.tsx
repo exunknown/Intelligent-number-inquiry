@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Copy, Save } from "lucide-react";
 import {
     resolveSemanticDependencyMemberIds,
     validateSemanticMemberName,
@@ -18,11 +17,10 @@ type SemanticMemberEditorProps = {
     onMemberNameChange: (memberName: string) => void;
     members: SemanticMember[];
     dependencyCandidates: SemanticMember[];
-    onCopy: (memberId: string) => void;
     metricEquivalenceGroups: SemanticMetricEquivalenceGroup[];
     metricAttachments: SemanticMetricAttachment[];
     onRelationsChange: (groups: SemanticMetricEquivalenceGroup[], attachments: SemanticMetricAttachment[]) => void;
-    onSave: () => void;
+    showActions?: boolean;
 };
 
 const inputClass = "h-10 w-full border border-ink/15 bg-white px-3 text-sm text-ink outline-none focus:border-indigo/60 focus:ring-2 focus:ring-indigo/15 disabled:bg-paper disabled:text-ink/50";
@@ -36,11 +34,9 @@ export function SemanticMemberEditor({
     onMemberNameChange,
     members,
     dependencyCandidates,
-    onCopy,
     metricEquivalenceGroups,
     metricAttachments,
     onRelationsChange,
-    onSave,
 }: SemanticMemberEditorProps) {
     const [memberNameDraft, setMemberNameDraft] = useState(member?.member_name ?? "");
 
@@ -53,7 +49,7 @@ export function SemanticMemberEditor({
         : null;
 
     if (!member) {
-        return <div className="grid min-h-0 flex-1 place-items-center text-sm text-ink/45">从左侧选择一个成员开始编辑。</div>;
+        return <div className="grid min-h-0 place-items-center p-8 text-sm text-ink/45">请选择一个成员。</div>;
     }
 
     const update = (patch: Partial<SemanticMember>) => onChange({ ...member, ...patch });
@@ -63,25 +59,15 @@ export function SemanticMemberEditor({
     const preservedResolvedDependencyIds = dependencyResolution.memberIds.filter((memberId) => !dependencyCandidates.some((candidate) => candidate.member_id === memberId));
 
     return (
-        <section className="min-h-0 flex-1 overflow-y-auto bg-[#eceee8]">
-            <div className="mx-auto max-w-4xl p-6 lg:p-8">
-                <div className="mb-6 flex items-start justify-between gap-6">
+        <div className="p-6">
+            <div className="mx-auto max-w-4xl">
+                <div className="mb-6">
                     <div>
                         <div className="flex items-center gap-2 text-xs text-indigo">
                             <span>{member.cube_name}</span><span className="text-ink/30">/</span><span>{member.member_type === "measure" ? "指标" : member.member_type === "time_dimension" ? "时间维度" : "维度"}</span>
                         </div>
                         <h2 className="mt-2 font-serif text-2xl font-bold text-ink">{member.title || member.member_name}</h2>
                         <p className="mt-1 font-mono text-xs text-ink/45">{member.member_name} · {member.member_id}</p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                        {member.member_type === "measure" && (
-                            <button type="button" onClick={() => onCopy(member.member_id)} disabled={disabled} title="复制指标" aria-label="复制指标" className="grid h-10 w-10 place-items-center rounded-full text-ink/60 transition hover:bg-indigo/10 hover:text-indigo disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50">
-                                <Copy className="h-4 w-4" aria-hidden="true" />
-                            </button>
-                        )}
-                        <button type="button" onClick={onSave} disabled={disabled || Boolean(memberNameError)} className="inline-flex min-h-10 shrink-0 items-center gap-2 bg-dai px-4 text-sm font-semibold text-paper transition hover:bg-indigo disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50">
-                            <Save className="h-4 w-4" aria-hidden="true" />保存草稿
-                        </button>
                     </div>
                 </div>
 
@@ -217,6 +203,6 @@ export function SemanticMemberEditor({
                     )}
                 </div>
             </div>
-        </section>
+        </div>
     );
 }

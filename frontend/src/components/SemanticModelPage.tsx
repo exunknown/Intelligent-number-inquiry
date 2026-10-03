@@ -14,19 +14,27 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { buildSemanticChangeSummary, buildSemanticMemberId, copySemanticMeasure, createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, semanticDirectoryLoadAllowed, semanticMemberTypesForBuildTab, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticMemberName, type SemanticBuildTab, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
+import { buildSemanticChangeSummary, buildSemanticMemberId, cloneSemanticSnapshot, copySemanticMeasure, copySemanticMember, createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, semanticDirectoryLoadAllowed, semanticMemberTypesForBuildTab, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticMemberName, type SemanticBuildTab, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
 import { nextFocusableIndex } from "../lib/userManagement";
-import { SemanticMemberEditor } from "./SemanticMemberEditor";
 import { AgentManagementTabs } from "./AgentManagementTabs";
 import { DimensionBuildTable } from "./DimensionBuildTable";
 import { MetricBuildTable } from "./MetricBuildTable";
 import { SemanticBuildToolbar } from "./SemanticBuildToolbar";
+import { SemanticMemberEditDialog } from "./SemanticMemberEditDialog";
 import { SemanticReleasePanel } from "./SemanticReleasePanel";
 import { SemanticValidationPanel } from "./SemanticValidationPanel";
 
 type SemanticModelPageProps = { onBack: () => void; onDirtyChange?: (dirty: boolean) => void };
 type Filters = { memberType: "all" | "measure" | "dimension" | "time_dimension"; query: string };
 type CreateMemberType = SemanticMemberType;
+type MemberDialogState = {
+    mode: "create" | "edit" | "copy";
+    member: SemanticMember;
+    originalMember: SemanticMember;
+    metricEquivalenceGroups: SemanticMetricEquivalenceGroup[];
+    metricAttachments: SemanticMetricAttachment[];
+    trigger: HTMLButtonElement | null;
+} | null;
 
 const emptySnapshot = resolveSemanticModelSnapshot(undefined);
 const CREATE_DIALOG_FOCUSABLE_SELECTOR = [
@@ -69,6 +77,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const [replacedMemberIds, setReplacedMemberIds] = useState<string[]>([]);
     const [createMemberType, setCreateMemberType] = useState<CreateMemberType | null>(null);
     const [createCubeName, setCreateCubeName] = useState("");
+    const [memberDialog, setMemberDialog] = useState<MemberDialogState>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [snapshotUnavailable, setSnapshotUnavailable] = useState(false);
@@ -81,7 +90,6 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const createDialogRef = useRef<HTMLDivElement | null>(null);
     const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
     const createTriggerRef = useRef<HTMLButtonElement | null>(null);
-    const buildActionTriggerRef = useRef<HTMLButtonElement | null>(null);
 
     const load = async () => {
         const generation = requestGateRef.current.start();
@@ -145,82 +153,188 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         setDirty(true);
     };
 
-    const updateMember = (member: SemanticMember) => {
-        updateWorkingSnapshot((current) => ({
-            ...current,
-            release_version: workingSnapshot.release_version,
-            members: current.members.map((item) => item.member_id === member.member_id ? member : item),
-        }));
-    };
-
-    const changeMemberName = (memberId: string, memberName: string) => {
-        const current = workingSnapshot.members.find((item) => item.member_id === memberId);
-        if (!current) return;
-        if (memberName === current.member_name) return;
-        const validationError = validateSemanticMemberName(
-            workingSnapshot,
-            current,
-            memberName,
-        );
-        if (validationError) {
-            setError(validationError);
-            return;
-        }
-        const nextMember = {
-            ...current,
-            member_name: memberName,
-            member_id: buildSemanticMemberId({ ...current, member_name: memberName }),
-        };
-        updateWorkingSnapshot((currentSnapshot) =>
-            renameSemanticMemberReferences(currentSnapshot, current, nextMember),
-        );
-        setPendingNewMemberIds((currentIds) =>
-            renamePendingSemanticMemberId(
-                currentIds,
-                current.member_id,
-                nextMember.member_id,
-            ),
-        );
-        setReplacedMemberIds((currentIds) =>
-            currentIds.includes(current.member_id)
-                ? currentIds
-                : [...currentIds, current.member_id],
-        );
-        setSelectedId(nextMember.member_id);
+    const openMemberDialog = (
+        mode: Exclude<NonNullable<MemberDialogState>["mode"], "copy">,
+        member: SemanticMember,
+        trigger: HTMLButtonElement | null,
+    ) => {
+        const memberCopy = structuredClone(member);
         setError(null);
+        setMemberDialog({
+            mode,
+            member: memberCopy,
+            originalMember: structuredClone(member),
+            metricEquivalenceGroups: structuredClone(
+                workingSnapshot.metric_equivalence_groups ?? [],
+            ),
+            metricAttachments: structuredClone(workingSnapshot.metric_attachments ?? []),
+            trigger,
+        });
     };
 
-    const updateRelations = (groups: SemanticMetricEquivalenceGroup[], attachments: SemanticMetricAttachment[]) => {
-        updateWorkingSnapshot((current) => ({
-            ...current,
-            metric_equivalence_groups: groups,
-            metric_attachments: attachments,
-        }));
+    const openEditMember = (memberId: string, trigger: HTMLButtonElement) => {
+        const member = workingSnapshot.members.find((item) => item.member_id === memberId);
+        if (member) openMemberDialog("edit", member, trigger);
     };
 
-    const copyMeasure = (memberId: string, trigger?: HTMLButtonElement) => {
-        buildActionTriggerRef.current = trigger ?? null;
+    const openCopyMember = (memberId: string, trigger: HTMLButtonElement) => {
+        const sourceMember = workingSnapshot.members.find((item) => item.member_id === memberId);
+        if (!sourceMember) return;
         try {
-            beginLocalEdit();
-            const baseSnapshot = draft?.snapshot ?? snapshot;
-            const { snapshot: nextSnapshot, copiedMemberId } = copySemanticMeasure(baseSnapshot, memberId);
-            setSnapshot(nextSnapshot);
-            setDraft((current) => current ? { ...current, snapshot: nextSnapshot } : current);
-            setPendingNewMemberIds((currentIds) => [
-                ...new Set([...currentIds, copiedMemberId]),
-            ]);
-            setSelectedId(copiedMemberId);
-            setDirty(true);
+            if (sourceMember.member_type === "measure") {
+                const preparedCopy = copySemanticMeasure(
+                    cloneSemanticSnapshot(workingSnapshot),
+                    memberId,
+                );
+                const copiedMember = preparedCopy.snapshot.members.find(
+                    (item) => item.member_id === preparedCopy.copiedMemberId,
+                );
+                if (!copiedMember) return;
+                setError(null);
+                setMemberDialog({
+                    mode: "copy",
+                    member: copiedMember,
+                    originalMember: structuredClone(sourceMember),
+                    metricEquivalenceGroups: preparedCopy.snapshot.metric_equivalence_groups ?? [],
+                    metricAttachments: preparedCopy.snapshot.metric_attachments ?? [],
+                    trigger,
+                });
+                return;
+            }
+            const copiedMember = copySemanticMember(workingSnapshot, memberId);
             setError(null);
+            setMemberDialog({
+                mode: "copy",
+                member: copiedMember,
+                originalMember: structuredClone(sourceMember),
+                metricEquivalenceGroups: structuredClone(
+                    workingSnapshot.metric_equivalence_groups ?? [],
+                ),
+                metricAttachments: structuredClone(workingSnapshot.metric_attachments ?? []),
+                trigger,
+            });
         } catch (copyError) {
             setError(formatSemanticModelError(copyError));
         }
     };
 
-    const closeCreateDialog = () => {
+    const closeMemberDialog = () => {
+        setMemberDialog(null);
+        setError(null);
+        requestAnimationFrame(() => memberDialog?.trigger?.focus());
+    };
+
+    const changeMemberName = (memberName: string) => {
+        setMemberDialog((current) => {
+            if (!current || memberName === current.member.member_name) return current;
+            const validationError = validateSemanticMemberName(
+                workingSnapshot,
+                current.member,
+                memberName,
+            );
+            if (validationError) {
+                setError(validationError);
+                return current;
+            }
+            const nextMember = {
+                ...current.member,
+                member_name: memberName,
+                member_id: buildSemanticMemberId({
+                    ...current.member,
+                    member_name: memberName,
+                }),
+            };
+            const renamedDialogSnapshot = renameSemanticMemberReferences(
+                {
+                    ...workingSnapshot,
+                    members: [current.member],
+                    metric_equivalence_groups: current.metricEquivalenceGroups,
+                    metric_attachments: current.metricAttachments,
+                },
+                current.member,
+                nextMember,
+            );
+            setError(null);
+            return {
+                ...current,
+                member: renamedDialogSnapshot.members[0],
+                metricEquivalenceGroups:
+                    renamedDialogSnapshot.metric_equivalence_groups ?? [],
+                metricAttachments: renamedDialogSnapshot.metric_attachments ?? [],
+            };
+        });
+    };
+
+    const saveMemberDialog = () => {
+        if (!memberDialog) return;
+        const { mode, member, originalMember } = memberDialog;
+        const nameError = validateSemanticMemberName(
+            workingSnapshot,
+            mode === "edit" ? originalMember : member,
+            member.member_name,
+        );
+        if (nameError) {
+            setError(nameError);
+            return;
+        }
+        const requiredFieldError = validateNewSemanticMemberFields(
+            member,
+            mode !== "edit" || pendingNewMemberIds.includes(originalMember.member_id),
+        );
+        if (requiredFieldError) {
+            setError(requiredFieldError);
+            return;
+        }
+
+        updateWorkingSnapshot((current) => {
+            let nextSnapshot = current;
+            if (mode === "edit") {
+                nextSnapshot = renameSemanticMemberReferences(
+                    current,
+                    originalMember,
+                    member,
+                );
+            } else {
+                nextSnapshot = {
+                    ...current,
+                    members: [...current.members, member],
+                };
+            }
+            return {
+                ...nextSnapshot,
+                metric_equivalence_groups: memberDialog.metricEquivalenceGroups,
+                metric_attachments: memberDialog.metricAttachments,
+            };
+        });
+
+        if (mode === "edit" && originalMember.member_id !== member.member_id) {
+            setPendingNewMemberIds((currentIds) =>
+                renamePendingSemanticMemberId(
+                    currentIds,
+                    originalMember.member_id,
+                    member.member_id,
+                ),
+            );
+            setReplacedMemberIds((currentIds) =>
+                currentIds.includes(originalMember.member_id)
+                    ? currentIds
+                    : [...currentIds, originalMember.member_id],
+            );
+        }
+        if (mode !== "edit") {
+            setPendingNewMemberIds((currentIds) => [
+                ...new Set([...currentIds, member.member_id]),
+            ]);
+        }
+        setSelectedId(member.member_id);
+        setError(null);
+        closeMemberDialog();
+    };
+
+    const closeCreateDialog = (restoreFocus = true) => {
         setCreateMemberType(null);
         setCreateCubeName("");
-        requestAnimationFrame(() => createTriggerRef.current?.focus());
+        if (restoreFocus) requestAnimationFrame(() => createTriggerRef.current?.focus());
     };
 
     const handleCreateDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -268,13 +382,9 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             return;
         }
         const member = createDraftSemanticMember(workingSnapshot, memberType, cubeName);
-        updateWorkingSnapshot((current) => ({ ...current, members: [...current.members, member] }));
-        setPendingNewMemberIds((currentIds) => [
-            ...currentIds,
-            member.member_id,
-        ]);
-        setSelectedId(member.member_id);
-        closeCreateDialog();
+        const trigger = createTriggerRef.current;
+        closeCreateDialog(false);
+        openMemberDialog("create", member, trigger);
     };
 
     const refreshDraft = async (draftId: string) => {
@@ -423,11 +533,6 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
         await perform(() => publishSemanticDraft(current.draft_id, { reason: "发布语义模型版本" }), "");
         setBusy(false);
     };
-    const selectBuildMember = (memberId: string, trigger?: HTMLButtonElement) => {
-        buildActionTriggerRef.current = trigger ?? null;
-        setSelectedId(memberId);
-    };
-    const selectedMember = currentDraft.members.find((member) => member.member_id === selectedId) ?? null;
     const normalizedQuery = filters.query.trim().toLowerCase();
     const visibleMembers = currentDraft.members.filter((member) => {
         if (!semanticMemberTypesForBuildTab(activeTab).includes(member.member_type)) return false;
@@ -454,31 +559,42 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
             <AgentManagementTabs activeTab={activeTab} onChange={handleTabChange} disabled={busy} />
             <SemanticBuildToolbar tab={activeTab} query={filters.query} memberType={filters.memberType} count={visibleMembers.length} disabled={busy || loading || snapshotUnavailable} onQueryChange={(query) => setFilters((current) => ({ ...current, query }))} onMemberTypeChange={handleMemberTypeChange} onRefresh={refresh} onCreate={requestCreateMember} />
             <div className="min-h-0 flex-1 overflow-auto">
-                {activeTab === "metrics" ? <MetricBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={(memberId, trigger) => selectBuildMember(memberId, trigger)} onCopy={(memberId, trigger) => copyMeasure(memberId, trigger)} /> : <DimensionBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={(memberId, trigger) => selectBuildMember(memberId, trigger)} onCopy={(memberId, trigger) => selectBuildMember(memberId, trigger)} />}
+                {activeTab === "metrics" ? <MetricBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={(memberId, trigger) => openEditMember(memberId, trigger)} onCopy={(memberId, trigger) => openCopyMember(memberId, trigger)} /> : <DimensionBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={(memberId, trigger) => openEditMember(memberId, trigger)} onCopy={(memberId, trigger) => openCopyMember(memberId, trigger)} />}
                 <div className="border-b border-ink/10 bg-paper px-5 py-6 lg:px-7">
-                    <div className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-ink/45">成员编辑</div>
-                    <div className="border border-ink/10 bg-white">
-                        <SemanticMemberEditor
-                        member={selectedMember}
-                        snapshot={currentDraft}
-                        members={currentDraft.members}
-                        dependencyCandidates={semanticDependencyCandidates(currentDraft, selectedMember?.member_id ?? "")}
-                        metricEquivalenceGroups={currentDraft.metric_equivalence_groups ?? []}
-                        metricAttachments={currentDraft.metric_attachments ?? []}
-                        disabled={busy || loading || snapshotUnavailable}
-                        onChange={updateMember}
-                        onMemberNameChange={(name) => {
-                            if (selectedMember) changeMemberName(selectedMember.member_id, name);
-                        }}
-                        onCopy={copyMeasure}
-                        onRelationsChange={updateRelations}
-                        onSave={() => void save()}
-                    />
-                        <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} canReview={draft?.status === "pending_review"} canPublish={canPublish} busy={busy} changeSummary={changeSummary ?? undefined} onValidate={() => { const current = requireDraft(); if (current) void perform(() => validateSemanticDraft(current.draft_id), ""); }} onSubmit={() => { const current = requireDraft(); if (current) void perform(() => submitSemanticDraft(current.draft_id, { reason: "提交语义模型审核" }), ""); }} onReview={(decision) => { const current = requireDraft(); if (current) void perform(() => reviewSemanticDraft(current.draft_id, { decision, reason: decision === "approved" ? "审核通过" : "审核驳回" }), ""); }} onPublish={() => void handlePublish()} />
-                    </div>
+                    <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} canReview={draft?.status === "pending_review"} canPublish={canPublish} busy={busy} changeSummary={changeSummary ?? undefined} onValidate={() => { const current = requireDraft(); if (current) void perform(() => validateSemanticDraft(current.draft_id), ""); }} onSubmit={() => { const current = requireDraft(); if (current) void perform(() => submitSemanticDraft(current.draft_id, { reason: "提交语义模型审核" }), ""); }} onReview={(decision) => { const current = requireDraft(); if (current) void perform(() => reviewSemanticDraft(current.draft_id, { decision, reason: decision === "approved" ? "审核通过" : "审核驳回" }), ""); }} onPublish={() => void handlePublish()} />
                     <SemanticReleasePanel releases={releases} activeVersion={activeRelease?.release_version ?? null} activeSnapshot={snapshotUnavailable || !activeSnapshotReady ? null : activeSnapshot} disabled={busy || loading || snapshotUnavailable || !activeSnapshotReady} dirty={dirty} onRollback={handleRollback} />
                 </div>
             </div>
+            {memberDialog && (
+                <SemanticMemberEditDialog
+                    mode={memberDialog.mode}
+                    member={memberDialog.member}
+                    snapshot={currentDraft}
+                    members={currentDraft.members}
+                    dependencyCandidates={semanticDependencyCandidates(
+                        {
+                            ...currentDraft,
+                            members: memberDialog.mode === "edit"
+                                ? currentDraft.members.map((item) => item.member_id === memberDialog.originalMember.member_id ? memberDialog.member : item)
+                                : [...currentDraft.members, memberDialog.member],
+                        },
+                        memberDialog.member.member_id,
+                    )}
+                    metricEquivalenceGroups={memberDialog.metricEquivalenceGroups}
+                    metricAttachments={memberDialog.metricAttachments}
+                    disabled={busy || loading || snapshotUnavailable}
+                    error={error}
+                    onCancel={closeMemberDialog}
+                    onSave={saveMemberDialog}
+                    onChange={(member) => setMemberDialog((current) => current ? { ...current, member } : current)}
+                    onMemberNameChange={changeMemberName}
+                    onRelationsChange={(groups, attachments) => setMemberDialog((current) => current ? {
+                        ...current,
+                        metricEquivalenceGroups: groups,
+                        metricAttachments: attachments,
+                    } : current)}
+                />
+            )}
             {createMemberType && (
                 <div className="absolute inset-0 z-20 flex items-start justify-center bg-ink/10 p-10" role="presentation">
                     <div
@@ -520,7 +636,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
                             </p>
                         )}
                         <div className="mt-7 flex justify-end gap-3">
-                            <button ref={cancelButtonRef} type="button" onClick={closeCreateDialog} className="min-h-10 border border-ink/15 px-4 text-sm font-semibold text-ink/65 transition hover:bg-paper focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40">
+                                <button ref={cancelButtonRef} type="button" onClick={() => closeCreateDialog()} className="min-h-10 border border-ink/15 px-4 text-sm font-semibold text-ink/65 transition hover:bg-paper focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40">
                                 取消
                             </button>
                             <button
