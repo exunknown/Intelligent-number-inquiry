@@ -244,8 +244,12 @@ export function SemanticModelPage({
 
     const saveCube = (cube: SemanticCube) => {
         if (!cubeDialog) return;
+        const nextCube =
+            cubeDialog.mode === "edit" && cubeDialog.originalCubeName
+                ? { ...cube, cube_name: cubeDialog.originalCubeName }
+                : cube;
         const validationError = validateSemanticCube(
-            cube,
+            nextCube,
             workingSnapshot,
             cubeDialog.originalCubeName ?? undefined,
         );
@@ -258,9 +262,9 @@ export function SemanticModelPage({
             cubes:
                 cubeDialog.mode === "edit" && cubeDialog.originalCubeName
                     ? current.cubes.map((item) =>
-                          item.cube_name === cubeDialog.originalCubeName ? cube : item,
+                          item.cube_name === cubeDialog.originalCubeName ? nextCube : item,
                       )
-                    : [...current.cubes, cube],
+                    : [...current.cubes, nextCube],
         }));
         closeCubeDialog();
     };

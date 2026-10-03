@@ -329,7 +329,8 @@ export function createDraftSemanticCube(releaseVersion: string): SemanticCube {
 }
 
 export function validateSemanticCube(
-    cube: Pick<SemanticCube, "cube_name" | "title" | "sql_table">,
+    cube: Pick<SemanticCube, "cube_name" | "title" | "sql_table"> &
+        Partial<Pick<SemanticCube, "public">>,
     snapshot: Pick<SemanticSnapshot, "cubes">,
     originalCubeName?: string,
 ): string | null {
@@ -347,7 +348,7 @@ export function validateSemanticCube(
         return "Cube 编码已存在";
     }
     if (!cube.title.trim()) return "Cube 名称不能为空";
-    if (!cube.sql_table.trim()) return "物理表不能为空";
+    if (!cube.public && !cube.sql_table.trim()) return "物理表不能为空";
     return null;
 }
 
