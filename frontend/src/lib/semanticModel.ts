@@ -105,6 +105,14 @@ export function upsertSemanticJoin(
     join: SemanticJoin,
     originalKey?: string,
 ): SemanticSnapshot {
+    if (!canEditSemanticJoin(join)) return snapshot;
+    const originalJoin =
+        originalKey === undefined
+            ? undefined
+            : snapshot.joins.find((item) => semanticJoinKey(item) === originalKey);
+    if (originalKey !== undefined && (!originalJoin || !canEditSemanticJoin(originalJoin))) {
+        return snapshot;
+    }
     if (validateSemanticJoin(join, snapshot, originalKey)) return snapshot;
     return {
         ...snapshot,
@@ -120,9 +128,10 @@ export function removeSemanticJoin(
     snapshot: SemanticSnapshot,
     join: SemanticJoin,
 ): SemanticSnapshot {
-    if (!canDeleteSemanticJoin(join)) return snapshot;
-    const index = snapshot.joins.indexOf(join);
+    const targetKey = semanticJoinKey(join);
+    const index = snapshot.joins.findIndex((item) => semanticJoinKey(item) === targetKey);
     if (index < 0) return snapshot;
+    if (!canDeleteSemanticJoin(snapshot.joins[index])) return snapshot;
     return {
         ...snapshot,
         joins: snapshot.joins.filter((_, itemIndex) => itemIndex !== index),
