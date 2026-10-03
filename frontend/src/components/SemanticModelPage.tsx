@@ -1,4 +1,4 @@
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, History, Plus, RefreshCw, Search } from "lucide-react";
 import {
     useEffect,
     useLayoutEffect,
@@ -20,9 +20,11 @@ import {
     validateSemanticDraft,
     type SemanticDraftPayload,
 } from "../lib/agentApi";
-import { buildSemanticChangeSummary, buildSemanticMemberId, cloneSemanticSnapshot, copySemanticMeasure, copySemanticMember, createDraftSemanticMember, createSemanticModelRequestGate, formatSemanticModelError, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, semanticDirectoryLoadAllowed, semanticMemberTypesForBuildTab, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticMemberName, type SemanticBuildTab, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
+import { buildSemanticChangeSummary, buildSemanticMemberId, canDeleteSemanticCube, cloneSemanticSnapshot, copySemanticMeasure, copySemanticMember, createDraftSemanticCube, createDraftSemanticMember, createSemanticModelRequestGate, cubeHasReferences, formatSemanticModelError, renamePendingSemanticMemberId, renameSemanticMemberReferences, resolveSemanticModelSnapshot, semanticCubeOptions, semanticDependencyCandidates, semanticDirectoryLoadAllowed, semanticMemberTypesForBuildTab, serializeSemanticSnapshot, validateNewSemanticMemberFields, validateSemanticCube, validateSemanticMemberName, type SemanticBuildTab, type SemanticDraft, type SemanticMember, type SemanticMemberSummary, type SemanticMetricAttachment, type SemanticMetricEquivalenceGroup, type SemanticOperation, type SemanticRelease, type SemanticSnapshot, type SemanticValidationIssue, type SemanticCube, type SemanticMemberType } from "../lib/semanticModel";
 import { nextFocusableIndex } from "../lib/userManagement";
 import { AgentManagementTabs } from "./AgentManagementTabs";
+import { CubeBuildTable } from "./CubeBuildTable";
+import { CubeEditDialog } from "./CubeEditDialog";
 import { DimensionBuildTable } from "./DimensionBuildTable";
 import { MetricBuildTable } from "./MetricBuildTable";
 import { SemanticBuildToolbar } from "./SemanticBuildToolbar";
@@ -47,9 +49,23 @@ type MemberDialogState = {
     metricAttachments: SemanticMetricAttachment[];
     trigger: HTMLButtonElement | null;
 } | null;
+type CubeDialogState = {
+    mode: "create" | "edit";
+    cube: SemanticCube;
+    originalCubeName: string | null;
+    trigger: HTMLButtonElement | null;
+} | null;
 
 const emptySnapshot = resolveSemanticModelSnapshot(undefined);
 const CREATE_DIALOG_FOCUSABLE_SELECTOR = [
+    "button:not([disabled])",
+    "[href]",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    "[tabindex]:not([tabindex=\"-1\"])",
+].join(",");
+const RELEASE_DIALOG_FOCUSABLE_SELECTOR = [
     "button:not([disabled])",
     "[href]",
     "input:not([disabled])",
@@ -90,15 +106,19 @@ export function SemanticModelPage({
     const [draft, setDraft] = useState<SemanticDraft | null>(null);
     const [releases, setReleases] = useState<SemanticRelease[]>([]);
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
     const [pendingNewMemberIds, setPendingNewMemberIds] = useState<string[]>([]);
     const [replacedMemberIds, setReplacedMemberIds] = useState<string[]>([]);
     const [createMemberType, setCreateMemberType] = useState<CreateMemberType | null>(null);
     const [createCubeName, setCreateCubeName] = useState("");
     const [memberDialog, setMemberDialog] = useState<MemberDialogState>(null);
+    const [cubeDialog, setCubeDialog] = useState<CubeDialogState>(null);
+    const [releaseDialogOpen, setReleaseDialogOpen] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [snapshotUnavailable, setSnapshotUnavailable] = useState(false);
     const [operation, setOperation] = useState<SemanticOperation | null>(null);
+    const [validationNoticeOpen, setValidationNoticeOpen] = useState(false);
     const [busy, setBusy] = useState(false);
     const [dirty, setDirty] = useState(false);
     const [publishBlocked, setPublishBlocked] = useState(false);
@@ -107,6 +127,8 @@ export function SemanticModelPage({
     const createDialogRef = useRef<HTMLDivElement | null>(null);
     const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
     const createTriggerRef = useRef<HTMLButtonElement | null>(null);
+    const releaseDialogRef = useRef<HTMLDivElement | null>(null);
+    const releaseHistoryButtonRef = useRef<HTMLButtonElement | null>(null);
 
     useLayoutEffect(() => {
         setActiveTab(initialTab);
@@ -141,6 +163,7 @@ export function SemanticModelPage({
             setSnapshot(nextSnapshot);
             setActiveSnapshot(nextSnapshot);
             setSnapshotUnavailable(false);
+            setSelectedMemberIds((currentIds) => currentIds.filter((memberId) => nextSnapshot.members.some((member) => member.member_id === memberId)));
             setSelectedId((current) => current ?? memberResponse.items[0]?.member_id ?? nextSnapshot.members[0]?.member_id ?? null);
             setDirty(false);
         } catch (loadError) {
@@ -172,6 +195,107 @@ export function SemanticModelPage({
         setSnapshot((current) => update(current));
         if (draft) setDraft((current) => current ? { ...current, snapshot: update(current.snapshot) } : current);
         setDirty(true);
+    };
+
+    const openCreateCube = (trigger: HTMLButtonElement) => {
+        setError(null);
+        setCubeDialog({
+            mode: "create",
+            cube: createDraftSemanticCube(workingSnapshot.release_version),
+            originalCubeName: null,
+            trigger,
+        });
+    };
+
+    const openEditCube = (cubeName: string, trigger: HTMLButtonElement) => {
+        const cube = workingSnapshot.cubes.find((item) => item.cube_name === cubeName);
+        if (!cube) return;
+        setError(null);
+        setCubeDialog({
+            mode: "edit",
+            cube: structuredClone(cube),
+            originalCubeName: cube.cube_name,
+            trigger,
+        });
+    };
+
+    const closeCubeDialog = () => {
+        const trigger = cubeDialog?.trigger;
+        setCubeDialog(null);
+        setError(null);
+        requestAnimationFrame(() => {
+            if (trigger?.isConnected) {
+                trigger.focus();
+                return;
+            }
+            document.getElementById("semantic-model-refresh")?.focus();
+        });
+    };
+
+    const saveCube = (cube: SemanticCube) => {
+        if (!cubeDialog) return;
+        const validationError = validateSemanticCube(
+            cube,
+            workingSnapshot,
+            cubeDialog.originalCubeName ?? undefined,
+        );
+        if (validationError) {
+            setError(validationError);
+            return;
+        }
+        updateWorkingSnapshot((current) => ({
+            ...current,
+            cubes:
+                cubeDialog.mode === "edit" && cubeDialog.originalCubeName
+                    ? current.cubes.map((item) =>
+                          item.cube_name === cubeDialog.originalCubeName ? cube : item,
+                      )
+                    : [...current.cubes, cube],
+        }));
+        closeCubeDialog();
+    };
+
+    const deleteCube = (cubeName: string, trigger: HTMLButtonElement) => {
+        const cube = workingSnapshot.cubes.find((item) => item.cube_name === cubeName);
+        if (!cube || !window.confirm(`确定删除 Cube ${cubeName} 吗？删除会先作用于当前草稿。`)) return;
+        const references = cubeHasReferences(workingSnapshot, cubeName);
+        if (!canDeleteSemanticCube(workingSnapshot, cubeName)) {
+            setError(
+                `无法删除 Cube ${cubeName}：存在 ${references.memberCount} 个成员和 ${references.joinCount} 个 Join 引用。`,
+            );
+            requestAnimationFrame(() => trigger.focus());
+            return;
+        }
+        updateWorkingSnapshot((current) => ({
+            ...current,
+            cubes: current.cubes.filter((item) => item.cube_name !== cubeName),
+        }));
+        requestAnimationFrame(() => trigger.focus());
+    };
+
+    const handleSelectionChange = (memberId: string, selected: boolean) => {
+        setSelectedMemberIds((currentIds) => {
+            if (selected) return currentIds.includes(memberId) ? currentIds : [...currentIds, memberId];
+            return currentIds.filter((currentId) => currentId !== memberId);
+        });
+    };
+
+    const deleteMember = (memberId: string, trigger: HTMLButtonElement) => {
+        const member = workingSnapshot.members.find((item) => item.member_id === memberId);
+        if (!member || !window.confirm(`确定删除${member.title || member.member_name}吗？删除会先作用于当前草稿。`)) return;
+        updateWorkingSnapshot((current) => ({
+            ...current,
+            members: current.members.filter((item) => item.member_id !== memberId),
+            metric_equivalence_groups: (current.metric_equivalence_groups ?? [])
+                .map((group) => ({ ...group, members: group.members.filter((item) => item.member_id !== memberId) }))
+                .filter((group) => group.members.length > 0),
+            metric_attachments: (current.metric_attachments ?? []).filter(
+                (item) => item.primary_member_id !== memberId && item.attached_member_id !== memberId,
+            ),
+        }));
+        setSelectedMemberIds((currentIds) => currentIds.filter((currentId) => currentId !== memberId));
+        setSelectedId((currentId) => currentId === memberId ? null : currentId);
+        requestAnimationFrame(() => trigger.focus());
     };
 
     const openMemberDialog = (
@@ -403,6 +527,46 @@ export function SemanticModelPage({
         if (createMemberType) cancelButtonRef.current?.focus();
     }, [createMemberType]);
 
+    useEffect(() => {
+        if (!releaseDialogOpen) return;
+        requestAnimationFrame(() => {
+            releaseDialogRef.current?.querySelector<HTMLButtonElement>(
+                "[aria-label='关闭发布记录']",
+            )?.focus();
+        });
+    }, [releaseDialogOpen]);
+
+    const closeReleaseDialog = () => {
+        setReleaseDialogOpen(false);
+        requestAnimationFrame(() => releaseHistoryButtonRef.current?.focus());
+    };
+
+    const handleReleaseDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            closeReleaseDialog();
+            return;
+        }
+        if (event.key !== "Tab") return;
+
+        const focusableElements = Array.from(
+            releaseDialogRef.current?.querySelectorAll<HTMLElement>(
+                RELEASE_DIALOG_FOCUSABLE_SELECTOR,
+            ) ?? [],
+        );
+        if (focusableElements.length === 0) return;
+
+        const currentIndex = focusableElements.indexOf(document.activeElement as HTMLElement);
+        const normalizedIndex = currentIndex === -1 ? (event.shiftKey ? 0 : -1) : currentIndex;
+        const targetIndex = nextFocusableIndex(
+            normalizedIndex,
+            focusableElements.length,
+            event.shiftKey ? "backward" : "forward",
+        );
+        event.preventDefault();
+        focusableElements[targetIndex]?.focus();
+    };
+
     const requestCreateMember = (
         memberType: CreateMemberType,
         trigger: HTMLButtonElement,
@@ -439,6 +603,7 @@ export function SemanticModelPage({
         try {
             const result = await action();
             setOperation(result);
+            setValidationNoticeOpen(true);
             if (!result.draft_id) setDraft(null);
             if (result.draft_id) await refreshDraft(result.draft_id);
             await load();
@@ -454,6 +619,16 @@ export function SemanticModelPage({
     };
 
     const save = async () => {
+        const invalidCube = workingSnapshot.cubes
+            .map((cube) => ({
+                cube,
+                message: validateSemanticCube(cube, workingSnapshot, cube.cube_name),
+            }))
+            .find((item) => item.message);
+        if (invalidCube?.message) {
+            setError(`${invalidCube.cube.cube_name || "Cube"}：${invalidCube.message}`);
+            return;
+        }
         const invalidMember = workingSnapshot.members
             .map((member) => ({
                 member,
@@ -531,6 +706,8 @@ export function SemanticModelPage({
         setPendingNewMemberIds([]);
         setReplacedMemberIds([]);
         setPublishBlocked(false);
+        setOperation(null);
+        setValidationNoticeOpen(false);
         void load();
     };
 
@@ -543,6 +720,7 @@ export function SemanticModelPage({
     const changeSummary = canPublish && activeSnapshotReady
         ? buildSemanticChangeSummary(activeRelease ? activeSnapshot : emptySnapshot, currentDraft)
         : null;
+    const showValidationNotice = validationNoticeOpen && (operation !== null || changeSummary !== null);
     const handlePublish = async () => {
         const current = requireDraft();
         if (!current || !canPublish) return;
@@ -572,13 +750,29 @@ export function SemanticModelPage({
         setBusy(false);
     };
     const normalizedQuery = filters.query.trim().toLowerCase();
-    const visibleMembers = currentDraft.members.filter((member) => {
+    const visibleMembers = activeTab === "cubes" ? [] : currentDraft.members.filter((member) => {
         if (!semanticMemberTypesForBuildTab(activeTab).includes(member.member_type)) return false;
         if (filters.memberType !== "all" && member.member_type !== filters.memberType) return false;
         if (!normalizedQuery) return true;
         return [member.title, member.member_name, member.cube_name]
             .some((value) => value.toLowerCase().includes(normalizedQuery));
     });
+    const visibleCubes = currentDraft.cubes.filter((cube) => {
+        if (!normalizedQuery) return true;
+        return [cube.cube_name, cube.title, cube.sql_table, cube.description]
+            .some((value) => value.toLowerCase().includes(normalizedQuery));
+    });
+    const cubeMemberCounts = currentDraft.members.reduce<Record<string, number>>((counts, member) => {
+        counts[member.cube_name] = (counts[member.cube_name] ?? 0) + 1;
+        return counts;
+    }, {});
+    const cubeJoinCounts = currentDraft.joins.reduce<Record<string, number>>((counts, join) => {
+        counts[join.cube_name] = (counts[join.cube_name] ?? 0) + 1;
+        if (join.target_cube_name !== join.cube_name) {
+            counts[join.target_cube_name] = (counts[join.target_cube_name] ?? 0) + 1;
+        }
+        return counts;
+    }, {});
     const handleTabChange = (tab: SemanticBuildTab) => {
         setActiveTab(tab);
         setFilters((current) => ({ ...current, memberType: "all" }));
@@ -591,20 +785,35 @@ export function SemanticModelPage({
     return (
         <div id="semantic-model-page" className="relative flex min-h-0 flex-1 flex-col bg-paper">
             <header className="flex min-h-16 shrink-0 items-center justify-between border-b border-ink/10 bg-white px-5 lg:px-7">
-                <div className="flex min-w-0 items-center gap-4"><button type="button" onClick={onBack} disabled={busy} title="返回问数工作台" aria-label="返回问数工作台" className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink/60 hover:bg-ink/5 disabled:opacity-40"><ArrowLeft className="h-4 w-4" aria-hidden="true" /></button><div className="min-w-0"><p className="font-serif text-xl font-bold text-ink">Agent 管理</p></div></div>
-                <div className="flex items-center gap-3"><span className="hidden text-xs text-ink/50 lg:inline">生效版本：<span className="font-mono text-ink">{releases.find((item) => item.active)?.release_version ?? "暂无"}</span></span><button id="semantic-model-refresh" type="button" onClick={refresh} disabled={loading || busy} title="刷新建设数据" aria-label="刷新建设数据" className="grid h-10 w-10 place-items-center rounded-full text-ink/60 hover:bg-ink/5 disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" /></button></div>
+                <div className="flex min-w-0 items-center gap-4"><button type="button" onClick={onBack} disabled={busy} title="返回问数工作台" aria-label="返回问数工作台" className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink/60 hover:bg-ink/5 disabled:opacity-40"><ArrowLeft className="h-4 w-4" aria-hidden="true" /></button></div>
+                <div className="flex items-center gap-3"><span className="hidden text-xs text-ink/50 lg:inline">生效版本：<span className="font-mono text-ink">{releases.find((item) => item.active)?.release_version ?? "暂无"}</span></span><button ref={releaseHistoryButtonRef} type="button" onClick={() => setReleaseDialogOpen(true)} disabled={busy} aria-haspopup="dialog" aria-expanded={releaseDialogOpen} title="查看发布记录" className="hidden min-h-10 items-center gap-2 rounded-full border border-indigo/25 bg-white px-4 text-xs font-semibold text-indigo transition hover:bg-indigo/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 lg:inline-flex"><History className="h-4 w-4" aria-hidden="true" />发布记录</button><button id="semantic-model-refresh" type="button" onClick={refresh} disabled={loading || busy} title="刷新建设数据" aria-label="刷新建设数据" className="grid h-10 w-10 place-items-center rounded-full text-ink/60 hover:bg-ink/5 disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" /></button></div>
             </header>
             {error && <div role="alert" className="border-b border-oxide/20 bg-oxide/5 px-6 py-3 text-sm text-oxide">{error}</div>}
             <AgentManagementTabs activeTab={activeTab} onChange={handleTabChange} disabled={busy} />
-            <SemanticBuildToolbar tab={activeTab} query={filters.query} memberType={filters.memberType} count={visibleMembers.length} disabled={busy || loading || snapshotUnavailable} onQueryChange={(query) => setFilters((current) => ({ ...current, query }))} onMemberTypeChange={handleMemberTypeChange} onRefresh={refresh} onCreate={requestCreateMember} />
-            <div className="min-h-0 flex-1 overflow-auto">
-                {activeTab === "metrics" ? <MetricBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={(memberId, trigger) => openEditMember(memberId, trigger)} onCopy={(memberId, trigger) => openCopyMember(memberId, trigger)} /> : <DimensionBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={(memberId, trigger) => openEditMember(memberId, trigger)} onCopy={(memberId, trigger) => openCopyMember(memberId, trigger)} />}
-                <div className="border-b border-ink/10 bg-paper">
+            {activeTab === "cubes" ? (
+                <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-ink/10 bg-paper px-5 py-4 lg:px-7">
+                    <label className="relative min-w-[280px] flex-1 lg:max-w-xl">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" aria-hidden="true" />
+                        <span className="sr-only">搜索 Cube</span>
+                        <input value={filters.query} onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))} placeholder="搜索 Cube 编码、名称或物理表" disabled={busy || loading || snapshotUnavailable} className="h-10 w-full rounded-xl border border-ink/15 bg-white pl-10 pr-3 text-sm text-ink outline-none transition placeholder:text-ink/35 focus:border-indigo/60 focus:ring-2 focus:ring-indigo/15 disabled:cursor-not-allowed disabled:opacity-50" />
+                    </label>
+                    <span className="text-xs text-ink/50">共 {visibleCubes.length} 项</span>
+                    <button type="button" onClick={refresh} disabled={busy || loading || snapshotUnavailable} title="刷新 Cube 建设数据" aria-label="刷新 Cube 建设数据" className="grid h-10 w-10 place-items-center rounded-full text-ink/60 transition hover:bg-white hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"><RefreshCw className="h-4 w-4" aria-hidden="true" /></button>
+                    <button type="button" onClick={(event) => openCreateCube(event.currentTarget)} disabled={busy || loading || snapshotUnavailable} className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-dai px-3 text-sm font-semibold text-paper transition hover:bg-dai/90 disabled:cursor-not-allowed disabled:opacity-45"><Plus className="h-4 w-4" aria-hidden="true" />新增 Cube</button>
+                </div>
+            ) : (
+                <SemanticBuildToolbar tab={activeTab} query={filters.query} memberType={filters.memberType} count={visibleMembers.length} selectedCount={visibleMembers.filter((member) => selectedMemberIds.includes(member.member_id)).length} disabled={busy || loading || snapshotUnavailable} onQueryChange={(query) => setFilters((current) => ({ ...current, query }))} onMemberTypeChange={handleMemberTypeChange} onRefresh={refresh} onCreate={requestCreateMember} />
+            )}
+            <div className="min-h-0 flex-1 overflow-y-auto bg-paper">
+                {activeTab === "cubes" ? <CubeBuildTable items={visibleCubes} memberCounts={cubeMemberCounts} joinCounts={cubeJoinCounts} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} onEdit={openEditCube} onDelete={deleteCube} /> : activeTab === "metrics" ? <MetricBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} selectedIds={selectedMemberIds} onSelectionChange={handleSelectionChange} onEdit={(memberId, trigger) => openEditMember(memberId, trigger)} onDelete={deleteMember} /> : <DimensionBuildTable items={visibleMembers} loading={loading} error={error} disabled={busy || loading || snapshotUnavailable} selectedIds={selectedMemberIds} onSelectionChange={handleSelectionChange} onEdit={(memberId, trigger) => openEditMember(memberId, trigger)} onDelete={deleteMember} />}
+                {showValidationNotice && <div className="border-b border-ink/10 bg-paper">
                     <div className="px-5 py-6 lg:px-7">
-                        <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} changeSummary={changeSummary ?? undefined} />
+                        <SemanticValidationPanel issues={operationIssues(operation)} status={draft?.status ?? null} changeSummary={changeSummary ?? undefined} onClose={() => setValidationNoticeOpen(false)} />
                     </div>
-                    <SemanticReleasePanel releases={releases} activeVersion={activeRelease?.release_version ?? null} activeSnapshot={snapshotUnavailable || !activeSnapshotReady ? null : activeSnapshot} />
-                    <SemanticVersionActionBar
+                </div>}
+            </div>
+            <div className="shrink-0 border-t border-ink/15 bg-white">
+                <SemanticVersionActionBar
                         releases={releases}
                         draftStatus={draft?.status ?? null}
                         dirty={dirty}
@@ -619,9 +828,41 @@ export function SemanticModelPage({
                         onReview={(decision) => { const current = requireDraft(); if (current) void perform(() => reviewSemanticDraft(current.draft_id, { decision, reason: decision === "approved" ? "审核通过" : "审核驳回" }), ""); }}
                         onPublish={() => void handlePublish()}
                         onRollback={handleRollback}
-                    />
-                </div>
+                />
             </div>
+            {releaseDialogOpen && (
+                <div
+                    className="fixed inset-0 z-40 flex items-center justify-center bg-ink/25 p-5 backdrop-blur-[2px]"
+                    role="presentation"
+                    onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) closeReleaseDialog();
+                    }}
+                >
+                    <div
+                        ref={releaseDialogRef}
+                        className="flex max-h-full w-full max-w-2xl items-center justify-center"
+                        onKeyDown={handleReleaseDialogKeyDown}
+                    >
+                        <SemanticReleasePanel
+                            releases={releases}
+                            activeVersion={activeRelease?.release_version ?? null}
+                            activeSnapshot={snapshotUnavailable || !activeSnapshotReady ? null : activeSnapshot}
+                            onClose={closeReleaseDialog}
+                        />
+                    </div>
+                </div>
+            )}
+            {cubeDialog && (
+                <CubeEditDialog
+                    mode={cubeDialog.mode}
+                    cube={cubeDialog.cube}
+                    disabled={busy || loading || snapshotUnavailable}
+                    error={error}
+                    onCancel={closeCubeDialog}
+                    onSave={saveCube}
+                    onChange={(cube) => setCubeDialog((current) => current ? { ...current, cube } : current)}
+                />
+            )}
             {memberDialog && (
                 <SemanticMemberEditDialog
                     mode={memberDialog.mode}
@@ -653,10 +894,10 @@ export function SemanticModelPage({
                 />
             )}
             {createMemberType && (
-                <div className="absolute inset-0 z-20 flex items-start justify-center bg-ink/10 p-10" role="presentation">
+                <div className="fixed inset-0 z-30 flex items-start justify-center bg-ink/10 p-8 backdrop-blur-[2px]" role="presentation">
                     <div
                         ref={createDialogRef}
-                        className="w-full max-w-xl border border-ink/15 bg-white p-6 shadow-line"
+                        className="w-full max-w-xl rounded-2xl border border-ink/15 bg-white p-7 shadow-line"
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="create-member-title"
@@ -673,12 +914,12 @@ export function SemanticModelPage({
                         </div>
                         {semanticCubeOptions(workingSnapshot).length > 0 ? (
                             <label className="mt-6 block text-sm font-semibold text-ink">
-                                <span className="mb-2 block">所属 Cube</span>
+                                <span className="mb-2 block text-xs font-semibold text-ink/60">所属 Cube</span>
                                 <select
                                     value={createCubeName}
                                     onChange={(event) => setCreateCubeName(event.target.value)}
                                     disabled={busy || loading}
-                                    className="h-11 w-full border border-ink/15 bg-paper px-3 text-sm font-normal text-ink outline-none transition focus:border-indigo/60 focus:ring-2 focus:ring-indigo/15 disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="h-11 w-full rounded-xl border border-ink/15 bg-paper px-4 text-sm font-normal text-ink outline-none transition focus:border-indigo/60 focus:ring-2 focus:ring-indigo/15 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     {semanticCubeOptions(workingSnapshot).map((cube) => (
                                         <option key={cube.cube_name} value={cube.cube_name}>
@@ -693,14 +934,14 @@ export function SemanticModelPage({
                             </p>
                         )}
                         <div className="mt-7 flex justify-end gap-3">
-                                <button ref={cancelButtonRef} type="button" onClick={() => closeCreateDialog()} className="min-h-10 border border-ink/15 px-4 text-sm font-semibold text-ink/65 transition hover:bg-paper focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40">
+                                <button ref={cancelButtonRef} type="button" onClick={() => closeCreateDialog()} className="min-h-11 rounded-xl border border-ink/15 px-5 text-sm font-semibold text-ink/65 transition hover:bg-paper focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40">
                                 取消
                             </button>
                             <button
                                 type="button"
                                 onClick={() => createMember(createMemberType, createCubeName)}
                                 disabled={!createCubeName || semanticCubeOptions(workingSnapshot).length === 0 || busy || loading || snapshotUnavailable}
-                                className="min-h-10 bg-dai px-4 text-sm font-semibold text-paper transition hover:bg-dai/90 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
+                                className="min-h-11 rounded-xl bg-dai px-5 text-sm font-semibold text-paper transition hover:bg-dai/90 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40"
                             >
                                 创建成员
                             </button>

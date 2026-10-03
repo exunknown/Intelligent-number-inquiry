@@ -34,6 +34,14 @@ export function cubeHasReferences(
     };
 }
 
+export function canDeleteSemanticCube(
+    snapshot: Pick<SemanticSnapshot, "members" | "joins">,
+    cubeName: string,
+): boolean {
+    const references = cubeHasReferences(snapshot, cubeName);
+    return references.memberCount === 0 && references.joinCount === 0;
+}
+
 export function canEditSemanticJoin(join: Pick<SemanticJoin, "editable">): boolean {
     return join.editable;
 }
@@ -219,6 +227,40 @@ export function semanticCubeOptions(
     snapshot: Pick<SemanticSnapshot, "cubes">,
 ): SemanticCube[] {
     return snapshot.cubes;
+}
+
+export function createDraftSemanticCube(releaseVersion: string): SemanticCube {
+    return {
+        release_version: releaseVersion,
+        cube_name: "",
+        sql_table: "",
+        title: "",
+        description: "",
+        public: false,
+    };
+}
+
+export function validateSemanticCube(
+    cube: Pick<SemanticCube, "cube_name" | "title" | "sql_table">,
+    snapshot: Pick<SemanticSnapshot, "cubes">,
+    originalCubeName?: string,
+): string | null {
+    if (!cube.cube_name.trim()) return "Cube 编码不能为空";
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(cube.cube_name)) {
+        return "Cube 编码必须以字母开头，只能包含 ASCII 字母、数字和下划线";
+    }
+    if (
+        snapshot.cubes.some(
+            (item) =>
+                item.cube_name === cube.cube_name &&
+                item.cube_name !== originalCubeName,
+        )
+    ) {
+        return "Cube 编码已存在";
+    }
+    if (!cube.title.trim()) return "Cube 名称不能为空";
+    if (!cube.sql_table.trim()) return "物理表不能为空";
+    return null;
 }
 
 export function createDraftSemanticMember(
