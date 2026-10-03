@@ -148,7 +148,7 @@ export const UserAvatarMenu = forwardRef<UserAvatarMenuHandle, UserAvatarMenuPro
                                 className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-sm text-ink transition hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50"
                             >
                                 <Gauge className="h-4 w-4 text-indigo" aria-hidden="true" />
-                                指标治理
+                                Agent 管理
                             </button>
                         )}
                         <button

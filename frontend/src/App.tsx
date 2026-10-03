@@ -33,7 +33,11 @@ import {
 import { cn, summarizeResult } from "./lib/format";
 import { sanitizeMetricItems } from "./lib/metricDisplay";
 import { hydrateSessionMessages } from "./lib/sessionHydration";
-import { isAgentManagementPath } from "./lib/semanticModel";
+import {
+    isAgentManagementPath,
+    semanticBuildPath,
+    semanticBuildTabForPath,
+} from "./lib/semanticModel";
 import { capabilityPresentation, shouldAutoScrollChat } from "./lib/userManagement";
 import type { AgentEvent, ChatMessage, StepState } from "./types/agent";
 
@@ -83,13 +87,15 @@ type AppProps = {
 type AppPath =
     | "/"
     | "/history"
-    | "/semantic-model"
     | "/agent-management/metrics"
     | "/agent-management/dimensions";
 
 function readAppPath(): AppPath {
     if (window.location.pathname === "/history") return "/history";
-    if (window.location.pathname === "/semantic-model") return "/semantic-model";
+    if (window.location.pathname === "/semantic-model") {
+        window.history.replaceState({}, "", "/agent-management/metrics");
+        return "/agent-management/metrics";
+    }
     if (window.location.pathname === "/agent-management/metrics") {
         return "/agent-management/metrics";
     }
@@ -155,8 +161,12 @@ export default function App({ username }: AppProps) {
             setNavigationError("查询进行中，请先停止查询后再切换页面。");
             return;
         }
-        if (isAgentManagementPath(path) && semanticModelDirty) {
-            if (!window.confirm("当前指标治理草稿尚未保存，确定离开吗？")) return;
+        if (
+            isAgentManagementPath(path) &&
+            semanticModelDirty &&
+            !isAgentManagementPath(nextPath)
+        ) {
+            if (!window.confirm("当前 Agent 管理草稿尚未保存，确定离开吗？")) return;
             setSemanticModelDirty(false);
         }
         setNavigationError(null);
@@ -166,18 +176,23 @@ export default function App({ username }: AppProps) {
 
     useEffect(() => {
         const handlePopState = () => {
+            const nextPath = readAppPath();
             if (isStreaming) {
                 window.history.pushState({}, "", path);
                 setNavigationError("查询进行中，请先停止查询后再切换页面。");
                 return;
             }
-            if (isAgentManagementPath(path) && semanticModelDirty) {
+            if (
+                isAgentManagementPath(path) &&
+                semanticModelDirty &&
+                !isAgentManagementPath(nextPath)
+            ) {
                 window.history.pushState({}, "", path);
-                setNavigationError("当前指标治理草稿尚未保存，请先保存或确认离开。");
+                setNavigationError("当前 Agent 管理草稿尚未保存，请先保存或确认离开。");
                 return;
             }
             setNavigationError(null);
-            setPath(readAppPath());
+            setPath(nextPath);
         };
         window.addEventListener("popstate", handlePopState);
         return () => window.removeEventListener("popstate", handlePopState);
@@ -607,7 +622,7 @@ export default function App({ username }: AppProps) {
                                 showManagement={managementCapability.showEntry}
                                 onOpenManagement={() => setManagementOpen(true)}
                                 showGovernance={semanticModelCapability}
-                                onOpenGovernance={() => navigateTo("/semantic-model")}
+                                onOpenGovernance={() => navigateTo("/agent-management/metrics")}
                                 onLogout={() => void handleLogout()}
                             />
                         </div>
@@ -649,9 +664,11 @@ export default function App({ username }: AppProps) {
                             <SemanticModelPage
                                 onBack={() => navigateTo("/")}
                                 onDirtyChange={setSemanticModelDirty}
+                                initialTab={semanticBuildTabForPath(path)}
+                                onTabChange={(tab) => navigateTo(semanticBuildPath(tab))}
                             />
                         ) : (
-                            <div className="grid min-h-0 flex-1 place-items-center bg-[#dfe0d8] px-6 text-center"><div><p className="font-serif text-xl font-bold text-ink">没有指标治理权限</p><p className="mt-2 text-sm text-ink/55">请联系平台管理员申请语义模型治理权限。</p></div></div>
+                            <div className="grid min-h-0 flex-1 place-items-center bg-[#dfe0d8] px-6 text-center"><div><p className="font-serif text-xl font-bold text-ink">没有 Agent 管理权限</p><p className="mt-2 text-sm text-ink/55">请联系平台管理员申请语义模型操作权限。</p></div></div>
                         )
                     ) : (
                         <>

@@ -5,7 +5,9 @@ export function semanticBuildTabForPath(pathname: string): SemanticBuildTab {
     return pathname === "/agent-management/dimensions" ? "dimensions" : "metrics";
 }
 
-export function semanticBuildPath(tab: SemanticBuildTab): string {
+export function semanticBuildPath(
+    tab: SemanticBuildTab,
+): "/agent-management/metrics" | "/agent-management/dimensions" {
     return tab === "dimensions"
         ? "/agent-management/dimensions"
         : "/agent-management/metrics";
@@ -787,14 +789,14 @@ export function formatSemanticModelError(error: unknown): string {
             ? (error as SemanticError)
             : {};
     if (value.status === 401) return "登录已失效，请重新登录。";
-    if (value.status === 403) return "没有指标治理权限，请联系平台管理员。";
-    if (value.status === 404) return "指标治理对象不存在，可能已被其他人修改。";
+    if (value.status === 403) return "没有 Agent 管理权限，请联系平台管理员。";
+    if (value.status === 404) return "Agent 管理对象不存在，可能已被其他人修改。";
     if (value.status === 409 && value.code === "release_conflict") {
         return "发布版本已发生变化，请刷新后重试。";
     }
     if (value.status === 409) return "草稿状态已变化，请刷新后重试。";
     if (value.status === 422) return "提交内容不符合要求，请检查后重试。";
-    if (value.status === 503) return "指标治理服务暂不可用，请稍后重试。";
+    if (value.status === 503) return "Agent 管理服务暂不可用，请稍后重试。";
     if (
         typeof value.message === "string" &&
         value.message.length <= 240 &&
@@ -804,7 +806,7 @@ export function formatSemanticModelError(error: unknown): string {
     ) {
         return value.message;
     }
-    return "指标治理操作未完成，请稍后重试。";
+    return "Agent 管理操作未完成，请稍后重试。";
 }
 
 export function newSemanticIdempotencyKey(): string {

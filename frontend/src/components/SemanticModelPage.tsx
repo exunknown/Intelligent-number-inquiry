@@ -25,7 +25,12 @@ import { SemanticReleasePanel } from "./SemanticReleasePanel";
 import { SemanticValidationPanel } from "./SemanticValidationPanel";
 import { SemanticVersionActionBar } from "./SemanticVersionActionBar";
 
-type SemanticModelPageProps = { onBack: () => void; onDirtyChange?: (dirty: boolean) => void };
+type SemanticModelPageProps = {
+    onBack: () => void;
+    onDirtyChange?: (dirty: boolean) => void;
+    initialTab?: SemanticBuildTab;
+    onTabChange?: (tab: SemanticBuildTab) => void;
+};
 type Filters = { memberType: "all" | "measure" | "dimension" | "time_dimension"; query: string };
 type CreateMemberType = SemanticMemberType;
 type MemberDialogState = {
@@ -64,9 +69,14 @@ function defaultCubeName(cubes: SemanticCube[]): string {
     );
 }
 
-export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPageProps) {
+export function SemanticModelPage({
+    onBack,
+    onDirtyChange,
+    initialTab = "metrics",
+    onTabChange,
+}: SemanticModelPageProps) {
     const [filters, setFilters] = useState<Filters>({ memberType: "all", query: "" });
-    const [activeTab, setActiveTab] = useState<SemanticBuildTab>("metrics");
+    const [activeTab, setActiveTab] = useState<SemanticBuildTab>(initialTab);
     const [directoryQuery, setDirectoryQuery] = useState("");
     const [members, setMembers] = useState<SemanticMemberSummary[]>([]);
     const [snapshot, setSnapshot] = useState<SemanticSnapshot>(emptySnapshot);
@@ -91,6 +101,10 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const createDialogRef = useRef<HTMLDivElement | null>(null);
     const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
     const createTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+    useEffect(() => {
+        setActiveTab(initialTab);
+    }, [initialTab]);
 
     const load = async () => {
         const generation = requestGateRef.current.start();
@@ -486,14 +500,14 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     };
 
     const handleRollback = (release: SemanticRelease) => {
-        if (dirty && !window.confirm("当前指标治理草稿尚未保存，回滚会丢失修改，确定继续吗？")) return;
+        if (dirty && !window.confirm("当前 Agent 管理草稿尚未保存，回滚会丢失修改，确定继续吗？")) return;
         const reason = window.prompt(`请输入回滚 ${release.release_version} 的原因`);
         if (!reason?.trim()) return;
         void perform(() => rollbackSemanticRelease(release.release_version, { reason: reason.trim() }), "");
     };
 
     const changeFilters = (nextFilters: Filters) => {
-        if (dirty && !window.confirm("当前指标治理草稿尚未保存，切换筛选会丢失修改，确定继续吗？")) return;
+        if (dirty && !window.confirm("当前 Agent 管理草稿尚未保存，切换筛选会丢失修改，确定继续吗？")) return;
         requestGateRef.current.start();
         setDraft(null);
         setDirty(false);
@@ -504,7 +518,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     };
 
     const refresh = () => {
-        if (dirty && !window.confirm("当前指标治理草稿尚未保存，刷新会丢失修改，确定继续吗？")) return;
+        if (dirty && !window.confirm("当前 Agent 管理草稿尚未保存，刷新会丢失修改，确定继续吗？")) return;
         requestGateRef.current.start();
         setDraft(null);
         setDirty(false);
@@ -562,6 +576,7 @@ export function SemanticModelPage({ onBack, onDirtyChange }: SemanticModelPagePr
     const handleTabChange = (tab: SemanticBuildTab) => {
         setActiveTab(tab);
         setFilters((current) => ({ ...current, memberType: "all" }));
+        onTabChange?.(tab);
     };
     const handleMemberTypeChange = (memberType: Filters["memberType"]) => {
         if (memberType !== "all" && !semanticMemberTypesForBuildTab(activeTab).includes(memberType)) return;
