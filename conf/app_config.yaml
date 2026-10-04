@@ -61,6 +61,17 @@ redis:
   event_ttl_seconds: ${oc.env:SSE_EVENT_TTL_SECONDS,900}
   max_events: ${oc.env:SSE_MAX_EVENTS,500}
 
+cache:
+  enabled: ${oc.env:QUERY_CACHE_ENABLED,true}
+  embedding_ttl_seconds: ${oc.env:QUERY_CACHE_EMBEDDING_TTL_SECONDS,604800}
+  column_recall_ttl_seconds: ${oc.env:QUERY_CACHE_COLUMN_RECALL_TTL_SECONDS,600}
+  cube_member_recall_ttl_seconds: ${oc.env:QUERY_CACHE_CUBE_MEMBER_RECALL_TTL_SECONDS,600}
+  value_recall_ttl_seconds: ${oc.env:QUERY_CACHE_VALUE_RECALL_TTL_SECONDS,300}
+  cube_catalog_ttl_seconds: ${oc.env:QUERY_CACHE_CUBE_CATALOG_TTL_SECONDS,300}
+  metric_result_ttl_seconds: ${oc.env:QUERY_CACHE_METRIC_RESULT_TTL_SECONDS,60}
+  lock_ttl_seconds: ${oc.env:QUERY_CACHE_LOCK_TTL_SECONDS,10}
+  lock_wait_seconds: ${oc.env:QUERY_CACHE_LOCK_WAIT_SECONDS,0.2}
+
 minio:
   enabled: ${oc.env:MINIO_ENABLED,true}
   endpoint: ${oc.env:MINIO_ENDPOINT,127.0.0.1:9000}

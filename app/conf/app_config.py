@@ -106,6 +106,21 @@ class RedisConfig:
 
 
 @dataclass
+class CacheConfig:
+    """问数缓存配置。"""
+
+    enabled: bool
+    embedding_ttl_seconds: int
+    column_recall_ttl_seconds: int
+    cube_member_recall_ttl_seconds: int
+    value_recall_ttl_seconds: int
+    cube_catalog_ttl_seconds: int
+    metric_result_ttl_seconds: int
+    lock_ttl_seconds: int
+    lock_wait_seconds: float
+
+
+@dataclass
 class MinIOConfig:
     """MinIO 结果对象存储配置。"""
 
@@ -250,6 +265,7 @@ class AppConfig:
     embedding: EmbeddingConfig
     es: ESConfig
     redis: RedisConfig
+    cache: CacheConfig
     minio: MinIOConfig
     llm: LLMConfig
     ini: IniConfig
