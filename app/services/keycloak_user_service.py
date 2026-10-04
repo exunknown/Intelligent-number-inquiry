@@ -84,6 +84,9 @@ class KeycloakUserService:
             max=max,
         )
 
+    async def count_users(self, *, query: str | None, enabled: bool | None) -> int:
+        return await self._call(self.client.count_users, query=query, enabled=enabled)
+
     async def get_user(self, user_id: str) -> KeycloakUser:
         return await self._call(self.client.get_user, user_id)
 

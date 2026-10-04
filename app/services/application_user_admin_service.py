@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Awaitable, Callable, Collection, Literal, TypeVar
 
+from loguru import logger
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.entities.app_user import APP_ROLES, ApplicationUser
@@ -140,6 +141,10 @@ class ApplicationUserAdminService:
             first=offset,
             max=limit,
         )
+        total = await self.keycloak_user_service.count_users(
+            query=query,
+            enabled=enabled,
+        )
         local_users = await _user_repository_call(
             self.repository.list_users_by_ids,
             [remote.user_id for remote in remote_users],
@@ -148,7 +153,7 @@ class ApplicationUserAdminService:
             self._merge_keycloak_user(remote, local_users.get(remote.user_id))
             for remote in remote_users
         ]
-        return ApplicationUserListResult(items=merged_users, total=len(merged_users))
+        return ApplicationUserListResult(items=merged_users, total=total)
 
     async def get_user_detail(self, user_id: str) -> ApplicationUserDetail | None:
         local_user = await self.get_user(user_id)
@@ -220,14 +225,16 @@ class ApplicationUserAdminService:
         status = "active" if enabled else "disabled"
         password_fingerprint = self._temporary_password_fingerprint(temporary_password)
         previous = await _user_repository_call(
-            self.repository.replay_create_user,
+            self.repository.prepare_admin_user_create,
             username=username,
             display_name=display_name,
             email=email,
             status=status,
             roles=desired_roles,
+            actor_user_id=actor_user_id,
             password_fingerprint=password_fingerprint,
             request_key=request_key,
+            reason="创建用户",
         )
         if previous is not None:
             return previous
@@ -259,8 +266,19 @@ class ApplicationUserAdminService:
                 password_fingerprint=password_fingerprint,
             )
         except Exception:
+            can_retry = created_user_id is None
             if created_user_id is not None:
-                await self._try_delete_keycloak_user(created_user_id)
+                can_retry = await self._try_delete_keycloak_user(created_user_id)
+            if can_retry:
+                await self._try_fail_create_request(
+                    username=username,
+                    display_name=display_name,
+                    email=email,
+                    status=status,
+                    roles=desired_roles,
+                    request_key=request_key,
+                    password_fingerprint=password_fingerprint,
+                )
             raise
 
     async def update_user(
@@ -562,20 +580,60 @@ class ApplicationUserAdminService:
             status="active" if remote_user.enabled else "disabled",
         )
 
-    async def _try_delete_keycloak_user(self, user_id: str) -> None:
+    async def _try_delete_keycloak_user(self, user_id: str) -> bool:
         if self.keycloak_user_service is None:
-            return
+            return False
         try:
             await self.keycloak_user_service.delete_user(user_id)
-        except KeycloakUserServiceError:
-            return
+        except KeycloakUserServiceError as exc:
+            logger.warning(
+                "Keycloak 用户创建补偿删除失败 user_id={} code={}",
+                user_id,
+                exc.code,
+            )
+            return False
+        return True
+
+    async def _try_fail_create_request(
+        self,
+        *,
+        username: str,
+        display_name: str,
+        email: str,
+        status: Literal["active", "disabled"],
+        roles: Collection[str],
+        request_key: str,
+        password_fingerprint: str,
+    ) -> None:
+        try:
+            await self.repository.fail_admin_user_create(
+                username=username,
+                display_name=display_name,
+                email=email,
+                status=status,
+                roles=roles,
+                request_key=request_key,
+                password_fingerprint=password_fingerprint,
+            )
+        except Exception as exc:
+            logger.warning(
+                "应用用户创建 pending 状态释放失败 request_key={} error_type={}",
+                request_key,
+                type(exc).__name__,
+            )
 
     async def _try_restore_keycloak_enabled(self, user_id: str, enabled: bool) -> None:
         if self.keycloak_user_service is None:
             return
         try:
             await self.keycloak_user_service.set_enabled(user_id, enabled)
-        except KeycloakUserServiceError:
+        except KeycloakUserServiceError as exc:
+            logger.warning(
+                "Keycloak 用户状态补偿恢复失败 user_id={} enabled={} code={}",
+                user_id,
+                enabled,
+                exc.code,
+            )
             return
 
     @classmethod

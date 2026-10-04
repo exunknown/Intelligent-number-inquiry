@@ -87,14 +87,47 @@ class KeycloakAdminClient:
         data = await self._request("GET", self._admin_url("users"), params=params)
         if not isinstance(data, list):
             raise KeycloakAdminUnavailableError("Keycloak 管理服务响应异常")
-        return [self._map_user(item) for item in data if isinstance(item, dict)]
+        return [
+            await self._map_user_with_realm_roles(item)
+            for item in data
+            if isinstance(item, dict)
+        ]
+
+    async def count_users(self, query: str | None, enabled: bool | None) -> int:
+        """查询 Keycloak 用户总数。"""
+        params: dict[str, object] = {}
+        if query:
+            params["search"] = query
+        if enabled is not None:
+            params["enabled"] = enabled
+
+        data = await self._request(
+            "GET", self._admin_url("users", "count"), params=params
+        )
+        if isinstance(data, bool) or not isinstance(data, int) or data < 0:
+            raise KeycloakAdminUnavailableError("Keycloak 管理服务响应异常")
+        return data
 
     async def get_user(self, user_id: str) -> KeycloakUser:
         """按 ID 获取 Keycloak 用户。"""
         data = await self._request("GET", self._admin_url("users", user_id))
         if not isinstance(data, dict):
             raise KeycloakAdminUnavailableError("Keycloak 管理服务响应异常")
-        return self._map_user(data)
+        return await self._map_user_with_realm_roles(data)
+
+    async def get_realm_roles(self, user_id: str) -> frozenset[str]:
+        """读取用户的 Realm 角色映射。"""
+        data = await self._request(
+            "GET",
+            self._admin_url("users", user_id, "role-mappings", "realm", "composite"),
+        )
+        if not isinstance(data, list):
+            raise KeycloakAdminUnavailableError("Keycloak 管理服务响应异常")
+        return frozenset(
+            role["name"]
+            for role in data
+            if isinstance(role, dict) and isinstance(role.get("name"), str)
+        )
 
     async def create_user(self, payload: KeycloakUserCreate) -> str:
         """创建 Keycloak 用户，并返回新用户 ID。"""
@@ -286,6 +319,19 @@ class KeycloakAdminClient:
         if not isinstance(data, dict):
             raise KeycloakAdminUnavailableError("Keycloak 管理服务响应异常")
         return data
+
+    async def _map_user_with_realm_roles(self, data: dict) -> KeycloakUser:
+        user = self._map_user(data)
+        realm_roles = await self.get_realm_roles(user.user_id)
+        return KeycloakUser(
+            user_id=user.user_id,
+            username=user.username,
+            display_name=user.display_name,
+            email=user.email,
+            enabled=user.enabled,
+            created_at=user.created_at,
+            keycloak_roles=user.keycloak_roles | realm_roles,
+        )
 
     @staticmethod
     def _map_user(data: dict) -> KeycloakUser:

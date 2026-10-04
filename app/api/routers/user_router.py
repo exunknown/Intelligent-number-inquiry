@@ -25,6 +25,7 @@ from app.entities.app_user import ApplicationUser
 from app.entities.auth import AuthContext
 from app.repositories.mysql.meta.app_user_repository import (
     AppUserIdempotencyConflictError,
+    AppUserOperationPendingError,
 )
 from app.security.dependencies import (
     get_application_auth_context,
@@ -165,6 +166,15 @@ async def create_user_handler(
             detail={
                 "code": "idempotency_conflict",
                 "message": "idempotency key conflicts with an existing request",
+            },
+        ) from exc
+    except AppUserOperationPendingError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "operation_pending",
+                "message": "idempotency key is still processing",
+                "retryable": True,
             },
         ) from exc
     except KeycloakUserServiceError as exc:

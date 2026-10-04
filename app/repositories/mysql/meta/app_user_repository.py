@@ -19,6 +19,10 @@ class AppUserIdempotencyConflictError(ValueError):
     """幂等键已绑定其他用户、操作或目标值。"""
 
 
+class AppUserOperationPendingError(RuntimeError):
+    """幂等键对应的外部写操作仍在处理中。"""
+
+
 class AppUserRepository:
     """在 Meta MySQL 中维护应用侧用户、角色和变更审计。"""
 
@@ -346,6 +350,138 @@ class AppUserRepository:
             await self.session.rollback()
         return previous
 
+    async def prepare_admin_user_create(
+        self,
+        *,
+        username: str,
+        display_name: str,
+        email: str,
+        status: Literal["active", "disabled"],
+        roles: Collection[str],
+        actor_user_id: str,
+        request_key: str,
+        reason: str,
+        password_fingerprint: str,
+    ) -> ApplicationUser | None:
+        """预占创建请求，避免重试或并发请求重复触发 Keycloak 创建。"""
+        if status not in {"active", "disabled"}:
+            raise ValueError("unsupported application user status")
+        desired_roles = self._validate_roles(roles)
+        clean_reason = self._validate_reason(reason)
+        try:
+            change = await self._change_by_request_key(request_key, for_update=True)
+            if change is not None:
+                snapshot = self._create_snapshot(
+                    change,
+                    username=username,
+                    display_name=display_name,
+                    email=email,
+                    status=status,
+                    roles=desired_roles,
+                    password_fingerprint=password_fingerprint,
+                )
+                state = snapshot.get("create_user_state", "completed")
+                if state == "completed":
+                    await self.session.rollback()
+                    return self._snapshot_to_entity(snapshot)
+                if state == "failed":
+                    change.after_json = {
+                        **snapshot,
+                        "create_user_state": "pending",
+                    }
+                    await self.session.commit()
+                    return None
+                raise AppUserOperationPendingError("create user request is pending")
+
+            now = self._now()
+            pending_user_id = f"pending-create:{request_key}"
+            snapshot = {
+                "user_id": pending_user_id,
+                "username": self._optional_value(username),
+                "display_name": self._optional_value(display_name),
+                "email": self._optional_value(email),
+                "observed_roles": [],
+                "status": status,
+                "first_seen_at": now.isoformat(),
+                "last_seen_at": now.isoformat(),
+                "disabled_at": now.isoformat() if status == "disabled" else None,
+                "disabled_by": None,
+                "updated_at": now.isoformat(),
+                "application_roles": sorted(desired_roles),
+                "password_fingerprint": password_fingerprint,
+                "create_user_state": "pending",
+            }
+            self.session.add(
+                self._change(
+                    request_key=request_key,
+                    user_id=pending_user_id,
+                    operation="create_user",
+                    actor_user_id=actor_user_id,
+                    reason=clean_reason,
+                    before=None,
+                    after=snapshot,
+                    created_at=now,
+                )
+            )
+            await self.session.commit()
+            return None
+        except IntegrityError:
+            await self.session.rollback()
+            previous = await self._create_idempotent_result(
+                request_key,
+                username=username,
+                display_name=display_name,
+                email=email,
+                status=status,
+                roles=desired_roles,
+                password_fingerprint=password_fingerprint,
+            )
+            if previous is not None:
+                return previous
+            raise AppUserOperationPendingError("create user request is pending")
+        except Exception:
+            await self.session.rollback()
+            raise
+
+    async def fail_admin_user_create(
+        self,
+        *,
+        username: str,
+        display_name: str,
+        email: str,
+        status: Literal["active", "disabled"],
+        roles: Collection[str],
+        request_key: str,
+        password_fingerprint: str,
+    ) -> None:
+        """释放创建请求 pending 状态，允许同一幂等键安全重试。"""
+        if status not in {"active", "disabled"}:
+            raise ValueError("unsupported application user status")
+        desired_roles = self._validate_roles(roles)
+        try:
+            change = await self._change_by_request_key(request_key, for_update=True)
+            if change is None:
+                await self.session.rollback()
+                return
+            snapshot = self._create_snapshot(
+                change,
+                username=username,
+                display_name=display_name,
+                email=email,
+                status=status,
+                roles=desired_roles,
+                password_fingerprint=password_fingerprint,
+            )
+            state = snapshot.get("create_user_state", "completed")
+            if state == "pending":
+                change.after_json = {**snapshot, "create_user_state": "failed"}
+                await self.session.commit()
+                return
+            await self.session.rollback()
+        except Exception:
+            await self.session.rollback()
+            raise
+
     async def replay_profile_update(
         self,
         *,
@@ -391,18 +527,25 @@ class AppUserRepository:
         observed = sorted(self._normalize_observed_roles(observed_roles))
         clean_reason = self._validate_reason(reason)
         try:
-            previous = await self._create_idempotent_result(
-                request_key,
-                username=username,
-                display_name=display_name,
-                email=email,
-                status=status,
-                roles=desired_roles,
-                password_fingerprint=password_fingerprint,
-            )
-            if previous is not None:
-                await self.session.rollback()
-                return previous
+            change = await self._change_by_request_key(request_key, for_update=True)
+            if change is not None:
+                snapshot = self._create_snapshot(
+                    change,
+                    username=username,
+                    display_name=display_name,
+                    email=email,
+                    status=status,
+                    roles=desired_roles,
+                    password_fingerprint=password_fingerprint,
+                )
+                state = snapshot.get("create_user_state", "completed")
+                if state == "completed":
+                    await self.session.rollback()
+                    return self._snapshot_to_entity(snapshot)
+                if state != "pending":
+                    raise AppUserIdempotencyConflictError(
+                        "request key create user state does not match"
+                    )
             model, current_role_models = await self._load_user_with_roles(
                 user_id, for_update=True
             )
@@ -453,18 +596,24 @@ class AppUserRepository:
                 )
             after = self._snapshot(model, desired_roles)
             after["password_fingerprint"] = password_fingerprint
-            self.session.add(
-                self._change(
-                    request_key=request_key,
-                    user_id=user_id,
-                    operation="create_user",
-                    actor_user_id=actor_user_id,
-                    reason=clean_reason,
-                    before=before,
-                    after=after,
-                    created_at=now,
+            after["create_user_state"] = "completed"
+            if change is None:
+                self.session.add(
+                    self._change(
+                        request_key=request_key,
+                        user_id=user_id,
+                        operation="create_user",
+                        actor_user_id=actor_user_id,
+                        reason=clean_reason,
+                        before=before,
+                        after=after,
+                        created_at=now,
+                    )
                 )
-            )
+            else:
+                change.user_id = user_id
+                change.before_json = before
+                change.after_json = after
             await self.session.commit()
             return self._to_entity(model, desired_roles)
         except IntegrityError:
@@ -848,6 +997,33 @@ class AppUserRepository:
         change = await self._change_by_request_key(request_key)
         if change is None:
             return None
+        snapshot = self._create_snapshot(
+            change,
+            username=username,
+            display_name=display_name,
+            email=email,
+            status=status,
+            roles=roles,
+            password_fingerprint=password_fingerprint,
+        )
+        state = snapshot.get("create_user_state", "completed")
+        if state == "pending":
+            raise AppUserOperationPendingError("create user request is pending")
+        if state == "failed":
+            return None
+        return self._snapshot_to_entity(snapshot)
+
+    def _create_snapshot(
+        self,
+        change: AppUserChangeMySQL,
+        *,
+        username: str | None,
+        display_name: str | None,
+        email: str | None,
+        status: str,
+        roles: Collection[str],
+        password_fingerprint: str,
+    ) -> dict[str, object]:
         snapshot = change.after_json
         if change.operation != "create_user":
             raise AppUserIdempotencyConflictError(
@@ -866,7 +1042,12 @@ class AppUserRepository:
                 raise AppUserIdempotencyConflictError(
                     "request key target user does not match"
                 )
-        return self._snapshot_to_entity(snapshot)
+        state = snapshot.get("create_user_state", "completed")
+        if state not in {"pending", "completed", "failed"}:
+            raise AppUserIdempotencyConflictError(
+                "request key create user state does not match"
+            )
+        return snapshot
 
     async def _profile_update_idempotent_result(
         self,
@@ -1049,7 +1230,7 @@ class AppUserRepository:
         operation: str,
         actor_user_id: str,
         reason: str,
-        before: dict[str, object],
+        before: dict[str, object] | None,
         after: dict[str, object],
         created_at: datetime,
     ) -> AppUserChangeMySQL:
