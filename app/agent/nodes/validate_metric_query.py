@@ -7,7 +7,7 @@ from langgraph.runtime import Runtime
 from app.agent.context import DataAgentContext
 from app.agent.metric_display import governed_metric_display_entries
 from app.agent.metric_query import validate_metric_query_result
-from app.agent.state import DataAgentState
+from app.agent.state import DataAgentState, build_turn_context_payload
 from app.conf.app_config import app_config
 from app.core.query_errors import QueryExecutionError
 from app.entities.cube_member import CubeMember
@@ -177,6 +177,14 @@ async def validate_metric_query(
                 "metric_query": state["metric_query_raw"],
                 "query_mode": "sql",
                 "route_reason": reason,
+                "turn_context": build_turn_context_payload(
+                    {
+                        **state,
+                        "metric_query_decision": decision,
+                        "query_mode": "sql",
+                    },
+                    None,
+                ),
             }
         )
         return {
@@ -200,6 +208,15 @@ async def validate_metric_query(
             "cube_query": decision.cube_query,
             "query_mode": "metric",
             "route_reason": reason,
+            "turn_context": build_turn_context_payload(
+                {
+                    **state,
+                    **relation_state,
+                    "metric_query_decision": decision,
+                    "query_mode": "metric",
+                },
+                None,
+            ),
         }
     )
     return {

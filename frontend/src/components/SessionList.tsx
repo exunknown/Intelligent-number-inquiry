@@ -1,10 +1,7 @@
 import {
     Archive,
-    Clock3,
     Ellipsis,
-    History,
     LoaderCircle,
-    MessageCircle,
     Pencil,
     Trash2,
 } from "lucide-react";
@@ -28,17 +25,6 @@ type SessionListProps = {
     onOpenHistory?: () => void;
     loadingSessionId?: string | null;
 };
-
-function formatSessionTime(value: string) {
-    const timestamp = new Date(value);
-    if (Number.isNaN(timestamp.getTime())) return "";
-    return new Intl.DateTimeFormat("zh-CN", {
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-    }).format(timestamp);
-}
 
 export function SessionList({
     sessions,
@@ -74,11 +60,8 @@ export function SessionList({
 
     return (
         <section aria-label="历史会话">
-            <div className="mb-2 flex items-center justify-between px-1 text-xs font-semibold text-ink/45">
-                <span className="inline-flex items-center gap-2">
-                    <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
-                    {heading}
-                </span>
+            <div className="mb-2 flex items-center justify-between px-1 text-xs font-medium text-ink/45">
+                <span>{heading}</span>
                 {loading && (
                     <span role="status" className="inline-flex items-center gap-1.5">
                         <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
@@ -105,14 +88,14 @@ export function SessionList({
                 </div>
             )}
 
-            <div className="space-y-1">
+            <div className="space-y-1.5 rounded-xl bg-canvas/65 p-2">
                 {sessions.map((session) => {
                     const selected = session.session_id === selectedSessionId;
                     const menuOpen = session.session_id === openMenuId;
                     const selectionDisabled =
                         disabled || loadingSessionId !== null || busySessionId !== null;
                     return (
-                        <div key={session.session_id} className="relative">
+                        <div key={session.session_id} className="group relative">
                             <button
                                 type="button"
                                 disabled={selectionDisabled}
@@ -123,24 +106,14 @@ export function SessionList({
                                 }}
                                 aria-pressed={selected}
                                 className={cn(
-                                    "flex min-h-11 w-full min-w-0 items-start gap-2 border px-3 py-2.5 pr-10 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/45 disabled:cursor-not-allowed disabled:opacity-55",
+                                    "flex min-h-11 w-full min-w-0 items-center rounded-lg px-3 py-2 pr-12 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/45 disabled:cursor-not-allowed disabled:opacity-55",
                                     selected
-                                        ? "border-indigo/30 bg-indigo/10"
-                                        : "border-transparent hover:border-ink/10 hover:bg-white/70",
+                                        ? "bg-white text-ink shadow-line"
+                                        : "bg-transparent text-ink/75 hover:bg-white",
                                 )}
                             >
-                                <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-indigo/45" aria-hidden="true" />
-                                <span className="min-w-0 flex-1">
-                                    <span className="block truncate text-sm font-medium text-ink">
-                                        {session.title}
-                                    </span>
-                                    <span className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-ink/45">
-                                        <span className="inline-flex shrink-0 items-center gap-1">
-                                            <Clock3 className="h-3 w-3" aria-hidden="true" />
-                                            {formatSessionTime(session.updated_at)}
-                                        </span>
-                                        <span className="truncate">{session.message_count} 条消息</span>
-                                    </span>
+                                <span className="block min-w-0 truncate text-sm font-medium">
+                                    {session.title}
                                 </span>
                             </button>
 
@@ -151,7 +124,7 @@ export function SessionList({
                                     event.stopPropagation();
                                     setOpenMenuId(menuOpen ? null : session.session_id);
                                 }}
-                                className="absolute right-1.5 top-1 grid h-11 w-11 place-items-center text-ink/45 transition hover:bg-ink/5 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 disabled:cursor-not-allowed disabled:opacity-35"
+                                className="absolute right-1 top-0 grid h-11 w-11 place-items-center rounded-lg text-ink/40 opacity-0 transition hover:bg-ink/5 hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-35"
                                 title="会话操作"
                                 aria-label={`${session.title} 会话操作`}
                                 aria-expanded={menuOpen}
@@ -196,15 +169,16 @@ export function SessionList({
             </div>
 
             {showHistoryLink && onOpenHistory && (
-                <button
-                    type="button"
-                    disabled={disabled || loadingSessionId !== null || busySessionId !== null}
-                    onClick={onOpenHistory}
-                    className="mt-2 flex min-h-11 w-full items-center gap-2 border border-ink/10 bg-white/70 px-3 py-2 text-left text-xs font-medium text-indigo transition hover:border-indigo/25 hover:bg-indigo/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                    <History className="h-3.5 w-3.5" aria-hidden="true" />
-                    查看历史对话
-                </button>
+                <div className="flex justify-center pt-3">
+                    <button
+                        type="button"
+                        disabled={disabled || loadingSessionId !== null || busySessionId !== null}
+                        onClick={onOpenHistory}
+                        className="min-h-10 px-3 text-xs font-medium text-ink/50 underline decoration-ink/20 underline-offset-4 transition hover:text-indigo focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                        查看所有
+                    </button>
+                </div>
             )}
         </section>
     );

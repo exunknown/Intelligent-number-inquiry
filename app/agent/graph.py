@@ -14,6 +14,7 @@ from langgraph.graph import StateGraph
 from app.agent.context import DataAgentContext
 from app.agent.nodes.add_extra_context import add_extra_context
 from app.agent.nodes.apply_selector import apply_selector
+from app.agent.nodes.conversation_clarification import conversation_clarification
 from app.agent.nodes.correct_sql import correct_sql
 from app.agent.nodes.estimate_sql import estimate_sql
 from app.agent.nodes.execute_cube_query import execute_cube_query
@@ -24,6 +25,7 @@ from app.agent.nodes.merge_retrieved_info import merge_retrieved_info
 from app.agent.nodes.recall_column import recall_column
 from app.agent.nodes.recall_cube_member import recall_cube_member
 from app.agent.nodes.recall_value import recall_value
+from app.agent.nodes.resolve_conversation import resolve_conversation
 from app.agent.nodes.route_selector import route_selector
 from app.agent.nodes.run_sql import run_sql
 from app.agent.nodes.selector_agent import selector_agent
@@ -58,10 +60,21 @@ def route_query_mode(state: DataAgentState) -> str:
     return state["query_mode"]
 
 
+def route_conversation_mode(state: DataAgentState) -> str:
+    """按会话解析结果进入正常问数或澄清终态。"""
+
+    mode = state.get("conversation_mode", "standalone")
+    if mode not in {"standalone", "follow_up", "clarification"}:
+        return "standalone"
+    return mode
+
+
 # StateGraph 声明整张图使用的状态结构和运行时上下文结构
 graph_builder = StateGraph(state_schema=DataAgentState, context_schema=DataAgentContext)
 
 # 注册节点：每个节点负责问数链路中的一个清晰步骤
+graph_builder.add_node("resolve_conversation", resolve_conversation)
+graph_builder.add_node("conversation_clarification", conversation_clarification)
 graph_builder.add_node("extract_keywords", extract_keywords)
 graph_builder.add_node("recall_column", recall_column)
 graph_builder.add_node("recall_value", recall_value)
@@ -82,8 +95,18 @@ graph_builder.add_node("correct_sql", correct_sql)
 graph_builder.add_node("estimate_sql", estimate_sql)
 graph_builder.add_node("run_sql", run_sql)
 
-# 从用户问题开始，先抽取关键词作为后续检索的基础
-graph_builder.add_edge(START, "extract_keywords")
+# 从用户问题开始，先解析最近会话上下文
+graph_builder.add_edge(START, "resolve_conversation")
+graph_builder.add_conditional_edges(
+    source="resolve_conversation",
+    path=route_conversation_mode,
+    path_map={
+        "standalone": "extract_keywords",
+        "follow_up": "extract_keywords",
+        "clarification": "conversation_clarification",
+    },
+)
+graph_builder.add_edge("conversation_clarification", END)
 
 # 关键词抽取后并行进入三类召回，分别面向字段 字段值和 Cube 受治理成员
 graph_builder.add_edge("extract_keywords", "recall_column")

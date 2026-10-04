@@ -8,7 +8,7 @@ export type AgentManagementTabsProps = {
 
 export function AgentManagementTabs({ activeTab, onChange, disabled = false }: AgentManagementTabsProps) {
     return (
-        <div role="tablist" aria-label="Agent 管理建设类型" className="flex shrink-0 border-b border-ink/10 bg-white px-5 lg:px-7">
+        <div role="tablist" aria-label="Agent 管理建设类型" className="flex shrink-0 items-center gap-4 bg-white px-5 py-3 lg:px-7">
             {([
                 ["metrics", "指标建设", "agent-panel-metrics"],
                 ["dimensions", "维度建设", "agent-panel-dimensions"],
@@ -23,7 +23,7 @@ export function AgentManagementTabs({ activeTab, onChange, disabled = false }: A
                     aria-selected={activeTab === tab}
                     disabled={disabled}
                     onClick={() => onChange(tab)}
-                    className={`border-b-2 px-4 py-4 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 disabled:cursor-not-allowed disabled:opacity-45 ${activeTab === tab ? "border-cinnabar bg-cinnabar/5 text-ink" : "border-transparent text-ink/45 hover:bg-paper hover:text-ink/70"}`}
+                    className={`min-h-10 rounded-full px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/40 disabled:cursor-not-allowed disabled:opacity-45 ${activeTab === tab ? "bg-cinnabar text-white" : "text-ink/65 hover:bg-paper hover:text-ink"}`}
                 >
                     {label}
                 </button>

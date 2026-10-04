@@ -4,7 +4,7 @@ from langgraph.runtime import Runtime
 
 from app.agent.context import DataAgentContext
 from app.agent.metric_query import normalize_cube_result
-from app.agent.state import DataAgentState
+from app.agent.state import DataAgentState, build_turn_context_payload
 from app.core.log import logger
 
 
@@ -37,6 +37,15 @@ async def execute_cube_query(state: DataAgentState, runtime: Runtime[DataAgentCo
         )
         result = normalize_cube_result(response)
         logger.info("Cube query completed rows={}", len(result))
+        writer(
+            {
+                "type": "audit",
+                "turn_context": build_turn_context_payload(
+                    {**state, "query_mode": "metric"},
+                    {"row_count": len(result), "verified": True},
+                ),
+            }
+        )
         writer({"type": "progress", "step": step, "status": "success"})
         writer(
             {

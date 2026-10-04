@@ -25,6 +25,7 @@ from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
 )
 from app.security.sql_policy import SQLPolicyEngine
+from app.services.cache_service import CacheService
 from app.services.semantic_metric_relation_service import SemanticMetricRelationService
 
 
@@ -61,3 +62,5 @@ class DataAgentContext(TypedDict):
     resource_budget: NotRequired[RequestBudget]
     # 进程级依赖熔断器，问数节点只消费不重建
     dependency_breakers: NotRequired[dict[str, DependencyCircuitBreaker]]
+    # 可选 Redis 缓存服务；调试入口和旧测试可暂不提供
+    cache_service: NotRequired[CacheService]

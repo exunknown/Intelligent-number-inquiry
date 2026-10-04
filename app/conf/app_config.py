@@ -106,6 +106,21 @@ class RedisConfig:
 
 
 @dataclass
+class CacheConfig:
+    """问数缓存配置。"""
+
+    enabled: bool
+    embedding_ttl_seconds: int
+    column_recall_ttl_seconds: int
+    cube_member_recall_ttl_seconds: int
+    value_recall_ttl_seconds: int
+    cube_catalog_ttl_seconds: int
+    metric_result_ttl_seconds: int
+    lock_ttl_seconds: int
+    lock_wait_seconds: float
+
+
+@dataclass
 class MinIOConfig:
     """MinIO 结果对象存储配置。"""
 
@@ -148,6 +163,17 @@ class SelectorConfig:
     enabled: bool
     schema_token_threshold: int
     token_estimate_chars_per_token: float
+
+
+@dataclass
+class ConversationConfig:
+    """多轮问数会话解析配置。"""
+
+    enabled: bool
+    recent_turns: int
+    max_context_chars: int
+    clarification_enabled: bool
+    resolver_timeout_seconds: float
 
 
 @dataclass
@@ -239,10 +265,12 @@ class AppConfig:
     embedding: EmbeddingConfig
     es: ESConfig
     redis: RedisConfig
+    cache: CacheConfig
     minio: MinIOConfig
     llm: LLMConfig
     ini: IniConfig
     selector: SelectorConfig
+    conversation: ConversationConfig
     cube: CubeConfig
     auth: AuthConfig
     sql_safety: SQLSafetyConfig

@@ -42,6 +42,9 @@ from app.repositories.mysql.meta.query_audit_repository import QueryAuditReposit
 from app.repositories.mysql.meta.query_export_repository import QueryExportRepository
 from app.repositories.mysql.meta.query_message_repository import QueryMessageRepository
 from app.repositories.mysql.meta.query_session_repository import QuerySessionRepository
+from app.repositories.mysql.meta.query_turn_context_repository import (
+    QueryTurnContextRepository,
+)
 from app.repositories.mysql.meta.semantic_model_repository import (
     SemanticModelRepository,
 )
@@ -50,6 +53,7 @@ from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
 )
 from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantRepository
+from app.repositories.redis.cache_repository import CacheRepository
 from app.repositories.redis.sse_event_repository import SSEEventRepository
 from app.security.sql_policy import SQLPolicyEngine, SQLPolicyLimits
 from app.services.application_user_admin_service import ApplicationUserAdminService
@@ -58,6 +62,7 @@ from app.services.authorization_service import (
     AuthorizationCacheState,
     AuthorizationService,
 )
+from app.services.cache_service import CacheService
 from app.services.cube_semantic_model_compiler import CubeSemanticModelCompiler
 from app.services.metadata_release_coordinator import SemanticModelReleaseCoordinator
 from app.services.metric_candidate_service import MetricCandidateService
@@ -143,12 +148,29 @@ async def get_query_message_repository(
     return QueryMessageRepository(session)
 
 
+async def get_query_turn_context_repository(
+    session: Annotated[AsyncSession, Depends(get_meta_session)],
+) -> QueryTurnContextRepository:
+    """创建请求级查询轮次上下文仓储。"""
+
+    return QueryTurnContextRepository(session)
+
+
 async def get_sse_event_repository() -> SSEEventRepository:
     """创建进程级 Redis SSE 事件仓储。"""
 
     return SSEEventRepository(
         get_redis_client_manager().client,
         app_config.redis,
+    )
+
+
+async def get_cache_service() -> CacheService:
+    """创建进程级 Redis 问数缓存服务。"""
+
+    return CacheService(
+        CacheRepository(get_redis_client_manager().client),
+        app_config.cache,
     )
 
 
@@ -429,6 +451,10 @@ async def get_query_service(
         SQLFallbackRepository | None, Depends(get_sql_fallback_repository)
     ],
     sql_policy_engine: Annotated[SQLPolicyEngine, Depends(get_sql_policy_engine)],
+    query_turn_context_repository: Annotated[
+        QueryTurnContextRepository, Depends(get_query_turn_context_repository)
+    ],
+    cache_service: Annotated[CacheService, Depends(get_cache_service)],
 ) -> QueryService:
     """组装一次查询所需的业务服务"""
 
@@ -453,4 +479,6 @@ async def get_query_service(
         metric_candidate_repository=metric_candidate_repository,
         sql_fallback_repository=sql_fallback_repository,
         sql_policy_engine=sql_policy_engine,
+        query_turn_context_repository=query_turn_context_repository,
+        cache_service=cache_service,
     )

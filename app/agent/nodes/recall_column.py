@@ -13,6 +13,7 @@ from langgraph.runtime import Runtime
 from app.agent.context import DataAgentContext
 from app.agent.llm import llm
 from app.agent.state import DataAgentState
+from app.conf.app_config import app_config
 from app.core.log import logger
 from app.core.resource_governance import await_with_budget
 from app.entities.column_info import ColumnInfo
@@ -34,6 +35,7 @@ async def recall_column(state: DataAgentState, runtime: Runtime[DataAgentContext
         # context 保存外部运行时工具：向量仓储和 Embedding 客户端
         column_qdrant_repository = runtime.context["column_qdrant_repository"]
         embedding_client = runtime.context["embedding_client"]
+        cache_service = runtime.context.get("cache_service")
         resource_budget = runtime.context.get("resource_budget")
         breakers = runtime.context.get("dependency_breakers", {})
 
@@ -62,13 +64,24 @@ async def recall_column(state: DataAgentState, runtime: Runtime[DataAgentContext
         column_info_map: dict[str, ColumnInfo] = {}
         for keyword in keywords:
             # 查询词必须先转成向量，才能和第 9 章写入 Qdrant 的字段向量做相似度检索
-            embedding = await await_with_budget(
-                embedding_client.aembed_query(keyword),
-                resource_budget,
-                resource="embedding",
-                circuit_breaker=breakers.get("embedding"),
-                dependency="embedding",
-            )
+            async def load_embedding() -> list[float]:
+                return await await_with_budget(
+                    embedding_client.aembed_query(keyword),
+                    resource_budget,
+                    resource="embedding",
+                    circuit_breaker=breakers.get("embedding"),
+                    dependency="embedding",
+                )
+
+            if cache_service is None:
+                embedding = await load_embedding()
+            else:
+                embedding, _ = await cache_service.get_embedding(
+                    keyword,
+                    model_version=app_config.embedding.model,
+                    dimension=app_config.qdrant.embedding_size,
+                    loader=load_embedding,
+                )
             current_column_infos: list[ColumnInfo] = await await_with_budget(
                 column_qdrant_repository.search(embedding),
                 resource_budget,

@@ -20,11 +20,22 @@ type UserAvatarMenuProps = {
     showGovernance: boolean;
     onOpenGovernance: () => void;
     onLogout: () => void;
+    menuPlacement?: "above" | "below";
+    className?: string;
 };
 
 export const UserAvatarMenu = forwardRef<UserAvatarMenuHandle, UserAvatarMenuProps>(
     function UserAvatarMenu(
-        { username, showManagement, onOpenManagement, showGovernance, onOpenGovernance, onLogout },
+        {
+            username,
+            showManagement,
+            onOpenManagement,
+            showGovernance,
+            onOpenGovernance,
+            onLogout,
+            menuPlacement = "below",
+            className,
+        },
         ref,
     ) {
         const [menuOpen, setMenuOpen] = useState(false);
@@ -99,7 +110,7 @@ export const UserAvatarMenu = forwardRef<UserAvatarMenuHandle, UserAvatarMenuPro
         };
 
         return (
-            <div ref={wrapperRef} className="relative">
+            <div ref={wrapperRef} className={className ? `relative ${className}` : "relative"}>
                 <button
                     ref={triggerRef}
                     type="button"
@@ -119,7 +130,11 @@ export const UserAvatarMenu = forwardRef<UserAvatarMenuHandle, UserAvatarMenuPro
                         role="menu"
                         aria-label="用户菜单"
                         onKeyDown={handleMenuKeyDown}
-                        className="absolute right-0 top-full z-20 mt-2 min-w-48 border border-ink/10 bg-white p-2 shadow-line"
+                        className={`absolute z-20 min-w-48 border border-ink/10 bg-white p-2 shadow-line ${
+                            menuPlacement === "above"
+                                ? "bottom-full left-0 mb-2"
+                                : "right-0 top-full mt-2"
+                        }`}
                     >
                         <div
                             role="group"

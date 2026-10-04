@@ -20,7 +20,7 @@ type SemanticMetricRelationsEditorProps = {
     onChange: (groups: SemanticMetricEquivalenceGroup[], attachments: SemanticMetricAttachment[]) => void;
 };
 
-const inputClass = "h-9 w-full border border-ink/15 bg-white px-2.5 text-xs text-ink outline-none focus:border-indigo/60 focus:ring-2 focus:ring-indigo/15 disabled:bg-paper disabled:text-ink/50";
+const inputClass = "h-10 w-full rounded-xl border border-ink/15 bg-white px-3 text-xs text-ink outline-none transition focus:border-indigo/60 focus:ring-2 focus:ring-indigo/15 disabled:bg-paper disabled:text-ink/50";
 const relationLabels: Record<SemanticMetricAttachmentRelationType, string> = {
     supporting: "支撑指标",
     comparison: "对比指标",
@@ -132,7 +132,7 @@ export function SemanticMetricRelationsEditor({
     };
 
     return (
-        <section className="border-t-2 border-cinnabar/30 pt-4 xl:col-span-2">
+        <section className="rounded-2xl border border-cinnabar/15 bg-cinnabar/5 p-5 xl:col-span-2">
             <div className="flex items-center gap-2">
                 <Link2 className="h-4 w-4 text-cinnabar" aria-hidden="true" />
                 <div>
@@ -142,10 +142,10 @@ export function SemanticMetricRelationsEditor({
             </div>
 
             <div className="mt-4 grid gap-4 xl:grid-cols-2">
-                <div className="border border-ink/10 bg-white p-3">
+                <div className="rounded-xl border border-ink/10 bg-white p-4">
                     <div className="flex items-center justify-between gap-2">
                         <p className="text-xs font-semibold text-ink/65">等效指标组</p>
-                        <button type="button" onClick={addEquivalenceGroup} disabled={disabled} className="inline-flex min-h-8 items-center gap-1 border border-indigo/30 px-2 text-xs font-semibold text-indigo hover:bg-indigo/5 disabled:opacity-45" title="新建等效指标组">
+                        <button type="button" onClick={addEquivalenceGroup} disabled={disabled} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-indigo/30 px-3 text-xs font-semibold text-indigo hover:bg-indigo/5 disabled:opacity-45" title="新建等效指标组">
                             <Plus className="h-3.5 w-3.5" aria-hidden="true" />新建
                         </button>
                     </div>
@@ -179,13 +179,13 @@ export function SemanticMetricRelationsEditor({
                     {!groups.length && <p className="mt-2 text-xs text-ink/45">当前版本暂无可选等效指标组。</p>}
                 </div>
 
-                <div className="border border-ink/10 bg-white p-3">
+                <div className="rounded-xl border border-ink/10 bg-white p-4">
                     <p className="text-xs font-semibold text-ink/65">附带指标</p>
                     {currentAttachments.length === 0 && <p className="mt-2 text-xs text-ink/45">暂无附带指标。</p>}
                     <div className="mt-2 space-y-2">
                         {currentAttachments.map((attachment) => {
                             const attached = metricMembers.find((item) => item.member_id === attachment.attached_member_id);
-                            return <div key={attachment.attached_member_id} className="border border-ink/10 bg-paper p-2">
+                            return <div key={attachment.attached_member_id} className="rounded-lg border border-ink/10 bg-paper p-3">
                                 <div className="flex items-center justify-between gap-2">
                                     <span className="truncate text-xs font-semibold text-ink">{attached?.title || attached?.member_name || attachment.attached_member_id}</span>
                                     <button type="button" onClick={() => deleteAttachment(attachment)} disabled={disabled} title="移除附带指标" aria-label="移除附带指标" className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-oxide hover:bg-oxide/10 disabled:opacity-45"><Trash2 className="h-3.5 w-3.5" aria-hidden="true" /></button>
@@ -209,7 +209,7 @@ export function SemanticMetricRelationsEditor({
                         </div>
                         <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
                             <input className={inputClass} value={relationNote} disabled={disabled} placeholder="关系说明" aria-label="新增关系说明" onChange={(event) => setRelationNote(event.target.value)} />
-                            <button type="button" onClick={addAttachment} disabled={disabled || !attachedMemberId} className="inline-flex min-h-9 items-center gap-1 border border-indigo/30 px-2.5 text-xs font-semibold text-indigo hover:bg-indigo/5 disabled:opacity-45"><Plus className="h-3.5 w-3.5" aria-hidden="true" />添加</button>
+                            <button type="button" onClick={addAttachment} disabled={disabled || !attachedMemberId} className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-indigo/30 px-3 text-xs font-semibold text-indigo hover:bg-indigo/5 disabled:opacity-45"><Plus className="h-3.5 w-3.5" aria-hidden="true" />添加</button>
                         </div>
                         <label className="mt-2 flex items-center gap-2 text-xs text-ink/65"><input type="checkbox" checked={relationVisible} disabled={disabled} onChange={(event) => setRelationVisible(event.target.checked)} />新增关系默认展示</label>
                     </div>
