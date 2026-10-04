@@ -57,7 +57,9 @@ export function AnalysisPanel({
         }
     }, [isPartiallyVisible]);
 
-    if (steps.length === 0 && !queryMode) return null;
+    if (steps.length === 0 && !queryMode && !hasResult && status !== "error" && !errorCode) {
+        return null;
+    }
 
     const summary = runningStep
         ? `正在执行：${runningStep}`

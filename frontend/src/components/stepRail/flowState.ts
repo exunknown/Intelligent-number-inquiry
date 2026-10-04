@@ -116,6 +116,9 @@ export function getOutcomeState(
   if (queryMode === "metric" && verified) {
     return { id: "metric-result", status: "success", label: "已验证结果" };
   }
+  if (queryMode === "metric") {
+    return { id: "metric-result", status: "success", label: "未验证结果" };
+  }
   if (queryMode === "sql") {
     return { id: "sql-result", status: "success", label: "未验证结果" };
   }
