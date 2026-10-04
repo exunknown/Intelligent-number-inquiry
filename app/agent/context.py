@@ -56,6 +56,8 @@ class DataAgentContext(TypedDict):
     auth: AuthContext
     # 当前生效的语义模型快照，供指标关系解析节点读取
     semantic_model_snapshot: NotRequired[SemanticModelSnapshot]
+    # 当前生效的元数据版本，用于缓存隔离和审计关联
+    metadata_release_version: NotRequired[str | None]
     # 无状态的指标关系解析器，不持有仓储或客户端
     semantic_metric_relation_service: NotRequired[SemanticMetricRelationService]
     # 请求级端到端资源预算；调试入口和旧调用可暂不提供

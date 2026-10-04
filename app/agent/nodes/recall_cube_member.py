@@ -33,6 +33,17 @@ async def recall_cube_member(state: DataAgentState, runtime: Runtime[DataAgentCo
         permissions = runtime.context["permissions"]
         resource_budget = runtime.context.get("resource_budget")
         breakers = runtime.context.get("dependency_breakers", {})
+        metadata_release_version = runtime.context.get("metadata_release_version")
+        try:
+            index_generation = await await_with_budget(
+                repository.get_alias_target(),
+                resource_budget,
+                circuit_breaker=breakers.get("qdrant"),
+                dependency="qdrant",
+            )
+        except Exception:
+            logger.warning("Cube member recall cache generation lookup failed")
+            index_generation = None
 
         for term in terms:
 
@@ -54,40 +65,86 @@ async def recall_cube_member(state: DataAgentState, runtime: Runtime[DataAgentCo
                     dimension=app_config.qdrant.embedding_size,
                     loader=load_embedding,
                 )
+
+            async def load_members(member_types):
+                return await await_with_budget(
+                    repository.search(embedding, member_types),
+                    resource_budget,
+                    circuit_breaker=breakers.get("qdrant"),
+                    dependency="qdrant",
+                )
+
+            async def cached_members(member_types):
+                if (
+                    cache_service is None
+                    or metadata_release_version is None
+                    or index_generation is None
+                ):
+                    return await load_members(member_types)
+                try:
+                    result, _ = await cache_service.get_cube_member_recall(
+                        {
+                            "metadata_release_version": metadata_release_version,
+                            "index_generation": index_generation,
+                            "recall_type": "cube_member",
+                            "term": term,
+                            "score_threshold": 0.6,
+                            "limit": 10,
+                            "member_types": sorted(member_types),
+                        },
+                        lambda: load_members(member_types),
+                    )
+                    return result
+                except Exception:
+                    logger.warning(
+                        "Cube member recall cache failed; falling back to source"
+                    )
+                    return await load_members(member_types)
+
             _append_unseen(
                 measures,
                 filter_cube_members(
-                    await await_with_budget(
-                        repository.search(embedding, {"measure"}),
-                        resource_budget,
-                        circuit_breaker=breakers.get("qdrant"),
-                        dependency="qdrant",
-                    ),
+                    await cached_members({"measure"}),
                     permissions,
                 ),
             )
             _append_unseen(
                 dimensions,
                 filter_cube_members(
-                    await await_with_budget(
-                        repository.search(embedding, {"dimension", "time_dimension"}),
-                        resource_budget,
-                        circuit_breaker=breakers.get("qdrant"),
-                        dependency="qdrant",
-                    ),
+                    await cached_members({"dimension", "time_dimension"}),
                     permissions,
                 ),
             )
 
-        catalog_members = filter_cube_members(
-            await await_with_budget(
+        async def load_catalog() -> list[CubeMember]:
+            return await await_with_budget(
                 repository.list_members(),
                 resource_budget,
                 circuit_breaker=breakers.get("qdrant"),
                 dependency="qdrant",
-            ),
-            permissions,
-        )
+            )
+
+        if (
+            cache_service is not None
+            and metadata_release_version is not None
+            and index_generation is not None
+        ):
+            try:
+                public_catalog_members, _ = await cache_service.get_cube_catalog(
+                    {
+                        "metadata_release_version": metadata_release_version,
+                        "index_generation": index_generation,
+                        "recall_type": "cube_catalog",
+                    },
+                    load_catalog,
+                )
+            except Exception:
+                logger.warning("Cube catalog cache failed; falling back to source")
+                public_catalog_members = await load_catalog()
+        else:
+            public_catalog_members = await load_catalog()
+
+        catalog_members = filter_cube_members(public_catalog_members, permissions)
         _append_unseen(
             measures,
             [member for member in catalog_members if member.member_type == "measure"],

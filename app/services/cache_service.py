@@ -5,13 +5,18 @@ import json
 import math
 import re
 from collections.abc import Awaitable, Callable
+from dataclasses import asdict, is_dataclass
 from typing import TypeVar
 
 from app.conf.app_config import CacheConfig
 from app.core.log import logger
+from app.entities.column_info import ColumnInfo
+from app.entities.cube_member import CubeMember
+from app.entities.value_info import ValueInfo
 from app.repositories.redis.cache_repository import CacheRepository
 
 T = TypeVar("T")
+E = TypeVar("E")
 _CATEGORY_PATTERN = re.compile(r"^[a-z0-9_]+$")
 
 _DEFAULT_CACHE_CONFIG = CacheConfig(
@@ -159,6 +164,66 @@ class CacheService:
             lambda cached: _validate_embedding(cached, dimension),
         )
 
+    async def get_column_recall(
+        self,
+        payload: object,
+        loader: Callable[[], Awaitable[list[ColumnInfo]]],
+    ) -> tuple[list[ColumnInfo], bool]:
+        """读取或生成字段召回候选。"""
+
+        return await self._get_or_load_entities(
+            "column_recall",
+            payload,
+            self.config.column_recall_ttl_seconds,
+            loader,
+            ColumnInfo,
+        )
+
+    async def get_cube_member_recall(
+        self,
+        payload: object,
+        loader: Callable[[], Awaitable[list[CubeMember]]],
+    ) -> tuple[list[CubeMember], bool]:
+        """读取或生成 Cube 成员召回候选。"""
+
+        return await self._get_or_load_entities(
+            "cube_member_recall",
+            payload,
+            self.config.cube_member_recall_ttl_seconds,
+            loader,
+            CubeMember,
+        )
+
+    async def get_value_recall(
+        self,
+        payload: object,
+        loader: Callable[[], Awaitable[list[ValueInfo]]],
+    ) -> tuple[list[ValueInfo], bool]:
+        """读取或生成字段值召回候选。"""
+
+        return await self._get_or_load_entities(
+            "value_recall",
+            payload,
+            self.config.value_recall_ttl_seconds,
+            loader,
+            ValueInfo,
+        )
+
+    async def get_cube_catalog(
+        self,
+        payload: object,
+        loader: Callable[[], Awaitable[list[CubeMember]]],
+    ) -> tuple[list[CubeMember], bool]:
+        """读取或生成 Cube 成员目录。"""
+
+        return await self._get_or_load_entities(
+            "cube_catalog",
+            payload,
+            self.config.cube_catalog_ttl_seconds,
+            loader,
+            CubeMember,
+        )
+
     async def acquire_lock(self, key: str, ttl_seconds: int | None = None) -> bool:
         """获取短时锁；Redis 不可用时返回 False。"""
 
@@ -182,6 +247,30 @@ class CacheService:
         except Exception:
             logger.warning("Cache delete failed; ignoring stale value")
 
+    async def _get_or_load_entities(
+        self,
+        category: str,
+        payload: object,
+        ttl_seconds: int,
+        loader: Callable[[], Awaitable[list[E]]],
+        entity_type: type[E],
+    ) -> tuple[list[E], bool]:
+        key = self.make_key(category, payload)
+        cached = await self.get_json(
+            key,
+            lambda cached_payload: _validate_entity_list(
+                cached_payload,
+                entity_type,
+            ),
+        )
+        if cached is not None:
+            return cached, True
+
+        value = await loader()
+        _validate_loaded_entities(value, entity_type)
+        await self.set_json(key, _serialize_entity_list(value), ttl_seconds)
+        return value, False
+
 
 def normalize_embedding_text(text: str) -> str:
     """规范化 Embedding Key 中的文本。"""
@@ -201,3 +290,30 @@ def _validate_embedding(payload: object, dimension: int) -> list[float]:
             raise ValueError("cached embedding contains non-finite number")
         embedding.append(value)
     return embedding
+
+
+def _serialize_entity_list(values: list[object]) -> list[dict[str, object]]:
+    serialized = []
+    for value in values:
+        if not is_dataclass(value):
+            raise ValueError("cached entity must be a dataclass")
+        serialized.append(asdict(value))
+    return serialized
+
+
+def _validate_entity_list(payload: object, entity_type: type[E]) -> list[E]:
+    if not isinstance(payload, list):
+        raise ValueError("cached entity payload must be a list")
+    entities: list[E] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("cached entity item must be an object")
+        entities.append(entity_type(**item))
+    return entities
+
+
+def _validate_loaded_entities(values: list[E], entity_type: type[E]) -> None:
+    if not isinstance(values, list):
+        raise ValueError("loaded entity payload must be a list")
+    if not all(isinstance(value, entity_type) for value in values):
+        raise ValueError("loaded entity type mismatch")

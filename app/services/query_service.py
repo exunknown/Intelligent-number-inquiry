@@ -540,6 +540,7 @@ class QueryService:
             sql_policy_engine=self.sql_policy_engine,
             permissions=principal.permissions,
             auth=principal.auth,
+            metadata_release_version=metadata_release_version,
             resource_budget=budget,
             dependency_breakers=get_dependency_breakers(),
             cache_service=self.cache_service,

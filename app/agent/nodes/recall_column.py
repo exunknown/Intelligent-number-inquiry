@@ -38,6 +38,17 @@ async def recall_column(state: DataAgentState, runtime: Runtime[DataAgentContext
         cache_service = runtime.context.get("cache_service")
         resource_budget = runtime.context.get("resource_budget")
         breakers = runtime.context.get("dependency_breakers", {})
+        metadata_release_version = runtime.context.get("metadata_release_version")
+        try:
+            index_generation = await await_with_budget(
+                column_qdrant_repository.get_alias_target(),
+                resource_budget,
+                circuit_breaker=breakers.get("qdrant"),
+                dependency="qdrant",
+            )
+        except Exception:
+            logger.warning("Column recall cache generation lookup failed")
+            index_generation = None
 
         # 用 LLM 把用户问法扩展成“字段语义”列表，例如“销售总额”可扩展出“销售金额”
         prompt = PromptTemplate(
@@ -82,12 +93,37 @@ async def recall_column(state: DataAgentState, runtime: Runtime[DataAgentContext
                     dimension=app_config.qdrant.embedding_size,
                     loader=load_embedding,
                 )
-            current_column_infos: list[ColumnInfo] = await await_with_budget(
-                column_qdrant_repository.search(embedding),
-                resource_budget,
-                circuit_breaker=breakers.get("qdrant"),
-                dependency="qdrant",
-            )
+
+            async def load_recall() -> list[ColumnInfo]:
+                return await await_with_budget(
+                    column_qdrant_repository.search(embedding),
+                    resource_budget,
+                    circuit_breaker=breakers.get("qdrant"),
+                    dependency="qdrant",
+                )
+
+            if (
+                cache_service is not None
+                and metadata_release_version is not None
+                and index_generation is not None
+            ):
+                try:
+                    current_column_infos, _ = await cache_service.get_column_recall(
+                        {
+                            "metadata_release_version": metadata_release_version,
+                            "index_generation": index_generation,
+                            "recall_type": "column",
+                            "term": keyword,
+                            "score_threshold": 0.6,
+                            "limit": 20,
+                        },
+                        load_recall,
+                    )
+                except Exception:
+                    logger.warning("Column recall cache failed; falling back to source")
+                    current_column_infos = await load_recall()
+            else:
+                current_column_infos = await load_recall()
             for column_info in current_column_infos:
                 if column_info.id not in column_info_map:
                     column_info_map[column_info.id] = column_info

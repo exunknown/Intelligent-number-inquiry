@@ -33,8 +33,20 @@ async def recall_value(state: DataAgentState, runtime: Runtime[DataAgentContext]
         keywords = state["keywords"]
         # 字段取值更关注真实文本命中，因此这里走 Elasticsearch，而不是向量检索
         value_es_repository = runtime.context["value_es_repository"]
+        cache_service = runtime.context.get("cache_service")
         resource_budget = runtime.context.get("resource_budget")
         breakers = runtime.context.get("dependency_breakers", {})
+        metadata_release_version = runtime.context.get("metadata_release_version")
+        try:
+            index_generation = await await_with_budget(
+                value_es_repository.get_alias_target(),
+                resource_budget,
+                circuit_breaker=breakers.get("elasticsearch"),
+                dependency="elasticsearch",
+            )
+        except Exception:
+            logger.warning("Value recall cache generation lookup failed")
+            index_generation = None
 
         # 用 LLM 把用户问法扩展成“可能出现在字段值里的词”
         # 例如“华北地区”可以补充出“华北”，避免 SQL 条件值和真实存储值不一致
@@ -61,12 +73,37 @@ async def recall_value(state: DataAgentState, runtime: Runtime[DataAgentContext]
         # 用 ValueInfo.id 去重，避免多个关键词命中同一条字段值记录
         value_infos_map: dict[str, ValueInfo] = {}
         for keyword in keywords:
-            current_value_infos: list[ValueInfo] = await await_with_budget(
-                value_es_repository.search(keyword),
-                resource_budget,
-                circuit_breaker=breakers.get("elasticsearch"),
-                dependency="elasticsearch",
-            )
+
+            async def load_recall() -> list[ValueInfo]:
+                return await await_with_budget(
+                    value_es_repository.search(keyword),
+                    resource_budget,
+                    circuit_breaker=breakers.get("elasticsearch"),
+                    dependency="elasticsearch",
+                )
+
+            if (
+                cache_service is not None
+                and metadata_release_version is not None
+                and index_generation is not None
+            ):
+                try:
+                    current_value_infos, _ = await cache_service.get_value_recall(
+                        {
+                            "metadata_release_version": metadata_release_version,
+                            "index_generation": index_generation,
+                            "recall_type": "value",
+                            "term": keyword,
+                            "score_threshold": 0.6,
+                            "limit": 20,
+                        },
+                        load_recall,
+                    )
+                except Exception:
+                    logger.warning("Value recall cache failed; falling back to source")
+                    current_value_infos = await load_recall()
+            else:
+                current_value_infos = await load_recall()
             for current_value_info in current_value_infos:
                 if current_value_info.id not in value_infos_map:
                     value_infos_map[current_value_info.id] = current_value_info
