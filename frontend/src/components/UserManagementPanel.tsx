@@ -507,9 +507,9 @@ export function UserManagementPanel({ onBack }: { onBack: () => void }) {
         <section
             role="region"
             aria-labelledby="user-management-title"
-            className="min-h-0 flex-1 overflow-y-auto bg-canvas px-4 py-6 lg:px-7"
+            className="min-h-0 flex-1 overflow-y-auto bg-canvas"
         >
-            <div className="mx-auto flex min-h-full max-w-7xl flex-col overflow-hidden rounded-xl border border-ink/15 bg-paper shadow-line">
+            <div className="flex min-h-full flex-col bg-paper px-4 py-6 lg:px-7">
                 <header className="flex min-h-20 shrink-0 items-center justify-between gap-3 border-b border-ink/10 px-5 py-4 lg:px-6">
                     <div className="flex min-w-0 items-center gap-3">
                         <UsersRound className="h-5 w-5 shrink-0 text-indigo" aria-hidden="true" />

@@ -551,19 +551,20 @@ export default function App({ username }: AppProps) {
                 ? "统一维护可被问数智能体调用的指标与维度"
                 : "自然语言直连数仓";
     const isAgentManagementPage = isAgentManagementPath(path);
-    const isAdminShell = path === "/user-management" || isAgentManagementPath(path);
+    const isUserManagementPage = path === "/user-management";
+    const isAdminPage = isUserManagementPage || isAgentManagementPage;
 
     return (
         <div className="h-dvh overflow-hidden bg-paper text-ink">
             <div
                 className={cn(
                     "relative grid h-full min-h-0 overflow-hidden",
-                    isAgentManagementPage
+                    isAdminPage
                         ? "lg:grid-cols-1"
                         : "lg:grid-cols-[300px_minmax(0,1fr)]",
                 )}
             >
-                {!isAgentManagementPage && (
+                {!isAdminPage && (
                 <aside inert={mobileSessionsOpen} className="hidden min-h-0 border-r border-ink/10 bg-paper text-ink lg:flex lg:flex-col">
                     <div className="border-b border-ink/10 px-5 py-5">
                         <div className="flex items-center gap-3">
@@ -576,62 +577,6 @@ export default function App({ username }: AppProps) {
                     </div>
 
                         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-                            {isAdminShell ? (
-                                <nav aria-label="工作区" className="space-y-2">
-                                    <p className="px-1 pb-2 text-xs font-semibold text-ink/45">工作区</p>
-                                    <button
-                                        type="button"
-                                        onClick={() => navigateTo("/")}
-                                        className="flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm font-semibold text-ink transition hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50"
-                                    >
-                                        问数工作台
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => navigateTo("/history")}
-                                        className="flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm font-semibold text-ink transition hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50"
-                                    >
-                                        历史对话
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => navigateTo("/agent-management/metrics")}
-                                        aria-current={isAgentManagementPath(path) ? "page" : undefined}
-                                        className={cn(
-                                            "flex min-h-11 w-full flex-col items-start justify-center rounded-lg px-3 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50",
-                                            isAgentManagementPath(path)
-                                                ? "border border-indigo/25 bg-indigo/10 text-indigo"
-                                                : "text-ink hover:bg-ink/5",
-                                        )}
-                                    >
-                                        <span>Agent 管理</span>
-                                        {isAgentManagementPath(path) && (
-                                            <span className="mt-0.5 text-xs font-normal text-ink/55">
-                                                {path.endsWith("/dimensions") ? "维度建设" : "指标建设"}
-                                            </span>
-                                        )}
-                                    </button>
-                                    {managementCapability.showEntry && (
-                                        <button
-                                            type="button"
-                                            onClick={() => navigateTo("/user-management")}
-                                            aria-current={path === "/user-management" ? "page" : undefined}
-                                            className={cn(
-                                                "flex min-h-11 w-full flex-col items-start justify-center rounded-lg px-3 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50",
-                                                path === "/user-management"
-                                                    ? "border border-indigo/25 bg-indigo/10 text-indigo"
-                                                    : "text-ink hover:bg-ink/5",
-                                            )}
-                                        >
-                                            <span>用户管理</span>
-                                            {path === "/user-management" && (
-                                                <span className="mt-0.5 text-xs font-normal text-ink/55">账号与权限</span>
-                                            )}
-                                        </button>
-                                    )}
-                                </nav>
-                            ) : (
-                                <>
                                     <button
                                         ref={desktopNewSessionRef}
                                         type="button"
@@ -659,8 +604,6 @@ export default function App({ username }: AppProps) {
                                             onOpenHistory={() => navigateTo("/history")}
                                         />
                                     </div>
-                                </>
-                            )}
                         </div>
                         <div className="shrink-0 border-t border-ink/10 px-4 py-4">
                             <div className="flex items-center gap-3">

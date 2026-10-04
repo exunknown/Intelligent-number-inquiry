@@ -1,4 +1,4 @@
-import { Gauge, UserRound } from "lucide-react";
+import { Gauge, LogOut, UserCog, UserRound } from "lucide-react";
 import {
     forwardRef,
     useEffect,
@@ -149,8 +149,9 @@ export const UserAvatarMenu = forwardRef<UserAvatarMenuHandle, UserAvatarMenuPro
                                 role="menuitem"
                                 tabIndex={0}
                                 onClick={handleManagement}
-                                className="flex min-h-10 w-full items-center px-3 text-left text-sm text-ink transition hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50"
+                                className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-sm text-ink transition hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50"
                             >
+                                <UserCog className="h-4 w-4 text-indigo" aria-hidden="true" />
                                 用户管理
                             </button>
                         )}
@@ -171,8 +172,9 @@ export const UserAvatarMenu = forwardRef<UserAvatarMenuHandle, UserAvatarMenuPro
                             role="menuitem"
                             tabIndex={0}
                             onClick={handleLogout}
-                            className="flex min-h-10 w-full items-center px-3 text-left text-sm text-ink transition hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50"
+                            className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-sm text-ink transition hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50"
                         >
+                            <LogOut className="h-4 w-4 text-ink/55" aria-hidden="true" />
                             退出登录
                         </button>
                     </div>
