@@ -10,12 +10,14 @@ from app.api.dependencies import (
     get_authorization_service,
 )
 from app.api.schemas.app_user_schema import (
+    ApplicationUserCreateRequest,
     ApplicationUserDetailResponse,
     ApplicationUserListResponse,
     ApplicationUserMeResponse,
     ApplicationUserRolesRequest,
     ApplicationUserStatusRequest,
     ApplicationUserSummary,
+    ApplicationUserUpdateRequest,
     UserListQuery,
 )
 from app.api.schemas.authz_schema import AuthzPolicyResponse, PermissionPreviewResponse
@@ -39,9 +41,26 @@ from app.services.authorization_service import (
     AuthorizationService,
     AuthorizationUnavailableError,
 )
+from app.services.keycloak_user_service import KeycloakUserServiceError
 
 user_router = APIRouter()
 _require_manage = require_api_permission("api:users", "manage")
+
+
+def _keycloak_exception(exc: KeycloakUserServiceError) -> HTTPException:
+    status_code = 503
+    if exc.code == "keycloak_user_conflict":
+        status_code = 409
+    elif exc.code == "keycloak_user_not_found":
+        status_code = 404
+    return HTTPException(
+        status_code=status_code,
+        detail={
+            "code": exc.code,
+            "message": exc.message,
+            "retryable": exc.retryable,
+        },
+    )
 
 
 def _summary(user: ApplicationUser) -> ApplicationUserSummary:
@@ -116,6 +135,43 @@ async def get_current_user_handler(
     )
 
 
+@user_router.post("/api/admin/users", response_model=ApplicationUserSummary)
+async def create_user_handler(
+    request: ApplicationUserCreateRequest,
+    idempotency_key: Annotated[UUID, Header(alias="Idempotency-Key")],
+    auth: Annotated[AuthContext, Depends(_require_manage)],
+    service: Annotated[
+        ApplicationUserAdminService, Depends(get_application_user_admin_service)
+    ],
+) -> ApplicationUserSummary:
+    try:
+        user = await service.create_user(
+            username=request.username,
+            display_name=request.display_name,
+            email=str(request.email),
+            temporary_password=request.temporary_password,
+            application_roles=request.application_roles,
+            enabled=request.enabled,
+            request_key=str(idempotency_key),
+            actor_user_id=auth.user_id,
+        )
+    except ApplicationUserRepositoryUnavailableError as exc:
+        raise HTTPException(
+            status_code=503, detail="application user service unavailable"
+        ) from exc
+    except AppUserIdempotencyConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_conflict",
+                "message": "idempotency key conflicts with an existing request",
+            },
+        ) from exc
+    except KeycloakUserServiceError as exc:
+        raise _keycloak_exception(exc) from exc
+    return _summary(user)
+
+
 @user_router.get("/api/admin/users", response_model=ApplicationUserListResponse)
 async def list_users_handler(
     params: Annotated[UserListQuery, Depends()],
@@ -136,6 +192,8 @@ async def list_users_handler(
         raise HTTPException(
             status_code=503, detail="application user service unavailable"
         ) from exc
+    except KeycloakUserServiceError as exc:
+        raise _keycloak_exception(exc) from exc
     return ApplicationUserListResponse(
         items=[_summary(user) for user in result.items],
         total=result.total,
@@ -164,9 +222,39 @@ async def get_user_detail_handler(
         raise HTTPException(
             status_code=503, detail="authorization service unavailable"
         ) from exc
+    except KeycloakUserServiceError as exc:
+        raise _keycloak_exception(exc) from exc
     if detail is None:
         raise HTTPException(status_code=404, detail="application user not found")
     return _detail_response(detail)
+
+
+@user_router.patch("/api/admin/users/{user_id}", response_model=ApplicationUserSummary)
+async def update_user_handler(
+    user_id: str,
+    request: ApplicationUserUpdateRequest,
+    _idempotency_key: Annotated[UUID, Header(alias="Idempotency-Key")],
+    _auth: Annotated[AuthContext, Depends(_require_manage)],
+    service: Annotated[
+        ApplicationUserAdminService, Depends(get_application_user_admin_service)
+    ],
+) -> ApplicationUserSummary:
+    try:
+        user = await service.update_user(
+            user_id=user_id,
+            display_name=request.display_name,
+            email=str(request.email),
+            temporary_password=request.temporary_password,
+        )
+    except ApplicationUserRepositoryUnavailableError as exc:
+        raise HTTPException(
+            status_code=503, detail="application user service unavailable"
+        ) from exc
+    except KeycloakUserServiceError as exc:
+        raise _keycloak_exception(exc) from exc
+    if user is None:
+        raise HTTPException(status_code=404, detail="application user not found")
+    return _summary(user)
 
 
 @user_router.patch(
@@ -193,6 +281,8 @@ async def update_user_status_handler(
         raise HTTPException(
             status_code=503, detail="application user service unavailable"
         ) from exc
+    except KeycloakUserServiceError as exc:
+        raise _keycloak_exception(exc) from exc
     except LastPlatformAdminError as exc:
         raise HTTPException(
             status_code=409,

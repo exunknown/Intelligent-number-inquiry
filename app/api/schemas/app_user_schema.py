@@ -2,7 +2,14 @@
 
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.api.schemas.authz_schema import AuthzPolicyResponse, PermissionPreviewResponse
 from app.entities.app_user import ApplicationRole, ApplicationUserStatus
@@ -40,6 +47,28 @@ class ApplicationUserSummary(BaseModel):
         return value.astimezone(timezone.utc)
 
 
+class ApplicationUserCreateRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=255)
+    display_name: str = Field(min_length=1, max_length=255)
+    email: EmailStr
+    temporary_password: str = Field(min_length=8, max_length=128, exclude=True)
+    application_roles: list[ApplicationRole] = Field(
+        default_factory=lambda: ["analyst"]
+    )
+    enabled: bool = True
+
+
+class ApplicationUserUpdateRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=255)
+    email: EmailStr
+    temporary_password: str | None = Field(
+        default=None,
+        min_length=8,
+        max_length=128,
+        exclude=True,
+    )
+
+
 class ApplicationUserListResponse(BaseModel):
     items: list[ApplicationUserSummary]
     total: int
@@ -49,9 +78,16 @@ class ApplicationUserListResponse(BaseModel):
 
 class ApplicationUserStatusRequest(BaseModel):
     status: ApplicationUserStatus
-    reason: str = Field(max_length=500)
+    reason: str | None = Field(default=None, max_length=500)
 
-    _validate_reason = field_validator("reason")(_clean_reason)
+    @model_validator(mode="after")
+    def validate_reason_for_status(self):
+        if self.status == "disabled":
+            self.reason = _clean_reason(self.reason or "")
+        elif self.reason is not None:
+            clean_reason = self.reason.strip()
+            self.reason = clean_reason or None
+        return self
 
 
 class ApplicationUserRolesRequest(BaseModel):

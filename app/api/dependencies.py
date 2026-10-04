@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.clients.cube_client_manager import get_cube_client_manager
 from app.clients.embedding_client_manager import get_embedding_client_manager
 from app.clients.es_client_manager import get_es_client_manager
+from app.clients.keycloak_admin_client import KeycloakAdminClient
 from app.clients.minio_client_manager import get_minio_client_manager
 from app.clients.mysql_client_manager import (
     dw_mysql_client_manager,
@@ -64,6 +65,7 @@ from app.services.authorization_service import (
 )
 from app.services.cache_service import CacheService
 from app.services.cube_semantic_model_compiler import CubeSemanticModelCompiler
+from app.services.keycloak_user_service import KeycloakUserService
 from app.services.metadata_release_coordinator import SemanticModelReleaseCoordinator
 from app.services.metric_candidate_service import MetricCandidateService
 from app.services.metric_catalog_service import MetricCatalogService
@@ -73,6 +75,7 @@ from app.services.semantic_model_release_adapter import SemanticModelReleaseAdap
 from app.services.semantic_model_service import SemanticModelService
 
 _authorization_cache_state = AuthorizationCacheState()
+_keycloak_admin_client = KeycloakAdminClient(app_config.keycloak_admin)
 _sql_policy_engine = SQLPolicyEngine(
     SQLPolicyLimits(
         max_sql_bytes=app_config.sql_safety.max_sql_bytes,
@@ -275,6 +278,12 @@ async def get_authorization_service(
     return AuthorizationService(repository, cache_state=_authorization_cache_state)
 
 
+async def get_keycloak_user_service() -> KeycloakUserService:
+    """创建 Keycloak 用户服务安全封装。"""
+
+    return KeycloakUserService(_keycloak_admin_client)
+
+
 async def get_application_user_admin_service(
     repository: Annotated[AppUserRepository, Depends(get_app_user_repository)],
     policy_repository: Annotated[
@@ -283,11 +292,17 @@ async def get_application_user_admin_service(
     authorization_service: Annotated[
         AuthorizationService, Depends(get_authorization_service)
     ],
+    keycloak_user_service: Annotated[
+        KeycloakUserService, Depends(get_keycloak_user_service)
+    ],
 ) -> ApplicationUserAdminService:
     """组装请求级应用用户管理服务。"""
 
     return ApplicationUserAdminService(
-        repository, policy_repository, authorization_service
+        repository,
+        policy_repository,
+        authorization_service,
+        keycloak_user_service,
     )
 
 
