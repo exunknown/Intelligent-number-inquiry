@@ -10,7 +10,6 @@ import {
     RefreshCw,
     Save,
     UserPlus,
-    UsersRound,
     X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
@@ -506,27 +505,20 @@ export function UserManagementPanel({ onBack }: { onBack: () => void }) {
     return (
         <section
             role="region"
-            aria-labelledby="user-management-title"
+            aria-label="用户管理"
             className="min-h-0 flex-1 overflow-y-auto bg-canvas"
         >
             <div className="flex min-h-full flex-col bg-paper px-4 py-6 lg:px-7">
                 <header className="flex min-h-20 shrink-0 items-center justify-between gap-3 border-b border-ink/10 px-5 py-4 lg:px-6">
-                    <div className="flex min-w-0 items-center gap-3">
-                        <UsersRound className="h-5 w-5 shrink-0 text-indigo" aria-hidden="true" />
-                        <div className="min-w-0">
-                            <h2 id="user-management-title" className="font-serif text-xl font-bold">用户目录与权限</h2>
-                            <p className="mt-1 text-xs text-ink/60">表格管理用户档案，右侧抽屉处理创建、编辑、角色与状态变更。</p>
-                        </div>
-                    </div>
+                    <button
+                        type="button"
+                        onClick={onBack}
+                        className={`${buttonClass} border border-ink/15 text-ink`}
+                    >
+                        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                        返回工作台
+                    </button>
                     <div className="flex shrink-0 items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={onBack}
-                            className={`${buttonClass} border border-ink/15 text-ink`}
-                        >
-                            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                            返回工作台
-                        </button>
                         <button
                             type="button"
                             onClick={() => {
