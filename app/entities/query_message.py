@@ -2,9 +2,19 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from app.entities.metric_display import MetricDisplayItem
+
+
+@dataclass(frozen=True)
+class QueryProcessEvent:
+    """查询过程允许持久化的单个步骤事件。"""
+
+    step: str
+    status: Literal["running", "success", "error"]
+    message: str | None
+    occurred_at: datetime
 
 
 @dataclass(frozen=True)
@@ -14,6 +24,7 @@ class QueryMessageSnapshot:
     status: str
     content: str
     steps: dict[str, str] = field(default_factory=dict)
+    process_events: list[QueryProcessEvent] = field(default_factory=list)
     metrics: list[MetricDisplayItem] = field(default_factory=list)
     query_mode: str | None = None
     route_reason: str | None = None
@@ -41,6 +52,7 @@ class QueryMessage:
     content: str
     status: str
     steps: dict[str, str] | None
+    process_events: list[QueryProcessEvent] | None
     metrics: list[MetricDisplayItem] | None
     query_mode: str | None
     route_reason: str | None

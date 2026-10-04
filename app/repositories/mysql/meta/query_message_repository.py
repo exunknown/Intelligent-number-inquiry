@@ -7,7 +7,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.entities.metric_display import safe_metric_display_items
-from app.entities.query_message import QueryMessage, QueryMessageSnapshot
+from app.entities.query_message import (
+    QueryMessage,
+    QueryMessageSnapshot,
+    QueryProcessEvent,
+)
 from app.models.query_message import QueryMessageMySQL
 from app.models.query_session import QuerySessionMySQL
 
@@ -23,6 +27,54 @@ class QueryMessageRepository:
         return datetime.now(timezone.utc).replace(tzinfo=None)
 
     @staticmethod
+    def _serialize_process_events(
+        events: list[QueryProcessEvent],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "step": event.step,
+                "status": event.status,
+                "message": event.message,
+                "occurred_at": event.occurred_at.isoformat(),
+            }
+            for event in events
+        ]
+
+    @staticmethod
+    def _deserialize_process_events(value: object) -> list[QueryProcessEvent]:
+        if not isinstance(value, list):
+            return []
+        events = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            step = item.get("step")
+            status = item.get("status")
+            occurred_at = item.get("occurred_at")
+            if (
+                not isinstance(step, str)
+                or status not in {"running", "success", "error"}
+                or not isinstance(occurred_at, str)
+            ):
+                continue
+            try:
+                parsed_occurred_at = datetime.fromisoformat(occurred_at)
+            except ValueError:
+                continue
+            message = item.get("message")
+            if message is not None and not isinstance(message, str):
+                message = None
+            events.append(
+                QueryProcessEvent(
+                    step=step,
+                    status=status,
+                    message=message,
+                    occurred_at=parsed_occurred_at,
+                )
+            )
+        return events
+
+    @staticmethod
     def _to_entity(model: QueryMessageMySQL) -> QueryMessage:
         return QueryMessage(
             message_id=model.id,
@@ -34,6 +86,13 @@ class QueryMessageRepository:
             content=model.content,
             status=model.status,
             steps=model.steps_json,
+            process_events=(
+                QueryMessageRepository._deserialize_process_events(
+                    model.process_events_json
+                )
+                if model.process_events_json is not None
+                else None
+            ),
             metrics=(
                 safe_metric_display_items(model.metrics_json)
                 if model.metrics_json is not None
@@ -102,6 +161,11 @@ class QueryMessageRepository:
             content=content,
             status=status,
             steps_json=snapshot.steps if snapshot is not None else None,
+            process_events_json=(
+                self._serialize_process_events(snapshot.process_events)
+                if snapshot is not None
+                else None
+            ),
             metrics_json=snapshot.metrics if snapshot is not None else None,
             query_mode=snapshot.query_mode if snapshot is not None else None,
             route_reason=snapshot.route_reason if snapshot is not None else None,

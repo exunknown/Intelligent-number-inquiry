@@ -34,6 +34,9 @@ class QueryMessageMySQL(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     steps_json: Mapped[dict[str, str] | None] = mapped_column(JSON, nullable=True)
+    process_events_json: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON, nullable=True
+    )
     metrics_json: Mapped[list[MetricDisplayItem] | None] = mapped_column(
         JSON, nullable=True
     )

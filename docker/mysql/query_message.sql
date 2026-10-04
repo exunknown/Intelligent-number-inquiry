@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS query_message
     content              TEXT NOT NULL,
     status               VARCHAR(16) NOT NULL,
     steps_json           JSON,
+    process_events_json  JSON NULL,
     metrics_json         JSON,
     query_mode           VARCHAR(16),
     route_reason         VARCHAR(64),
