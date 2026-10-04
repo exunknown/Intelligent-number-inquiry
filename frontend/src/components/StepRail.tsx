@@ -206,6 +206,19 @@ function connectorStroke(
     return "rgba(31,41,55,0.42)";
 }
 
+function connectorVisible(
+    connector: FlowConnector,
+    outcomeId: string | undefined,
+): boolean {
+    if (connector.id === "clarification-end") {
+        return outcomeId === "clarification";
+    }
+    if (connector.id === "error-end") {
+        return outcomeId === "error";
+    }
+    return true;
+}
+
 export function StepRail({
     steps = [],
     queryMode,
@@ -288,8 +301,17 @@ export function StepRail({
                                 <path d="M0 0 L8 4 L0 8 Z" fill="rgba(31,41,55,0.55)" />
                             </marker>
                         </defs>
-                        {FLOW_CONNECTORS.map((connector) => (
-                            <g key={connector.id} className={connectorClass(connector, queryMode, isStreaming)}>
+                        {FLOW_CONNECTORS.filter((connector) =>
+                            connectorVisible(connector, outcome?.id),
+                        ).map((connector) => (
+                            <g
+                                key={connector.id}
+                                className={connectorClass(
+                                    connector,
+                                    queryMode,
+                                    isStreaming,
+                                )}
+                            >
                                 <path
                                     d={connector.path}
                                     stroke={connectorStroke(connector, queryMode)}
@@ -301,7 +323,11 @@ export function StepRail({
                                     <text
                                         x={connector.labelX}
                                         y={connector.labelY}
-                                        fill={connector.kind === "loop" ? "rgba(194,65,86,0.8)" : "rgba(31,41,55,0.58)"}
+                                        fill={
+                                            connector.kind === "loop"
+                                                ? "rgba(194,65,86,0.8)"
+                                                : "rgba(31,41,55,0.58)"
+                                        }
                                         fontSize="12"
                                         fontWeight="600"
                                     >
