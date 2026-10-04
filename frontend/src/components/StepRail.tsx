@@ -1,69 +1,64 @@
 /**
  * 智能体执行流程图组件
- * 按 LangGraph 节点拓扑展示各步骤状态，随分析过程展开后直接平铺
- * running 节点朱砂脉冲，流式期间连接线虚线流动
+ * 展示共享语义理解、Metric / SQL 双执行泳道和统一结果终点
  */
 import { Check, Circle, LoaderCircle, X } from "lucide-react";
 import { cn } from "../lib/format";
-import type { ProgressStatus, StepState } from "../types/agent";
+import type { ChatMessage, QueryMode, StepState } from "../types/agent";
+import {
+    FLOW_CONNECTORS,
+    FLOW_NODES,
+    type FlowConnector,
+    type FlowLane,
+    type FlowNodeDefinition,
+    type FlowStatus,
+} from "./stepRail/flowDefinition";
+import {
+    buildStatusMap,
+    getFlowStatus,
+    getLaneState,
+    getOutcomeState,
+    type LaneState,
+} from "./stepRail/flowState";
 
-type FlowStatus = ProgressStatus | "pending";
-
-type FlowNode = {
-    step: string;
-    x: number;
-    y: number;
-    w?: number;
+type StepRailProps = {
+    steps?: StepState[];
+    queryMode?: QueryMode;
+    status?: ChatMessage["status"];
+    hasResult?: boolean;
+    verified?: boolean;
+    errorCode?: string;
 };
 
-const nodes: FlowNode[] = [
-    { step: "抽取关键词", x: 410, y: 20 },
-    { step: "召回字段信息", x: 150, y: 112 },
-    { step: "召回指标信息", x: 410, y: 112 },
-    { step: "召回字段取值", x: 670, y: 112 },
-    { step: "合并召回信息", x: 410, y: 214 },
-    { step: "过滤指标信息", x: 290, y: 318 },
-    { step: "过滤表信息", x: 530, y: 318 },
-    { step: "增加额外上下文", x: 410, y: 422, w: 176 },
-    { step: "生成SQL", x: 410, y: 526 },
-    { step: "校验SQL", x: 410, y: 630 },
-    { step: "校正SQL", x: 670, y: 630 },
-    { step: "执行SQL", x: 410, y: 724 },
-];
+const laneLabels: Record<FlowLane, string> = {
+    shared: "共享前置语义理解",
+    metric: "Text to Metric · 受治理指标",
+    sql: "Text to SQL · 受控 SQL fallback",
+    outcome: "统一结果反馈",
+};
 
-const connectors = [
-    "M410 60 L410 84 L150 84 L150 106",
-    "M410 60 L410 106",
-    "M410 60 L410 84 L670 84 L670 106",
-    "M150 152 L150 178 L410 178 L410 208",
-    "M410 152 L410 208",
-    "M670 152 L670 178 L410 178 L410 208",
-    "M410 254 L410 282 L290 282 L290 312",
-    "M410 254 L410 282 L530 282 L530 312",
-    "M290 358 L290 386 L410 386 L410 416",
-    "M530 358 L530 386 L410 386 L410 416",
-    "M410 462 L410 520",
-    "M410 566 L410 624",
-    "M410 670 L410 718",
-    "M488 650 L586 650",
-    "M670 670 L670 696 L410 696 L410 718",
-];
+const metricConnectorIds = new Set([
+    "route-metric",
+    "metric-query-validate",
+    "metric-validate-cube",
+    "cube-result",
+]);
 
-const branchLabels = [
-    { text: "有误", x: 530, y: 642 },
-    { text: "无误", x: 366, y: 704 },
-];
-
-function getStatusMap(steps: StepState[]) {
-    return steps.reduce<Record<string, StepState>>((map, item) => {
-        map[item.step] = item;
-        return map;
-    }, {});
-}
-
-function statusFor(step: string, map: Record<string, StepState>): FlowStatus {
-    return map[step]?.status ?? "pending";
-}
+const sqlConnectorIds = new Set([
+    "route-sql",
+    "schema-security-size",
+    "schema-size-extra",
+    "schema-size-selector",
+    "selector-apply",
+    "apply-extra",
+    "extra-generate",
+    "generate-validate",
+    "validate-estimate",
+    "validate-correct",
+    "correct-validate",
+    "estimate-run",
+    "run-result",
+]);
 
 function NodeIcon({ status }: { status: FlowStatus }) {
     if (status === "running") {
@@ -81,22 +76,33 @@ function NodeIcon({ status }: { status: FlowStatus }) {
     return <Circle className="h-3.5 w-3.5" aria-hidden="true" />;
 }
 
-function FlowNodeCard({ node, status }: { node: FlowNode; status: FlowStatus }) {
-    const width = node.w ?? 156;
+function laneTone(laneState: LaneState) {
+    return laneState === "inactive" ? "opacity-45" : "";
+}
 
+function FlowNodeCard({
+    node,
+    status,
+    laneState,
+}: {
+    node: FlowNodeDefinition;
+    status: FlowStatus;
+    laneState: LaneState;
+}) {
     return (
         <div
-            className="absolute -translate-x-1/2"
-            style={{ left: node.x, top: node.y, width }}
+            className={cn("absolute -translate-x-1/2", laneTone(laneState))}
+            style={{ left: node.x, top: node.y, width: node.width }}
         >
             <div
                 className={cn(
-                    "flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-semibold shadow-line transition",
+                    "flex h-11 items-center gap-2 rounded-lg border px-3 text-sm font-semibold shadow-line transition",
                     status === "pending" && "border-ink/10 bg-white/60 text-ink/45",
                     status === "running" && "node-running border-cinnabar/50 bg-cinnabar/10 text-ink",
                     status === "success" && "border-pine/30 bg-pine/10 text-ink",
                     status === "error" && "border-oxide/35 bg-oxide/10 text-oxide",
                 )}
+                title={node.label}
             >
                 <span
                     className={cn(
@@ -109,20 +115,122 @@ function FlowNodeCard({ node, status }: { node: FlowNode; status: FlowStatus }) 
                 >
                     <NodeIcon status={status} />
                 </span>
-                <span className="min-w-0 flex-1 truncate">{node.step}</span>
+                <span className="min-w-0 flex-1 truncate">{node.label}</span>
             </div>
         </div>
     );
 }
 
-export function StepRail({ steps = [] }: { steps?: StepState[] }) {
-    const runningStep = steps.find((item) => item.status === "running")?.step ?? null;
+function OutcomeCard({
+    node,
+    status,
+    note,
+}: {
+    node: FlowNodeDefinition;
+    status: FlowStatus;
+    note?: string;
+}) {
+    return (
+        <div
+            className="absolute -translate-x-1/2"
+            style={{ left: node.x, top: node.y, width: node.width }}
+        >
+            <div
+                className={cn(
+                    "rounded-lg border px-3 py-2 shadow-line transition",
+                    status === "error" && "border-cinnabar/35 bg-cinnabar/10 text-ink",
+                    status === "success" && "border-pine/30 bg-pine/10 text-ink",
+                    status === "pending" && "border-ink/10 bg-white/60 text-ink/45",
+                )}
+                title={node.label}
+            >
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                    <span
+                        className={cn(
+                            "grid h-6 w-6 shrink-0 place-items-center rounded-full",
+                            status === "error" && "bg-cinnabar/15 text-cinnabar",
+                            status === "success" && "bg-pine/15 text-pine",
+                            status === "pending" && "bg-ink/5 text-ink/35",
+                        )}
+                    >
+                        <NodeIcon status={status} />
+                    </span>
+                    <span className="truncate">{node.label}</span>
+                </div>
+                {note && <div className="mt-1 pl-8 text-[11px] text-ink/55">{note}</div>}
+            </div>
+        </div>
+    );
+}
+
+function laneStateForNode(
+    node: FlowNodeDefinition,
+    queryMode: QueryMode | undefined,
+): LaneState {
+    if (node.lane === "outcome") return "active";
+    return getLaneState(node.lane, queryMode);
+}
+
+function connectorLane(connector: FlowConnector): Exclude<FlowLane, "outcome"> | null {
+    if (metricConnectorIds.has(connector.id)) return "metric";
+    if (sqlConnectorIds.has(connector.id)) return "sql";
+    return null;
+}
+
+function connectorClass(
+    connector: FlowConnector,
+    queryMode: QueryMode | undefined,
+    isStreaming: boolean,
+) {
+    const lane = connectorLane(connector);
+    const laneState = lane ? getLaneState(lane, queryMode) : "active";
+    return cn(
+        laneState === "inactive" && "opacity-25",
+        laneState === "unknown" && "opacity-70",
+        connector.kind === "loop" && "flow-loop",
+        isStreaming && laneState === "active" && lane && "flow-live",
+    );
+}
+
+function connectorStroke(
+    connector: FlowConnector,
+    queryMode: QueryMode | undefined,
+): string {
+    if (connector.kind === "loop") return "rgba(194,65,86,0.68)";
+    if (connectorLane(connector) === "metric" && queryMode === "metric") {
+        return "rgba(33,133,111,0.72)";
+    }
+    if (connectorLane(connector) === "sql" && queryMode === "sql") {
+        return "rgba(194,65,86,0.72)";
+    }
+    return "rgba(31,41,55,0.42)";
+}
+
+export function StepRail({
+    steps = [],
+    queryMode,
+    status,
+    hasResult = false,
+    verified = false,
+    errorCode,
+}: StepRailProps) {
+    if (steps.length === 0 && !queryMode && !hasResult && !errorCode) return null;
+
+    const statusMap = buildStatusMap(steps);
+    const runningStep = steps.find((item) => item.status === "running");
     const errorCount = steps.filter((item) => item.status === "error").length;
     const doneCount = steps.filter((item) => item.status === "success").length;
+    const isStreaming = status === "streaming";
+    const outcome = getOutcomeState(queryMode, status, hasResult, verified, errorCode);
+    const outcomeNode = outcome
+        ? FLOW_NODES.find((node) => node.id === outcome.id)
+        : undefined;
 
-    if (steps.length === 0) return null;
-
-    const statusMap = getStatusMap(steps);
+    const summary = runningStep
+        ? runningStep.message ?? `正在执行：${runningStep.step}`
+        : errorCount > 0
+          ? `${errorCount} 个节点失败`
+          : `已执行 ${doneCount} 步`;
 
     return (
         <section>
@@ -136,68 +244,112 @@ export function StepRail({ steps = [] }: { steps?: StepState[] }) {
                         !runningStep && errorCount === 0 && "text-ink/45",
                     )}
                 >
-                    {runningStep
-                        ? `正在执行：${runningStep}`
-                        : errorCount > 0
-                          ? `${errorCount} 个节点失败`
-                          : `已执行 ${doneCount} 步`}
+                    {summary}
                 </span>
-                <span className="hidden shrink-0 text-xs text-ink/40 sm:inline">LangGraph</span>
+                <span className="hidden shrink-0 text-xs text-ink/40 sm:inline">
+                    共享语义 · 双路径
+                </span>
             </div>
 
             <div className="mt-3 overflow-x-auto">
-                <div className="relative mx-auto h-[780px] w-[820px]">
+                <div
+                    className="relative mx-auto h-[760px] w-[1160px]"
+                    aria-label="问数执行流程图"
+                    role="img"
+                >
+                    <div className="absolute left-0 top-4 font-serif text-xs font-bold text-ink/55">
+                        {laneLabels.shared}
+                    </div>
+                    <div className="absolute left-0 top-[258px] font-serif text-xs font-bold text-pine">
+                        {laneLabels.metric}
+                    </div>
+                    <div className="absolute left-0 top-[434px] font-serif text-xs font-bold text-oxide">
+                        {laneLabels.sql}
+                    </div>
+                    <div className="absolute left-[690px] top-[258px] font-serif text-xs font-bold text-pine/75">
+                        {laneLabels.outcome}
+                    </div>
+
                     <svg
                         className="pointer-events-none absolute inset-0 h-full w-full"
-                        viewBox="0 0 820 780"
+                        viewBox="0 0 1160 760"
                         fill="none"
                         aria-hidden="true"
                     >
                         <defs>
                             <marker
-                                id="flow-arrow"
+                                id="step-rail-flow-arrow"
                                 markerHeight="8"
                                 markerWidth="8"
                                 orient="auto"
                                 refX="6"
                                 refY="4"
                             >
-                                <path d="M0 0 L8 4 L0 8 Z" fill="rgba(33,44,62,0.55)" />
+                                <path d="M0 0 L8 4 L0 8 Z" fill="rgba(31,41,55,0.55)" />
                             </marker>
                         </defs>
-                        <g className={runningStep ? "flow-live" : undefined}>
-                            {connectors.map((path) => (
+                        {FLOW_CONNECTORS.map((connector) => (
+                            <g key={connector.id} className={connectorClass(connector, queryMode, isStreaming)}>
                                 <path
-                                    key={path}
-                                    d={path}
-                                    stroke="rgba(33,44,62,0.45)"
-                                    strokeWidth="1.5"
-                                    strokeDasharray="4 4"
-                                    markerEnd="url(#flow-arrow)"
+                                    d={connector.path}
+                                    stroke={connectorStroke(connector, queryMode)}
+                                    strokeWidth={connector.kind === "loop" ? 2 : 1.5}
+                                    strokeDasharray={connector.kind === "loop" ? "5 4" : "4 4"}
+                                    markerEnd="url(#step-rail-flow-arrow)"
                                 />
-                            ))}
-                        </g>
-                        {branchLabels.map((label) => (
-                            <text
-                                key={label.text}
-                                x={label.x}
-                                y={label.y}
-                                fill="rgba(33,44,62,0.6)"
-                                fontSize="13"
-                                fontWeight="600"
-                            >
-                                {label.text}
-                            </text>
+                                {connector.label && (
+                                    <text
+                                        x={connector.labelX}
+                                        y={connector.labelY}
+                                        fill={connector.kind === "loop" ? "rgba(194,65,86,0.8)" : "rgba(31,41,55,0.58)"}
+                                        fontSize="12"
+                                        fontWeight="600"
+                                    >
+                                        {connector.label}
+                                    </text>
+                                )}
+                            </g>
                         ))}
                     </svg>
 
-                    {nodes.map((node) => (
-                        <FlowNodeCard
-                            key={node.step}
-                            node={node}
-                            status={statusFor(node.step, statusMap)}
+                    {FLOW_NODES.filter((node) => node.id !== "metric-result" && node.id !== "sql-result" && node.id !== "clarification").map(
+                        (node) => (
+                            <FlowNodeCard
+                                key={node.id}
+                                node={node}
+                                status={getFlowStatus(
+                                    node,
+                                    statusMap,
+                                    queryMode,
+                                    status,
+                                    hasResult,
+                                    verified,
+                                )}
+                                laneState={laneStateForNode(node, queryMode)}
+                            />
+                        ),
+                    )}
+
+                    {outcome && outcomeNode && (
+                        <OutcomeCard
+                            node={outcomeNode}
+                            status={outcome.status}
+                            note={outcome.id === "sql-result" ? "需人工核对" : undefined}
                         />
-                    ))}
+                    )}
+
+                    {outcome?.id === "error" && (
+                        <div className="absolute left-[1016px] top-[680px] w-[142px] -translate-x-1/2">
+                            <div className="rounded-lg border border-oxide/35 bg-oxide/10 px-3 py-2 text-sm font-semibold text-oxide shadow-line">
+                                <div className="flex items-center gap-2">
+                                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-oxide/15">
+                                        <X className="h-3.5 w-3.5" aria-hidden="true" />
+                                    </span>
+                                    <span className="truncate">查询失败</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </section>
