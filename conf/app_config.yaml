@@ -115,6 +115,14 @@ cube:
   max_limit: 500
   semantic_view: ecommerce
 
+keycloak_admin:
+  base_url: ${oc.env:KEYCLOAK_ADMIN_BASE_URL,http://127.0.0.1:8180}
+  realm: ${oc.env:KEYCLOAK_ADMIN_REALM,shopkeeper}
+  client_id: ${oc.env:KEYCLOAK_ADMIN_CLIENT_ID,''}
+  client_secret: ${oc.env:KEYCLOAK_ADMIN_CLIENT_SECRET,''}
+  timeout_seconds: ${oc.env:KEYCLOAK_ADMIN_TIMEOUT_SECONDS,5}
+  token_cache_skew_seconds: ${oc.env:KEYCLOAK_ADMIN_TOKEN_CACHE_SKEW_SECONDS,30}
+
 auth:
   enabled: true
   issuer: ${oc.env:OIDC_ISSUER,http://127.0.0.1:8180/realms/shopkeeper}

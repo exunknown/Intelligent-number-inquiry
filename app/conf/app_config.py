@@ -188,6 +188,18 @@ class CubeConfig:
 
 
 @dataclass
+class KeycloakAdminConfig:
+    """Keycloak Admin API 管理客户端配置"""
+
+    base_url: str
+    realm: str
+    client_id: str
+    client_secret: str
+    timeout_seconds: float
+    token_cache_skew_seconds: float
+
+
+@dataclass
 class AuthConfig:
     """OIDC 访问令牌校验配置"""
 
@@ -272,6 +284,7 @@ class AppConfig:
     selector: SelectorConfig
     conversation: ConversationConfig
     cube: CubeConfig
+    keycloak_admin: KeycloakAdminConfig
     auth: AuthConfig
     sql_safety: SQLSafetyConfig
     resource: ResourceConfig
