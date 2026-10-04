@@ -26,7 +26,8 @@ export type FlowNodeId =
   | "estimate-sql"
   | "run-sql"
   | "sql-result"
-  | "clarification";
+  | "clarification"
+  | "error";
 
 export type FlowNodeDefinition = {
   id: FlowNodeId;
@@ -251,6 +252,14 @@ export const FLOW_NODES: readonly FlowNodeDefinition[] = [
     y: 178,
     width: 168,
   },
+  {
+    id: "error",
+    lane: "outcome",
+    label: "查询失败",
+    x: 1000,
+    y: 178,
+    width: 168,
+  },
 ];
 
 export const FLOW_CONNECTORS: readonly FlowConnector[] = [
@@ -262,7 +271,7 @@ export const FLOW_CONNECTORS: readonly FlowConnector[] = [
   { id: "merge-route", path: "M706 132 H742", kind: "normal" },
   {
     id: "route-metric",
-    path: "M820 152 V238 H210 V288",
+    path: "M898 156 V276 H126 V298",
     kind: "branch",
     label: "命中受治理指标",
     labelX: 280,
@@ -276,9 +285,9 @@ export const FLOW_CONNECTORS: readonly FlowConnector[] = [
     labelX: 720,
     labelY: 402,
   },
-  { id: "metric-query-validate", path: "M294 318 H308", kind: "normal" },
-  { id: "metric-validate-cube", path: "M486 318 H500", kind: "normal" },
-  { id: "cube-result", path: "M652 318 H680", kind: "normal" },
+  { id: "metric-query-validate", path: "M210 320 H234", kind: "normal" },
+  { id: "metric-validate-cube", path: "M402 320 H439", kind: "normal" },
+  { id: "cube-result", path: "M581 320 H619", kind: "normal" },
   { id: "schema-security-size", path: "M282 494 H294", kind: "normal" },
   { id: "schema-size-extra", path: "M470 494 H610 V494 H666", kind: "branch" },
   {
@@ -321,10 +330,18 @@ export const FLOW_CONNECTORS: readonly FlowConnector[] = [
   { id: "run-result", path: "M1082 650 V670", kind: "normal" },
   {
     id: "clarification-end",
-    path: "M898 152 V178 H990",
+    path: "M898 156 V200 H916",
     kind: "branch",
     label: "需要澄清",
     labelX: 916,
     labelY: 170,
+  },
+  {
+    id: "error-end",
+    path: "M898 156 V200 H916",
+    kind: "branch",
+    label: "执行失败",
+    labelX: 916,
+    labelY: 190,
   },
 ];

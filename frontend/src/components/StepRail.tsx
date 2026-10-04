@@ -138,7 +138,7 @@ function OutcomeCard({
             <div
                 className={cn(
                     "rounded-lg border px-3 py-2 shadow-line transition",
-                    status === "error" && "border-cinnabar/35 bg-cinnabar/10 text-ink",
+                    status === "error" && "border-oxide/35 bg-oxide/10 text-oxide",
                     status === "success" && "border-pine/30 bg-pine/10 text-ink",
                     status === "pending" && "border-ink/10 bg-white/60 text-ink/45",
                 )}
@@ -148,7 +148,7 @@ function OutcomeCard({
                     <span
                         className={cn(
                             "grid h-6 w-6 shrink-0 place-items-center rounded-full",
-                            status === "error" && "bg-cinnabar/15 text-cinnabar",
+                            status === "error" && "bg-oxide/15 text-oxide",
                             status === "success" && "bg-pine/15 text-pine",
                             status === "pending" && "bg-ink/5 text-ink/35",
                         )}
@@ -312,7 +312,7 @@ export function StepRail({
                         ))}
                     </svg>
 
-                    {FLOW_NODES.filter((node) => node.id !== "metric-result" && node.id !== "sql-result" && node.id !== "clarification").map(
+                    {FLOW_NODES.filter((node) => node.lane !== "outcome").map(
                         (node) => (
                             <FlowNodeCard
                                 key={node.id}
@@ -338,18 +338,6 @@ export function StepRail({
                         />
                     )}
 
-                    {outcome?.id === "error" && (
-                        <div className="absolute left-[1016px] top-[680px] w-[142px] -translate-x-1/2">
-                            <div className="rounded-lg border border-oxide/35 bg-oxide/10 px-3 py-2 text-sm font-semibold text-oxide shadow-line">
-                                <div className="flex items-center gap-2">
-                                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-oxide/15">
-                                        <X className="h-3.5 w-3.5" aria-hidden="true" />
-                                    </span>
-                                    <span className="truncate">查询失败</span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
                 </div>
             </div>
         </section>
