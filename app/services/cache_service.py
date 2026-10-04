@@ -339,6 +339,7 @@ def _validate_entity_list(payload: object, entity_type: type[E]) -> list[E]:
     for item in payload:
         if not isinstance(item, dict):
             raise ValueError("cached entity item must be an object")
+        _validate_entity_payload(item, entity_type)
         entities.append(entity_type(**item))
     return entities
 
@@ -348,6 +349,69 @@ def _validate_loaded_entities(values: list[E], entity_type: type[E]) -> None:
         raise ValueError("loaded entity payload must be a list")
     if not all(isinstance(value, entity_type) for value in values):
         raise ValueError("loaded entity type mismatch")
+    for value in values:
+        _validate_entity_payload(asdict(value), entity_type)
+
+
+def _require_string_field(payload: dict[str, object], field: str) -> None:
+    if not isinstance(payload.get(field), str):
+        raise ValueError(f"cached entity field {field} must be a string")
+
+
+def _require_optional_string_field(payload: dict[str, object], field: str) -> None:
+    value = payload.get(field)
+    if value is not None and not isinstance(value, str):
+        raise ValueError(f"cached entity field {field} must be a string or null")
+
+
+def _require_string_list_field(payload: dict[str, object], field: str) -> None:
+    value = payload.get(field)
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"cached entity field {field} must be a string list")
+
+
+def _validate_entity_payload(payload: dict[str, object], entity_type: type[object]):
+    if entity_type is ColumnInfo:
+        for field in (
+            "id",
+            "name",
+            "type",
+            "role",
+            "description",
+            "table_id",
+        ):
+            _require_string_field(payload, field)
+        if not isinstance(payload.get("examples"), list):
+            raise ValueError("cached entity field examples must be a list")
+        _require_string_list_field(payload, "alias")
+        return
+    if entity_type is ValueInfo:
+        for field in ("id", "value", "column_id"):
+            _require_string_field(payload, field)
+        return
+    if entity_type is CubeMember:
+        for field in (
+            "name",
+            "cube_name",
+            "member_type",
+            "data_type",
+            "title",
+            "description",
+            "ai_context",
+        ):
+            _require_string_field(payload, field)
+        if payload["member_type"] not in {
+            "measure",
+            "dimension",
+            "time_dimension",
+        }:
+            raise ValueError("cached cube member has invalid member_type")
+        _require_string_list_field(payload, "aliases")
+        _require_optional_string_field(payload, "source_column_id")
+        if not isinstance(payload.get("filterable"), bool):
+            raise ValueError("cached cube member filterable must be boolean")
+        return
+    raise ValueError("unsupported cached entity type")
 
 
 def canonicalize_cube_query(value: object) -> object:
