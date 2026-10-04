@@ -571,7 +571,6 @@ export default function App({ username }: AppProps) {
                             <Seal className="h-10 w-10 text-xl" />
                             <div>
                                 <div className="font-serif text-lg font-bold leading-6">慧答</div>
-                                <div className="text-xs text-ink/45">shopkeeper-agent</div>
                             </div>
                         </div>
                     </div>
