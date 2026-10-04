@@ -510,6 +510,7 @@ class AppUserRepository:
                 display_name=display_name,
                 email=email,
                 password_fingerprint=password_fingerprint,
+                include_pending=True,
             )
             if previous is not None:
                 await self.session.rollback()
@@ -548,6 +549,7 @@ class AppUserRepository:
                 model.updated_at = now
             after = self._snapshot(model, current_roles)
             after["password_fingerprint"] = password_fingerprint
+            after["profile_update_state"] = "pending"
             self.session.add(
                 self._change(
                     request_key=request_key,
@@ -570,10 +572,45 @@ class AppUserRepository:
                 display_name=display_name,
                 email=email,
                 password_fingerprint=password_fingerprint,
+                include_pending=True,
             )
             if previous is not None:
                 return previous
             raise
+        except Exception:
+            await self.session.rollback()
+            raise
+
+    async def complete_admin_user_profile_update(
+        self,
+        *,
+        user_id: str,
+        display_name: str | None,
+        email: str | None,
+        password_fingerprint: str | None,
+        request_key: str,
+    ) -> ApplicationUser:
+        try:
+            change = await self._change_by_request_key(request_key, for_update=True)
+            snapshot = self._profile_update_snapshot(
+                change,
+                user_id=user_id,
+                display_name=display_name,
+                email=email,
+                password_fingerprint=password_fingerprint,
+            )
+            state = snapshot.get("profile_update_state", "completed")
+            if state == "completed":
+                await self.session.rollback()
+                return self._snapshot_to_entity(snapshot)
+            if state != "pending":
+                raise AppUserIdempotencyConflictError(
+                    "request key profile update state does not match"
+                )
+            completed_snapshot = {**snapshot, "profile_update_state": "completed"}
+            change.after_json = completed_snapshot
+            await self.session.commit()
+            return self._snapshot_to_entity(completed_snapshot)
         except Exception:
             await self.session.rollback()
             raise
@@ -839,10 +876,38 @@ class AppUserRepository:
         display_name: str | None,
         email: str | None,
         password_fingerprint: str | None,
+        include_pending: bool = False,
     ) -> ApplicationUser | None:
         change = await self._change_by_request_key(request_key)
         if change is None:
             return None
+        snapshot = self._profile_update_snapshot(
+            change,
+            user_id=user_id,
+            display_name=display_name,
+            email=email,
+            password_fingerprint=password_fingerprint,
+        )
+        state = snapshot.get("profile_update_state", "completed")
+        if state == "pending" and not include_pending:
+            return None
+        if state not in {"pending", "completed"}:
+            raise AppUserIdempotencyConflictError(
+                "request key profile update state does not match"
+            )
+        return self._snapshot_to_entity(snapshot)
+
+    def _profile_update_snapshot(
+        self,
+        change: AppUserChangeMySQL | None,
+        *,
+        user_id: str,
+        display_name: str | None,
+        email: str | None,
+        password_fingerprint: str | None,
+    ) -> dict[str, object]:
+        if change is None:
+            raise AppUserIdempotencyConflictError("request key has no profile update")
         snapshot = change.after_json
         if change.user_id != user_id or snapshot.get("user_id") != user_id:
             raise AppUserIdempotencyConflictError(
@@ -862,7 +927,7 @@ class AppUserRepository:
                 raise AppUserIdempotencyConflictError(
                     "request key target profile does not match"
                 )
-        return self._snapshot_to_entity(snapshot)
+        return snapshot
 
     async def _idempotent_result(
         self,

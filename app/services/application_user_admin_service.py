@@ -312,7 +312,14 @@ class ApplicationUserAdminService:
             await self.keycloak_user_service.reset_temporary_password(
                 user_id, temporary_password
             )
-        return prepared_user
+        return await _user_repository_call(
+            self.repository.complete_admin_user_profile_update,
+            user_id=prepared_user.user_id,
+            display_name=display_name,
+            email=email,
+            password_fingerprint=password_fingerprint,
+            request_key=request_key,
+        )
 
     async def set_status(
         self,
