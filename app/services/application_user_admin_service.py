@@ -290,6 +290,20 @@ class ApplicationUserAdminService:
         remote_user = await self._get_keycloak_user_or_none(user_id)
         if remote_user is None:
             return None
+        # 先持久化本次更新目标，确保重试/冲突判断不会重复触发 Keycloak 写入。
+        prepared_user = await _user_repository_call(
+            self.repository.update_admin_user_profile_snapshot,
+            user_id=user_id,
+            username=remote_user.username,
+            display_name=display_name,
+            email=email,
+            observed_roles=remote_user.keycloak_roles,
+            status="active" if remote_user.enabled else "disabled",
+            actor_user_id=actor_user_id,
+            request_key=request_key,
+            reason="更新用户资料",
+            password_fingerprint=password_fingerprint,
+        )
         await self.keycloak_user_service.update_user(
             user_id,
             KeycloakUserUpdate(display_name=display_name, email=email),
@@ -298,20 +312,7 @@ class ApplicationUserAdminService:
             await self.keycloak_user_service.reset_temporary_password(
                 user_id, temporary_password
             )
-        remote_user = await self.keycloak_user_service.get_user(user_id)
-        return await _user_repository_call(
-            self.repository.update_admin_user_profile_snapshot,
-            user_id=user_id,
-            username=remote_user.username,
-            display_name=remote_user.display_name,
-            email=remote_user.email,
-            observed_roles=remote_user.keycloak_roles,
-            status="active" if remote_user.enabled else "disabled",
-            actor_user_id=actor_user_id,
-            request_key=request_key,
-            reason="更新用户资料",
-            password_fingerprint=password_fingerprint,
-        )
+        return prepared_user
 
     async def set_status(
         self,
