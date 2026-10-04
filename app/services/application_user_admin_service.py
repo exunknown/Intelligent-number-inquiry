@@ -1,5 +1,6 @@
 """应用用户管理服务。"""
 
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Awaitable, Callable, Collection, Literal, TypeVar
@@ -111,6 +112,28 @@ class ApplicationUserAdminService:
             enabled = True
         elif status == "disabled":
             enabled = False
+        if role is not None:
+            remote_users = await self._list_all_keycloak_users(
+                query=query,
+                enabled=enabled,
+            )
+            local_users = await _user_repository_call(
+                self.repository.list_users_by_ids,
+                [remote.user_id for remote in remote_users],
+            )
+            filtered_users = [
+                self._merge_keycloak_user(remote, local_users.get(remote.user_id))
+                for remote in remote_users
+                if role
+                in local_users.get(
+                    remote.user_id, self._empty_user(remote)
+                ).application_roles
+            ]
+            return ApplicationUserListResult(
+                items=filtered_users[offset : offset + limit],
+                total=len(filtered_users),
+            )
+
         remote_users = await self.keycloak_user_service.list_users(
             query=query,
             enabled=enabled,
@@ -125,10 +148,6 @@ class ApplicationUserAdminService:
             self._merge_keycloak_user(remote, local_users.get(remote.user_id))
             for remote in remote_users
         ]
-        if role is not None:
-            merged_users = [
-                user for user in merged_users if role in user.application_roles
-            ]
         return ApplicationUserListResult(items=merged_users, total=len(merged_users))
 
     async def get_user_detail(self, user_id: str) -> ApplicationUserDetail | None:
@@ -198,6 +217,21 @@ class ApplicationUserAdminService:
         desired_roles = self._validate_application_roles(
             application_roles if application_roles is not None else ["analyst"]
         )
+        status = "active" if enabled else "disabled"
+        password_fingerprint = self._temporary_password_fingerprint(temporary_password)
+        previous = await _user_repository_call(
+            self.repository.replay_create_user,
+            username=username,
+            display_name=display_name,
+            email=email,
+            status=status,
+            roles=desired_roles,
+            password_fingerprint=password_fingerprint,
+            request_key=request_key,
+        )
+        if previous is not None:
+            return previous
+
         created_user_id: str | None = None
         try:
             created_user_id = await self.keycloak_user_service.create_user(
@@ -210,18 +244,20 @@ class ApplicationUserAdminService:
                 )
             )
             remote_user = await self.keycloak_user_service.get_user(created_user_id)
-            await self._sync_keycloak_user(remote_user)
-            user = await _user_repository_call(
-                self.repository.replace_roles,
+            return await _user_repository_call(
+                self.repository.create_admin_user_snapshot,
                 user_id=created_user_id,
+                username=remote_user.username,
+                display_name=remote_user.display_name,
+                email=remote_user.email,
+                observed_roles=remote_user.keycloak_roles,
+                status="active" if remote_user.enabled else "disabled",
                 roles=desired_roles,
                 actor_user_id=actor_user_id,
                 request_key=request_key,
                 reason="创建用户",
+                password_fingerprint=password_fingerprint,
             )
-            if user is None:
-                raise RuntimeError("created application user could not be loaded")
-            return user
         except Exception:
             if created_user_id is not None:
                 await self._try_delete_keycloak_user(created_user_id)
@@ -234,9 +270,23 @@ class ApplicationUserAdminService:
         display_name: str,
         email: str,
         temporary_password: str | None,
+        request_key: str,
+        actor_user_id: str,
     ) -> ApplicationUser | None:
         if self.keycloak_user_service is None:
             raise RuntimeError("keycloak user service is required")
+        password_fingerprint = self._temporary_password_fingerprint(temporary_password)
+        previous = await _user_repository_call(
+            self.repository.replay_profile_update,
+            user_id=user_id,
+            display_name=display_name,
+            email=email,
+            password_fingerprint=password_fingerprint,
+            request_key=request_key,
+        )
+        if previous is not None:
+            return previous
+
         remote_user = await self._get_keycloak_user_or_none(user_id)
         if remote_user is None:
             return None
@@ -249,7 +299,19 @@ class ApplicationUserAdminService:
                 user_id, temporary_password
             )
         remote_user = await self.keycloak_user_service.get_user(user_id)
-        return await self._sync_keycloak_user(remote_user)
+        return await _user_repository_call(
+            self.repository.update_admin_user_profile_snapshot,
+            user_id=user_id,
+            username=remote_user.username,
+            display_name=remote_user.display_name,
+            email=remote_user.email,
+            observed_roles=remote_user.keycloak_roles,
+            status="active" if remote_user.enabled else "disabled",
+            actor_user_id=actor_user_id,
+            request_key=request_key,
+            reason="更新用户资料",
+            password_fingerprint=password_fingerprint,
+        )
 
     async def set_status(
         self,
@@ -387,6 +449,35 @@ class ApplicationUserAdminService:
             reason=clean_reason,
         )
 
+    async def _list_all_keycloak_users(
+        self,
+        *,
+        query: str | None,
+        enabled: bool | None,
+    ) -> list[KeycloakUser]:
+        # Keycloak Admin API does not return a total count here. For local-role
+        # filters, scan the remote catalog first, then apply local role filtering
+        # and API pagination so matching users beyond the requested remote page
+        # are not hidden and `total` describes the filtered result set.
+        page_size = 100
+        first = 0
+        users: list[KeycloakUser] = []
+        while True:
+            page = await self.keycloak_user_service.list_users(
+                query=query,
+                enabled=enabled,
+                first=first,
+                max=page_size,
+            )
+            users.extend(page)
+            if len(page) < page_size:
+                return users
+            first += page_size
+
+    @classmethod
+    def _empty_user(cls, remote_user: KeycloakUser) -> ApplicationUser:
+        return cls._merge_keycloak_user(remote_user, None)
+
     async def _set_status_local(
         self,
         *,
@@ -502,6 +593,14 @@ class ApplicationUserAdminService:
                 local_user.application_roles if local_user else frozenset()
             ),
         )
+
+    @staticmethod
+    def _temporary_password_fingerprint(temporary_password: str | None) -> str | None:
+        if temporary_password is None:
+            return None
+        return hashlib.sha256(
+            f"app-user-temporary-password:{temporary_password}".encode("utf-8")
+        ).hexdigest()
 
     @staticmethod
     def _validate_status_reason(status: str, reason: str | None) -> str:

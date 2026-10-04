@@ -233,8 +233,8 @@ async def get_user_detail_handler(
 async def update_user_handler(
     user_id: str,
     request: ApplicationUserUpdateRequest,
-    _idempotency_key: Annotated[UUID, Header(alias="Idempotency-Key")],
-    _auth: Annotated[AuthContext, Depends(_require_manage)],
+    idempotency_key: Annotated[UUID, Header(alias="Idempotency-Key")],
+    auth: Annotated[AuthContext, Depends(_require_manage)],
     service: Annotated[
         ApplicationUserAdminService, Depends(get_application_user_admin_service)
     ],
@@ -245,10 +245,20 @@ async def update_user_handler(
             display_name=request.display_name,
             email=str(request.email),
             temporary_password=request.temporary_password,
+            request_key=str(idempotency_key),
+            actor_user_id=auth.user_id,
         )
     except ApplicationUserRepositoryUnavailableError as exc:
         raise HTTPException(
             status_code=503, detail="application user service unavailable"
+        ) from exc
+    except AppUserIdempotencyConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_conflict",
+                "message": "idempotency key conflicts with an existing request",
+            },
         ) from exc
     except KeycloakUserServiceError as exc:
         raise _keycloak_exception(exc) from exc

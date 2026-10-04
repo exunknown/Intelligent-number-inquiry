@@ -317,6 +317,267 @@ class AppUserRepository:
             )
         ]
 
+    async def replay_create_user(
+        self,
+        *,
+        username: str,
+        display_name: str,
+        email: str,
+        status: Literal["active", "disabled"],
+        roles: Collection[str],
+        password_fingerprint: str,
+        request_key: str,
+    ) -> ApplicationUser | None:
+        desired_roles = self._validate_roles(roles)
+        try:
+            previous = await self._create_idempotent_result(
+                request_key,
+                username=username,
+                display_name=display_name,
+                email=email,
+                status=status,
+                roles=desired_roles,
+                password_fingerprint=password_fingerprint,
+            )
+        except Exception:
+            await self.session.rollback()
+            raise
+        if previous is not None:
+            await self.session.rollback()
+        return previous
+
+    async def replay_profile_update(
+        self,
+        *,
+        user_id: str,
+        display_name: str,
+        email: str,
+        password_fingerprint: str | None,
+        request_key: str,
+    ) -> ApplicationUser | None:
+        try:
+            previous = await self._profile_update_idempotent_result(
+                request_key,
+                user_id=user_id,
+                display_name=display_name,
+                email=email,
+                password_fingerprint=password_fingerprint,
+            )
+        except Exception:
+            await self.session.rollback()
+            raise
+        if previous is not None:
+            await self.session.rollback()
+        return previous
+
+    async def create_admin_user_snapshot(
+        self,
+        *,
+        user_id: str,
+        username: str | None,
+        display_name: str | None,
+        email: str | None,
+        observed_roles: Collection[str],
+        status: Literal["active", "disabled"],
+        roles: Collection[str],
+        actor_user_id: str,
+        request_key: str,
+        reason: str,
+        password_fingerprint: str,
+    ) -> ApplicationUser:
+        if status not in {"active", "disabled"}:
+            raise ValueError("unsupported application user status")
+        desired_roles = self._validate_roles(roles)
+        observed = sorted(self._normalize_observed_roles(observed_roles))
+        clean_reason = self._validate_reason(reason)
+        try:
+            previous = await self._create_idempotent_result(
+                request_key,
+                username=username,
+                display_name=display_name,
+                email=email,
+                status=status,
+                roles=desired_roles,
+                password_fingerprint=password_fingerprint,
+            )
+            if previous is not None:
+                await self.session.rollback()
+                return previous
+            model, current_role_models = await self._load_user_with_roles(
+                user_id, for_update=True
+            )
+            before = self._snapshot(model, current_role_models) if model else None
+            now = self._now()
+            if model is None:
+                model = AppUserMySQL(
+                    user_id=user_id,
+                    username=self._optional_value(username),
+                    display_name=self._optional_value(display_name),
+                    email=self._optional_value(email),
+                    observed_roles_json=observed,
+                    status=status,
+                    first_seen_at=now,
+                    last_seen_at=now,
+                    disabled_at=now if status == "disabled" else None,
+                    disabled_by=None,
+                    updated_at=now,
+                )
+                self.session.add(model)
+                current_roles = set()
+            else:
+                current_roles = {
+                    role_model.role_code for role_model in current_role_models
+                }
+                model.username = self._optional_value(username)
+                model.display_name = self._optional_value(display_name)
+                model.email = self._optional_value(email)
+                model.observed_roles_json = observed
+                model.status = status
+                model.last_seen_at = now
+                model.disabled_at = now if status == "disabled" else None
+                model.disabled_by = None
+                model.updated_at = now
+            for role_model in current_role_models:
+                if role_model.role_code not in desired_roles:
+                    role_model.revoked_at = now
+            for role_code in sorted(desired_roles - current_roles):
+                self.session.add(
+                    AppUserRoleMySQL(
+                        id=str(uuid4()),
+                        user_id=user_id,
+                        role_code=role_code,
+                        assigned_by=actor_user_id,
+                        assigned_at=now,
+                        revoked_at=None,
+                    )
+                )
+            after = self._snapshot(model, desired_roles)
+            after["password_fingerprint"] = password_fingerprint
+            self.session.add(
+                self._change(
+                    request_key=request_key,
+                    user_id=user_id,
+                    operation="create_user",
+                    actor_user_id=actor_user_id,
+                    reason=clean_reason,
+                    before=before,
+                    after=after,
+                    created_at=now,
+                )
+            )
+            await self.session.commit()
+            return self._to_entity(model, desired_roles)
+        except IntegrityError:
+            await self.session.rollback()
+            previous = await self._create_idempotent_result(
+                request_key,
+                username=username,
+                display_name=display_name,
+                email=email,
+                status=status,
+                roles=desired_roles,
+                password_fingerprint=password_fingerprint,
+            )
+            if previous is not None:
+                return previous
+            raise
+        except Exception:
+            await self.session.rollback()
+            raise
+
+    async def update_admin_user_profile_snapshot(
+        self,
+        *,
+        user_id: str,
+        username: str | None,
+        display_name: str | None,
+        email: str | None,
+        observed_roles: Collection[str],
+        status: Literal["active", "disabled"],
+        actor_user_id: str,
+        request_key: str,
+        reason: str,
+        password_fingerprint: str | None,
+    ) -> ApplicationUser:
+        if status not in {"active", "disabled"}:
+            raise ValueError("unsupported application user status")
+        observed = sorted(self._normalize_observed_roles(observed_roles))
+        clean_reason = self._validate_reason(reason)
+        try:
+            previous = await self._profile_update_idempotent_result(
+                request_key,
+                user_id=user_id,
+                display_name=display_name,
+                email=email,
+                password_fingerprint=password_fingerprint,
+            )
+            if previous is not None:
+                await self.session.rollback()
+                return previous
+            model, current_role_models = await self._load_user_with_roles(
+                user_id, for_update=True
+            )
+            before = self._snapshot(model, current_role_models) if model else None
+            now = self._now()
+            if model is None:
+                model = AppUserMySQL(
+                    user_id=user_id,
+                    username=self._optional_value(username),
+                    display_name=self._optional_value(display_name),
+                    email=self._optional_value(email),
+                    observed_roles_json=observed,
+                    status=status,
+                    first_seen_at=now,
+                    last_seen_at=now,
+                    disabled_at=now if status == "disabled" else None,
+                    disabled_by=None,
+                    updated_at=now,
+                )
+                self.session.add(model)
+                current_roles = set()
+            else:
+                current_roles = self._role_codes(current_role_models)
+                model.username = self._optional_value(username)
+                model.display_name = self._optional_value(display_name)
+                model.email = self._optional_value(email)
+                model.observed_roles_json = observed
+                model.status = status
+                model.last_seen_at = now
+                model.disabled_at = now if status == "disabled" else None
+                model.disabled_by = None
+                model.updated_at = now
+            after = self._snapshot(model, current_roles)
+            after["password_fingerprint"] = password_fingerprint
+            self.session.add(
+                self._change(
+                    request_key=request_key,
+                    user_id=user_id,
+                    operation="update_profile",
+                    actor_user_id=actor_user_id,
+                    reason=clean_reason,
+                    before=before,
+                    after=after,
+                    created_at=now,
+                )
+            )
+            await self.session.commit()
+            return self._to_entity(model, current_roles)
+        except IntegrityError:
+            await self.session.rollback()
+            previous = await self._profile_update_idempotent_result(
+                request_key,
+                user_id=user_id,
+                display_name=display_name,
+                email=email,
+                password_fingerprint=password_fingerprint,
+            )
+            if previous is not None:
+                return previous
+            raise
+        except Exception:
+            await self.session.rollback()
+            raise
+
     async def replay_status(
         self,
         *,
@@ -525,6 +786,84 @@ class AppUserRepository:
             await self.session.rollback()
             raise
 
+    async def _change_by_request_key(
+        self, request_key: str, *, for_update: bool = False
+    ) -> AppUserChangeMySQL | None:
+        statement = select(AppUserChangeMySQL).where(
+            AppUserChangeMySQL.request_key == request_key
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def _create_idempotent_result(
+        self,
+        request_key: str,
+        *,
+        username: str | None,
+        display_name: str | None,
+        email: str | None,
+        status: str,
+        roles: Collection[str],
+        password_fingerprint: str,
+    ) -> ApplicationUser | None:
+        change = await self._change_by_request_key(request_key)
+        if change is None:
+            return None
+        snapshot = change.after_json
+        if change.operation != "create_user":
+            raise AppUserIdempotencyConflictError(
+                "request key is already used for another operation"
+            )
+        expected = {
+            "username": self._optional_value(username),
+            "display_name": self._optional_value(display_name),
+            "email": self._optional_value(email),
+            "status": status,
+            "application_roles": sorted(self._validate_roles(roles)),
+            "password_fingerprint": password_fingerprint,
+        }
+        for key, expected_value in expected.items():
+            if snapshot.get(key) != expected_value:
+                raise AppUserIdempotencyConflictError(
+                    "request key target user does not match"
+                )
+        return self._snapshot_to_entity(snapshot)
+
+    async def _profile_update_idempotent_result(
+        self,
+        request_key: str,
+        *,
+        user_id: str,
+        display_name: str | None,
+        email: str | None,
+        password_fingerprint: str | None,
+    ) -> ApplicationUser | None:
+        change = await self._change_by_request_key(request_key)
+        if change is None:
+            return None
+        snapshot = change.after_json
+        if change.user_id != user_id or snapshot.get("user_id") != user_id:
+            raise AppUserIdempotencyConflictError(
+                "request key is already used for another user"
+            )
+        if change.operation != "update_profile":
+            raise AppUserIdempotencyConflictError(
+                "request key is already used for another operation"
+            )
+        expected = {
+            "display_name": self._optional_value(display_name),
+            "email": self._optional_value(email),
+            "password_fingerprint": password_fingerprint,
+        }
+        for key, expected_value in expected.items():
+            if snapshot.get(key) != expected_value:
+                raise AppUserIdempotencyConflictError(
+                    "request key target profile does not match"
+                )
+        return self._snapshot_to_entity(snapshot)
+
     async def _idempotent_result(
         self,
         request_key: str,
@@ -535,13 +874,7 @@ class AppUserRepository:
         expected_application_roles: Collection[str] | None = None,
         for_update: bool = False,
     ) -> ApplicationUser | None:
-        statement = select(AppUserChangeMySQL).where(
-            AppUserChangeMySQL.request_key == request_key
-        )
-        if for_update:
-            statement = statement.with_for_update()
-        result = await self.session.execute(statement)
-        change = result.scalar_one_or_none()
+        change = await self._change_by_request_key(request_key, for_update=for_update)
         if change is None:
             return None
         snapshot = change.after_json

@@ -278,6 +278,12 @@ async def get_authorization_service(
     return AuthorizationService(repository, cache_state=_authorization_cache_state)
 
 
+async def close_keycloak_admin_client() -> None:
+    """关闭进程级 Keycloak Admin Client。"""
+
+    await _keycloak_admin_client.close()
+
+
 async def get_keycloak_user_service() -> KeycloakUserService:
     """创建 Keycloak 用户服务安全封装。"""
 

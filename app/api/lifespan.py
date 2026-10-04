@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.dependencies import close_keycloak_admin_client
 from app.clients.cube_client_manager import get_cube_client_manager
 from app.clients.embedding_client_manager import get_embedding_client_manager
 from app.clients.es_client_manager import get_es_client_manager
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI):
     await get_oidc_client_manager().close()
     await get_redis_client_manager().close()
     await get_minio_client_manager().close()
+    await close_keycloak_admin_client()
     await meta_mysql_client_manager.close()
     await dw_mysql_client_manager.close()
     if app_config.sql_safety.enabled:
