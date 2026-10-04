@@ -1,5 +1,6 @@
 """Execute a validated Cube metric query."""
 
+from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from langgraph.runtime import Runtime
@@ -50,10 +51,15 @@ async def execute_cube_query(state: DataAgentState, runtime: Runtime[DataAgentCo
 
         cache_service = runtime.context.get("cache_service")
         metadata_release_version = runtime.context.get("metadata_release_version")
+        metric_result_cacheable = state.get("metric_result_cacheable")
+        if metric_result_cacheable is None:
+            metric_result_cacheable = not _contains_high_volatility_value(
+                state.get("metric_query_decision") or cube_query
+            )
         if (
             cache_service is not None
             and metadata_release_version is not None
-            and not _contains_high_volatility_value(cube_query)
+            and metric_result_cacheable
         ):
             try:
                 result_payload, _ = await cache_service.get_metric_result(
@@ -67,6 +73,8 @@ async def execute_cube_query(state: DataAgentState, runtime: Runtime[DataAgentCo
                 logger.warning("Metric result cache failed; falling back to Cube")
                 result_payload = await load_metric_result()
         else:
+            if cache_service is not None and not metric_result_cacheable:
+                _record_volatile_cache_skip(cache_service)
             result_payload = await load_metric_result()
         result = result_payload["data"]
         logger.info("Cube query completed rows={}", len(result))
@@ -90,6 +98,8 @@ async def execute_cube_query(state: DataAgentState, runtime: Runtime[DataAgentCo
 def _contains_high_volatility_value(value: Any) -> bool:
     """识别不适合缓存或需要极短 TTL 的实时语义。"""
 
+    if is_dataclass(value):
+        return _contains_high_volatility_value(asdict(value))
     if isinstance(value, str):
         normalized = value.strip().lower()
         return any(term in normalized for term in ("today", "latest", "real-time"))
@@ -98,3 +108,13 @@ def _contains_high_volatility_value(value: Any) -> bool:
     if isinstance(value, list):
         return any(_contains_high_volatility_value(item) for item in value)
     return False
+
+
+def _record_volatile_cache_skip(cache_service: object) -> None:
+    metrics = getattr(cache_service, "metrics", None)
+    if metrics is None:
+        return
+    try:
+        metrics.record_cache("metric_result", "skipped", "volatile_query")
+    except Exception:
+        logger.warning("Metric cache skip metric failed; ignoring")

@@ -155,6 +155,7 @@ class DataAgentState(TypedDict):
     include_attached_metrics: bool  # 是否展开默认展示的一跳附带指标
     metric_query_raw: dict  # 通过严格结构校验的模型原始输出
     metric_query_decision: MetricQueryDecision  # 确定性校验后的指标查询决策
+    metric_result_cacheable: bool  # 当前指标查询结果是否允许写入短 TTL 缓存
     cube_query: dict  # 可直接发送给 Cube 的查询对象
     query_mode: Literal["metric", "sql"]  # 当前请求最终执行模式
     route_reason: SemanticMissReason | Literal["governed_measure_matched"]

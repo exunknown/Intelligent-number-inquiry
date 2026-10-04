@@ -1,6 +1,7 @@
 """Validate Metric Query IR and select the governed or SQL route."""
 
-from dataclasses import replace
+from dataclasses import asdict, is_dataclass, replace
+from typing import Any
 
 from langgraph.runtime import Runtime
 
@@ -12,6 +13,21 @@ from app.conf.app_config import app_config
 from app.core.query_errors import QueryExecutionError
 from app.entities.cube_member import CubeMember
 from app.entities.metric_query import MetricQueryDecision, MetricQueryValidationError
+
+
+def _contains_high_volatility_value(value: Any) -> bool:
+    """识别不适合缓存的实时语义。"""
+
+    if is_dataclass(value):
+        return _contains_high_volatility_value(asdict(value))
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        return any(term in normalized for term in ("today", "latest", "real-time"))
+    if isinstance(value, dict):
+        return any(_contains_high_volatility_value(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_contains_high_volatility_value(item) for item in value)
+    return False
 
 
 def _resolve_metric_relations(
@@ -194,6 +210,7 @@ async def validate_metric_query(
         }
 
     reason = "governed_measure_matched"
+    metric_result_cacheable = not _contains_high_volatility_value(decision.query)
     runtime.stream_writer({"type": "route", "mode": "metric", "reason": reason})
     runtime.stream_writer(
         {
@@ -213,6 +230,7 @@ async def validate_metric_query(
                     **state,
                     **relation_state,
                     "metric_query_decision": decision,
+                    "metric_result_cacheable": metric_result_cacheable,
                     "query_mode": "metric",
                 },
                 None,
@@ -222,6 +240,7 @@ async def validate_metric_query(
     return {
         "cube_query": decision.cube_query,
         "metric_query_decision": decision,
+        "metric_result_cacheable": metric_result_cacheable,
         "query_mode": "metric",
         "route_reason": reason,
         **relation_state,

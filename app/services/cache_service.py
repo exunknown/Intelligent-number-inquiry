@@ -520,9 +520,11 @@ def canonicalize_cube_query(value: object) -> object:
 def _validate_metric_result(payload: object) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("metric result payload must be an object")
+    if payload.get("type", "result") != "result":
+        raise ValueError("metric result type must be result")
     data = payload.get("data")
-    if not isinstance(data, list):
-        raise ValueError("metric result data must be a list")
+    if not isinstance(data, list) or not all(isinstance(row, dict) for row in data):
+        raise ValueError("metric result data must be a list of objects")
     if payload.get("source") != "metric" or payload.get("verified") is not True:
         raise ValueError("metric result must be verified metric data")
     if payload.get("warning") is not None:
