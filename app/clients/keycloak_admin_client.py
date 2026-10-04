@@ -8,7 +8,7 @@ from urllib.parse import quote, unquote, urlparse
 
 import httpx
 
-from app.conf.app_config import KeycloakAdminConfig
+from app.conf.keycloak_admin_config import KeycloakAdminConfig
 from app.entities.keycloak_user import (
     KeycloakUser,
     KeycloakUserCreate,

@@ -12,6 +12,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from omegaconf import OmegaConf
 
+from app.conf.keycloak_admin_config import KeycloakAdminConfig
+
 
 @dataclass
 class File:
@@ -185,18 +187,6 @@ class CubeConfig:
     timeout_seconds: float
     max_limit: int
     semantic_view: str
-
-
-@dataclass
-class KeycloakAdminConfig:
-    """Keycloak Admin API 管理客户端配置"""
-
-    base_url: str
-    realm: str
-    client_id: str
-    client_secret: str
-    timeout_seconds: float
-    token_cache_skew_seconds: float
 
 
 @dataclass
