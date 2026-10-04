@@ -72,6 +72,10 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
                         metrics={message.metrics}
                         queryMode={message.queryMode}
                         routeReason={message.routeReason}
+                        status={message.status}
+                        hasResult={message.result !== undefined}
+                        verified={message.verified}
+                        errorCode={message.errorCode}
                         hiddenAttachedMetricIds={hiddenAttachedMetricIds}
                         onToggleAttachedMetric={toggleAttachedMetric}
                         onToggleAllAttachedMetrics={toggleAllAttachedMetrics}

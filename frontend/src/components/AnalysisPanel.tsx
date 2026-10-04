@@ -8,13 +8,17 @@ import { useEffect, useRef, useState } from "react";
 import { StepRail } from "./StepRail";
 import { cn } from "../lib/format";
 import { attachedMetricEntries, metricDisplayEntries, metricLabel } from "../lib/metricDisplay";
-import type { MetricItem, QueryMode, StepState } from "../types/agent";
+import type { ChatMessage, MetricItem, QueryMode, StepState } from "../types/agent";
 
 type AnalysisPanelProps = {
     steps?: StepState[];
     metrics?: MetricItem[];
     queryMode?: QueryMode;
     routeReason?: string;
+    status?: ChatMessage["status"];
+    hasResult?: boolean;
+    verified?: boolean;
+    errorCode?: string;
     hiddenAttachedMetricIds?: ReadonlySet<string>;
     onToggleAttachedMetric?: (memberId: string, visible: boolean) => void;
     onToggleAllAttachedMetrics?: (visible: boolean) => void;
@@ -25,6 +29,10 @@ export function AnalysisPanel({
     metrics,
     queryMode,
     routeReason,
+    status,
+    hasResult = false,
+    verified = false,
+    errorCode,
     hiddenAttachedMetricIds = new Set(),
     onToggleAttachedMetric,
     onToggleAllAttachedMetrics,
@@ -110,7 +118,14 @@ export function AnalysisPanel({
                             </div>
                         )}
 
-                        <StepRail steps={steps} />
+                        <StepRail
+                            steps={steps}
+                            queryMode={queryMode}
+                            status={status}
+                            hasResult={hasResult}
+                            verified={verified}
+                            errorCode={errorCode}
+                        />
 
                         <div className="border-t border-ink/10 pt-3">
                             <div className="font-serif text-sm font-bold text-ink">指标信息</div>
