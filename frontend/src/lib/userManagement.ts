@@ -24,6 +24,41 @@ export function statusLabel(status: ApplicationUserStatus): string {
     return status === "active" ? "启用" : "禁用";
 }
 
+export type ValidationResult = {
+    valid: boolean;
+    message: string | null;
+};
+
+export function validateApplicationUserEmail(value: string): ValidationResult {
+    const email = value.trim();
+    if (!email) {
+        return { valid: false, message: "请输入邮箱。" };
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return { valid: false, message: "邮箱格式不正确。" };
+    }
+    return { valid: true, message: null };
+}
+
+export function validateTemporaryPassword(
+    value: string,
+    options: { required: boolean },
+): ValidationResult {
+    const password = value.trim();
+    if (!password) {
+        return options.required
+            ? { valid: false, message: "请输入临时密码。" }
+            : { valid: true, message: null };
+    }
+    if (password.length < 8) {
+        return { valid: false, message: "临时密码至少 8 位。" };
+    }
+    if (password.length > 128) {
+        return { valid: false, message: "临时密码不能超过 128 位。" };
+    }
+    return { valid: true, message: null };
+}
+
 export function normalizeRoles(roles: readonly ApplicationRole[]): ApplicationRole[] {
     const selected = new Set(roles);
     return APPLICATION_ROLES.filter((role) => selected.has(role));

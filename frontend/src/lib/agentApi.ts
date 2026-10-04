@@ -491,6 +491,21 @@ export type ApplicationUserListParams = {
     offset?: number;
 };
 
+export type ApplicationUserCreateRequest = {
+    username: string;
+    display_name: string;
+    email: string;
+    temporary_password: string;
+    application_roles?: ApplicationRole[];
+    enabled?: boolean;
+};
+
+export type ApplicationUserUpdateRequest = {
+    display_name: string;
+    email: string;
+    temporary_password?: string;
+};
+
 async function getUserManagementJson<T>(
     path: string,
     init: RequestInit,
@@ -553,6 +568,57 @@ export async function getApplicationUser(userId: string): Promise<ApplicationUse
     return getUserManagementJson<ApplicationUserDetailResponse>(
         `/api/admin/users/${encodeURIComponent(userId)}`,
         { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+}
+
+export async function createApplicationUser(
+    payload: ApplicationUserCreateRequest,
+): Promise<ApplicationUserSummary> {
+    const accessToken = await getAccessToken();
+    return getUserManagementJson<ApplicationUserSummary>(
+        "/api/admin/users",
+        {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+                "Idempotency-Key": crypto.randomUUID(),
+            },
+            body: JSON.stringify({
+                username: payload.username,
+                display_name: payload.display_name,
+                email: payload.email,
+                temporary_password: payload.temporary_password,
+                application_roles: payload.application_roles ?? ["analyst"],
+                enabled: payload.enabled ?? true,
+            }),
+        },
+    );
+}
+
+export async function updateApplicationUser(
+    userId: string,
+    payload: ApplicationUserUpdateRequest,
+): Promise<ApplicationUserSummary> {
+    const accessToken = await getAccessToken();
+    const body = {
+        display_name: payload.display_name,
+        email: payload.email,
+        ...(payload.temporary_password?.trim()
+            ? { temporary_password: payload.temporary_password }
+            : {}),
+    };
+    return getUserManagementJson<ApplicationUserSummary>(
+        `/api/admin/users/${encodeURIComponent(userId)}`,
+        {
+            method: "PATCH",
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+                "Idempotency-Key": crypto.randomUUID(),
+            },
+            body: JSON.stringify(body),
+        },
     );
 }
 
