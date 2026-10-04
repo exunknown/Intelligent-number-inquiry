@@ -49,7 +49,7 @@ export function getFlowStatus(
   node: FlowNodeDefinition,
   statusMap: ReadonlyMap<string, StepState>,
   queryMode?: QueryMode,
-  _messageStatus?: ChatMessage["status"],
+  messageStatus?: ChatMessage["status"],
   hasResult = false,
   verified = false,
 ): FlowStatus {
@@ -70,7 +70,9 @@ export function getFlowStatus(
   }
 
   if (node.id === "sql-result") {
-    return hasResult && queryMode === "sql" ? "success" : "pending";
+    return hasResult && queryMode === "sql" && messageStatus === "done"
+      ? "success"
+      : "pending";
   }
 
   return getStepStatus(node, statusMap);
