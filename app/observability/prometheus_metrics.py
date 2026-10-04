@@ -105,6 +105,28 @@ class QueryMetricsCollector:
         yield dependency_errors
         yield dependency_latency
 
+        cache = snapshot["cache"]
+        cache_events = CounterMetricFamily(
+            "shopkeeper_query_cache_events",
+            "问数缓存事件累计数量。",
+            labels=["category", "outcome", "reason"],
+        )
+        cache_latency = GaugeMetricFamily(
+            "shopkeeper_query_cache_latency_ms",
+            "问数缓存操作延迟分位数（毫秒）。",
+            labels=["category", "quantile"],
+        )
+        for category, data in sorted(cache.items()):
+            for outcome, reasons in sorted(data["events"].items()):
+                for reason, count in sorted(reasons.items()):
+                    cache_events.add_metric([category, outcome, reason], count)
+            for quantile in ("p50", "p95", "p99"):
+                value = data.get(f"{quantile}_ms")
+                if value is not None:
+                    cache_latency.add_metric([category, quantile], value)
+        yield cache_events
+        yield cache_latency
+
         nodes = snapshot["nodes"]
         node_calls = CounterMetricFamily(
             "shopkeeper_query_node_calls",

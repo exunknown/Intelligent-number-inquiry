@@ -4,12 +4,14 @@ import hashlib
 import json
 import math
 import re
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, is_dataclass
 from typing import TypeVar
 
 from app.conf.app_config import CacheConfig, app_config
 from app.core.log import logger
+from app.core.query_metrics import QueryMetrics, get_query_metrics
 from app.entities.auth import PermissionSnapshot
 from app.entities.column_info import ColumnInfo
 from app.entities.cube_member import CubeMember
@@ -42,9 +44,11 @@ class CacheService:
         self,
         repository: CacheRepository | None,
         config: CacheConfig | None = None,
+        metrics: QueryMetrics | None = None,
     ):
         self.repository = repository
         self.config = config or _DEFAULT_CACHE_CONFIG
+        self.metrics = metrics or get_query_metrics()
 
     def make_key(
         self,
@@ -82,20 +86,7 @@ class CacheService:
 
         if not self.config.enabled or self.repository is None:
             return None
-        try:
-            raw = await self.repository.get(key)
-        except Exception:
-            logger.warning("Cache get failed; falling back to source")
-            return None
-        if raw is None:
-            return None
-        try:
-            payload = json.loads(raw)
-            return validator(payload)
-        except Exception:
-            logger.warning("Invalid cache payload; deleting cached value")
-            await self._delete_best_effort(key)
-            return None
+        return await self._get_json_for_category("other", key, validator)
 
     async def set_json(
         self,
@@ -105,18 +96,7 @@ class CacheService:
     ) -> None:
         """以 JSON 写入缓存；失败不影响主链路。"""
 
-        if not self.config.enabled or self.repository is None:
-            return
-        try:
-            value = json.dumps(
-                payload,
-                ensure_ascii=False,
-                separators=(",", ":"),
-                sort_keys=True,
-            )
-            await self.repository.set(key, value, ttl_seconds)
-        except Exception:
-            logger.warning("Cache set failed; keeping source result")
+        await self._set_json_for_category("other", key, payload, ttl_seconds)
 
     async def get_or_load_json(
         self,
@@ -131,12 +111,12 @@ class CacheService:
         """优先读缓存，miss 或坏值时回源加载并 best-effort 写回。"""
 
         key = self.make_key(category, payload, schema_version=schema_version)
-        cached = await self.get_json(key, validator)
+        cached = await self._get_json_for_category(category, key, validator)
         if cached is not None:
             return cached, True
 
         value = await loader()
-        await self.set_json(key, value, ttl_seconds)
+        await self._set_json_for_category(category, key, value, ttl_seconds)
         return value, False
 
     async def get_embedding(
@@ -246,28 +226,53 @@ class CacheService:
             "cube_query": canonicalize_cube_query(canonical_cube_query),
         }
         key = self.make_key("metric_result", key_payload)
-        cached = await self.get_json(key, _validate_metric_result)
+        cached = await self._get_json_for_category(
+            "metric_result",
+            key,
+            _validate_metric_result,
+        )
         if cached is not None:
             return cached, True
 
         value = _validate_metric_result(await loader())
         if not _payload_exceeds_limit(value, app_config.sse.max_inline_result_bytes):
-            await self.set_json(key, value, self.config.metric_result_ttl_seconds)
+            await self._set_json_for_category(
+                "metric_result",
+                key,
+                value,
+                self.config.metric_result_ttl_seconds,
+            )
+        else:
+            self.metrics.record_cache("metric_result", "skipped", "large_payload")
         return value, False
 
     async def acquire_lock(self, key: str, ttl_seconds: int | None = None) -> bool:
         """获取短时锁；Redis 不可用时返回 False。"""
 
-        if not self.config.enabled or self.repository is None:
+        category = _category_from_cache_key(key)
+        if not self.config.enabled:
+            self.metrics.record_cache(category, "skipped", "disabled")
+            return False
+        if self.repository is None:
+            self.metrics.record_cache(category, "skipped", "not_configured")
             return False
         lock_key = self.make_lock_key(key)
         try:
-            return await self.repository.acquire_lock(
+            start = time.perf_counter()
+            acquired = await self.repository.acquire_lock(
                 lock_key,
                 ttl_seconds or self.config.lock_ttl_seconds,
             )
+            self.metrics.record_cache(
+                category,
+                "lock_acquired" if acquired else "lock_missed",
+                None if acquired else "lock_unavailable",
+                _duration_ms(start),
+            )
+            return acquired
         except Exception:
             logger.warning("Cache lock failed; continuing without lock")
+            self.metrics.record_cache(category, "lock_error", "redis_error")
             return False
 
     async def _delete_best_effort(self, key: str) -> None:
@@ -278,6 +283,74 @@ class CacheService:
         except Exception:
             logger.warning("Cache delete failed; ignoring stale value")
 
+    async def _get_json_for_category(
+        self,
+        category: str,
+        key: str,
+        validator: Callable[[object], T],
+    ) -> T | None:
+        if not self.config.enabled:
+            self.metrics.record_cache(category, "skipped", "disabled")
+            return None
+        if self.repository is None:
+            self.metrics.record_cache(category, "skipped", "not_configured")
+            return None
+        start = time.perf_counter()
+        try:
+            raw = await self.repository.get(key)
+        except Exception:
+            logger.warning("Cache get failed; falling back to source")
+            self.metrics.record_cache(
+                category,
+                "fallback",
+                "redis_error",
+                _duration_ms(start),
+            )
+            return None
+        if raw is None:
+            self.metrics.record_cache(category, "miss", None, _duration_ms(start))
+            return None
+        try:
+            payload = json.loads(raw)
+            value = validator(payload)
+            self.metrics.record_cache(category, "hit", None, _duration_ms(start))
+            return value
+        except Exception:
+            logger.warning("Invalid cache payload; deleting cached value")
+            self.metrics.record_cache(
+                category,
+                "fallback",
+                "invalid_payload",
+                _duration_ms(start),
+            )
+            await self._delete_best_effort(key)
+            return None
+
+    async def _set_json_for_category(
+        self,
+        category: str,
+        key: str,
+        payload: object,
+        ttl_seconds: int,
+    ) -> None:
+        if not self.config.enabled:
+            self.metrics.record_cache(category, "skipped", "disabled")
+            return
+        if self.repository is None:
+            self.metrics.record_cache(category, "skipped", "not_configured")
+            return
+        try:
+            value = json.dumps(
+                payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            await self.repository.set(key, value, ttl_seconds)
+        except Exception:
+            logger.warning("Cache set failed; keeping source result")
+            self.metrics.record_cache(category, "fallback", "write_error")
+
     async def _get_or_load_entities(
         self,
         category: str,
@@ -287,7 +360,8 @@ class CacheService:
         entity_type: type[E],
     ) -> tuple[list[E], bool]:
         key = self.make_key(category, payload)
-        cached = await self.get_json(
+        cached = await self._get_json_for_category(
+            category,
             key,
             lambda cached_payload: _validate_entity_list(
                 cached_payload,
@@ -299,7 +373,12 @@ class CacheService:
 
         value = await loader()
         _validate_loaded_entities(value, entity_type)
-        await self.set_json(key, _serialize_entity_list(value), ttl_seconds)
+        await self._set_json_for_category(
+            category,
+            key,
+            _serialize_entity_list(value),
+            ttl_seconds,
+        )
         return value, False
 
 
@@ -307,6 +386,17 @@ def normalize_embedding_text(text: str) -> str:
     """规范化 Embedding Key 中的文本。"""
 
     return " ".join(text.strip().split())
+
+
+def _duration_ms(start: float) -> float:
+    return (time.perf_counter() - start) * 1000
+
+
+def _category_from_cache_key(key: str) -> str:
+    prefix = f"{CacheService.namespace}:"
+    if not key.startswith(prefix):
+        return "other"
+    return key.removeprefix(prefix).split(":", 1)[0]
 
 
 def _validate_embedding(payload: object, dimension: int) -> list[float]:

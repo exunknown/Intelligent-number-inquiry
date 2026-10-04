@@ -23,6 +23,33 @@ _DEPENDENCIES = {
     "cube",
     "sql_fallback",
 }
+_CACHE_CATEGORIES = {
+    "embedding",
+    "column_recall",
+    "cube_member_recall",
+    "value_recall",
+    "cube_catalog",
+    "metric_result",
+}
+_CACHE_OUTCOMES = {
+    "hit",
+    "miss",
+    "fallback",
+    "skipped",
+    "lock_acquired",
+    "lock_missed",
+    "lock_error",
+}
+_CACHE_REASONS = {
+    "disabled",
+    "invalid_payload",
+    "large_payload",
+    "lock_unavailable",
+    "not_configured",
+    "redis_error",
+    "volatile_query",
+    "write_error",
+}
 _NODE_NAMES = {
     "解析会话上下文",
     "澄清会话上下文",
@@ -111,6 +138,8 @@ class QueryMetrics:
         self._dependency_errors: Counter[str] = Counter()
         self._dependency_error_codes: dict[str, Counter[str]] = {}
         self._dependency_latencies: dict[str, Deque[float]] = {}
+        self._cache_events: Counter[tuple[str, str, str]] = Counter()
+        self._cache_latencies: dict[str, Deque[float]] = {}
 
     def record_node(self, node: str | None, duration_ms: float, outcome: str) -> None:
         """记录固定图步骤的耗时，不保存原始步骤文本。"""
@@ -146,6 +175,29 @@ class QueryMetrics:
                 self._dependency_error_codes.setdefault(
                     normalized_dependency, Counter()
                 )[_label(error_code, _ERROR_CODES)] += 1
+
+    def record_cache(
+        self,
+        category: str | None,
+        outcome: str | None,
+        reason: str | None = None,
+        duration_ms: float | None = None,
+    ) -> None:
+        """记录缓存事件，只保留固定低基数标签。"""
+
+        with self._lock:
+            normalized_category = _label(category, _CACHE_CATEGORIES)
+            normalized_outcome = _label(outcome, _CACHE_OUTCOMES)
+            normalized_reason = (
+                _label(reason, _CACHE_REASONS) if reason is not None else "none"
+            )
+            self._cache_events[
+                (normalized_category, normalized_outcome, normalized_reason)
+            ] += 1
+            if duration_ms is not None:
+                self._cache_latencies.setdefault(
+                    normalized_category, deque(maxlen=self._latencies.maxlen)
+                ).append(max(0.0, float(duration_ms)))
 
     def record_request(
         self,
@@ -206,6 +258,32 @@ class QueryMetrics:
                 }
                 for dependency in self._dependency_counts
             }
+            cache: dict[str, dict] = {}
+            for (category, outcome, reason), count in self._cache_events.items():
+                category_data = cache.setdefault(
+                    category,
+                    {
+                        "events": {},
+                        "p50_ms": None,
+                        "p95_ms": None,
+                        "p99_ms": None,
+                    },
+                )
+                category_data["events"].setdefault(outcome, {})[reason] = count
+            for category, latencies_by_category in self._cache_latencies.items():
+                category_data = cache.setdefault(
+                    category,
+                    {
+                        "events": {},
+                        "p50_ms": None,
+                        "p95_ms": None,
+                        "p99_ms": None,
+                    },
+                )
+                values = list(latencies_by_category)
+                category_data["p50_ms"] = _percentile(values, 0.50)
+                category_data["p95_ms"] = _percentile(values, 0.95)
+                category_data["p99_ms"] = _percentile(values, 0.99)
             return {
                 "requests_total": self._requests_total,
                 "successes_total": self._successes_total,
@@ -216,6 +294,7 @@ class QueryMetrics:
                 "errors_by_code": dict(self._errors_by_code),
                 "nodes": nodes,
                 "dependencies": dependencies,
+                "cache": cache,
                 "latency_ms": {
                     "p50": _percentile(latencies, 0.50),
                     "p95": _percentile(latencies, 0.95),
