@@ -8,8 +8,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict, is_dataclass
 from typing import TypeVar
 
-from app.conf.app_config import CacheConfig
+from app.conf.app_config import CacheConfig, app_config
 from app.core.log import logger
+from app.entities.auth import PermissionSnapshot
 from app.entities.column_info import ColumnInfo
 from app.entities.cube_member import CubeMember
 from app.entities.value_info import ValueInfo
@@ -224,6 +225,36 @@ class CacheService:
             CubeMember,
         )
 
+    async def get_metric_result(
+        self,
+        canonical_cube_query: dict,
+        metadata_release_version: str | None,
+        permissions: PermissionSnapshot,
+        user_id: str,
+        loader: Callable[[], Awaitable[dict]],
+    ) -> tuple[dict, bool]:
+        """读取或生成受治理指标结果。"""
+
+        key_payload = {
+            "metadata_release_version": metadata_release_version,
+            "user_id": user_id,
+            "policy_version": permissions.policy_version,
+            "allowed_department_ids": sorted(permissions.allowed_department_ids),
+            "allowed_metrics": sorted(permissions.allowed_metrics),
+            "allowed_columns": sorted(permissions.allowed_columns),
+            "allowed_tables": sorted(permissions.allowed_tables),
+            "cube_query": canonicalize_cube_query(canonical_cube_query),
+        }
+        key = self.make_key("metric_result", key_payload)
+        cached = await self.get_json(key, _validate_metric_result)
+        if cached is not None:
+            return cached, True
+
+        value = _validate_metric_result(await loader())
+        if not _payload_exceeds_limit(value, app_config.sse.max_inline_result_bytes):
+            await self.set_json(key, value, self.config.metric_result_ttl_seconds)
+        return value, False
+
     async def acquire_lock(self, key: str, ttl_seconds: int | None = None) -> bool:
         """获取短时锁；Redis 不可用时返回 False。"""
 
@@ -317,3 +348,40 @@ def _validate_loaded_entities(values: list[E], entity_type: type[E]) -> None:
         raise ValueError("loaded entity payload must be a list")
     if not all(isinstance(value, entity_type) for value in values):
         raise ValueError("loaded entity type mismatch")
+
+
+def canonicalize_cube_query(value: object) -> object:
+    """规范化 Cube Query 中的对象键，保留数组顺序。"""
+
+    if isinstance(value, dict):
+        return {
+            str(key): canonicalize_cube_query(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, list):
+        return [canonicalize_cube_query(item) for item in value]
+    return value
+
+
+def _validate_metric_result(payload: object) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("metric result payload must be an object")
+    data = payload.get("data")
+    if not isinstance(data, list):
+        raise ValueError("metric result data must be a list")
+    if payload.get("source") != "metric" or payload.get("verified") is not True:
+        raise ValueError("metric result must be verified metric data")
+    if payload.get("warning") is not None:
+        raise ValueError("metric result cache does not accept warnings")
+    return {
+        "type": payload.get("type", "result"),
+        "data": data,
+        "source": "metric",
+        "verified": True,
+        "warning": None,
+    }
+
+
+def _payload_exceeds_limit(payload: object, max_bytes: int) -> bool:
+    value = json.dumps(payload, ensure_ascii=False, default=str)
+    return len(value.encode("utf-8")) > max_bytes

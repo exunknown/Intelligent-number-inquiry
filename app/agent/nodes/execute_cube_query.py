@@ -1,5 +1,7 @@
 """Execute a validated Cube metric query."""
 
+from typing import Any
+
 from langgraph.runtime import Runtime
 
 from app.agent.context import DataAgentContext
@@ -28,14 +30,45 @@ async def execute_cube_query(state: DataAgentState, runtime: Runtime[DataAgentCo
         request_options = {}
         if resource_budget := runtime.context.get("resource_budget"):
             request_options["budget"] = resource_budget
-        response = await runtime.context["cube_repository"].load(
-            state["cube_query"],
-            auth.user_id,
-            permissions.allowed_department_ids,
-            permissions.policy_version,
-            **request_options,
-        )
-        result = normalize_cube_result(response)
+        cube_query = state["cube_query"]
+
+        async def load_metric_result() -> dict:
+            response = await runtime.context["cube_repository"].load(
+                cube_query,
+                auth.user_id,
+                permissions.allowed_department_ids,
+                permissions.policy_version,
+                **request_options,
+            )
+            return {
+                "type": "result",
+                "data": normalize_cube_result(response),
+                "source": "metric",
+                "verified": True,
+                "warning": None,
+            }
+
+        cache_service = runtime.context.get("cache_service")
+        metadata_release_version = runtime.context.get("metadata_release_version")
+        if (
+            cache_service is not None
+            and metadata_release_version is not None
+            and not _contains_high_volatility_value(cube_query)
+        ):
+            try:
+                result_payload, _ = await cache_service.get_metric_result(
+                    cube_query,
+                    metadata_release_version,
+                    permissions,
+                    auth.user_id,
+                    load_metric_result,
+                )
+            except Exception:
+                logger.warning("Metric result cache failed; falling back to Cube")
+                result_payload = await load_metric_result()
+        else:
+            result_payload = await load_metric_result()
+        result = result_payload["data"]
         logger.info("Cube query completed rows={}", len(result))
         writer(
             {
@@ -47,16 +80,21 @@ async def execute_cube_query(state: DataAgentState, runtime: Runtime[DataAgentCo
             }
         )
         writer({"type": "progress", "step": step, "status": "success"})
-        writer(
-            {
-                "type": "result",
-                "data": result,
-                "source": "metric",
-                "verified": True,
-                "warning": None,
-            }
-        )
+        writer(result_payload)
     except Exception as e:
         logger.error("{} failed error_type={}", step, type(e).__name__)
         writer({"type": "progress", "step": step, "status": "error"})
         raise
+
+
+def _contains_high_volatility_value(value: Any) -> bool:
+    """识别不适合缓存或需要极短 TTL 的实时语义。"""
+
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        return any(term in normalized for term in ("today", "latest", "real-time"))
+    if isinstance(value, dict):
+        return any(_contains_high_volatility_value(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_high_volatility_value(item) for item in value)
+    return False
