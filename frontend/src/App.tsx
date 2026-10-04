@@ -304,7 +304,7 @@ export default function App({ username }: AppProps) {
     useEffect(() => {
         if (initialSessionLoadedRef.current) return;
         initialSessionLoadedRef.current = true;
-        void refreshSessions(true);
+        void refreshSessions(false);
     }, []);
 
     const updateSessionSummary = (updated: QuerySessionSummary) => {

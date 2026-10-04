@@ -60,7 +60,7 @@ export function Composer({
                     onChange={(event) => onChange(event.target.value)}
                     onKeyDown={onKeyDown}
                     rows={1}
-                    placeholder="问一笔账，例如：2025 年第一季度各大区 GMV 排名"
+                    placeholder="开始提问"
                     className="max-h-36 min-h-11 flex-1 resize-none bg-transparent px-2 py-3 text-[15px] leading-6 text-ink outline-none placeholder:text-ink/35"
                 />
                 <button
