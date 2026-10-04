@@ -13,7 +13,7 @@ import {
     UsersRound,
     X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
     createApplicationUser,
     getApplicationUser,
@@ -49,6 +49,7 @@ const iconButtonClass =
 
 type DrawerMode = "closed" | "detail" | "create" | "edit";
 type UserSelection = { userId: string | null; generation: number };
+type DrawerContext = { mode: DrawerMode; selectedUserId: string | null; generation: number };
 type UserProfileForm = {
     displayName: string;
     email: string;
@@ -111,9 +112,33 @@ export function nextSelection(current: UserSelection, requestedUserId: string | 
     return { userId: requestedUserId, generation: current.generation + 1 };
 }
 
+export function nextDrawerContext(
+    current: DrawerContext,
+    mode: DrawerMode,
+    selectedUserId: string | null,
+): DrawerContext {
+    if (current.mode === mode && current.selectedUserId === selectedUserId) return current;
+    return { mode, selectedUserId, generation: current.generation + 1 };
+}
+
+export function drawerMutationIsCurrent(started: DrawerContext, current: DrawerContext): boolean {
+    return (
+        started.generation === current.generation &&
+        started.mode === current.mode &&
+        started.selectedUserId === current.selectedUserId
+    );
+}
+
 export function UserManagementPanel({ onBack }: { onBack: () => void }) {
     const selectedUserRef = useRef<string | null>(null);
     const selectionGenerationRef = useRef(0);
+    const drawerContextRef = useRef<DrawerContext>({
+        mode: "closed",
+        selectedUserId: null,
+        generation: 0,
+    });
+    const drawerRef = useRef<HTMLElement | null>(null);
+    const drawerOpenerRef = useRef<HTMLElement | null>(null);
     const [drawerMode, setDrawerMode] = useState<DrawerMode>("closed");
     const [searchInput, setSearchInput] = useState("");
     const [query, setQuery] = useState("");
@@ -206,16 +231,35 @@ export function UserManagementPanel({ onBack }: { onBack: () => void }) {
         setSelectedId(next.userId);
     };
 
+    const rememberDrawerOpener = () => {
+        if (document.activeElement instanceof HTMLElement) {
+            drawerOpenerRef.current = document.activeElement;
+        }
+    };
+
+    const restoreDrawerOpener = () => {
+        const opener = drawerOpenerRef.current;
+        window.setTimeout(() => opener?.focus(), 0);
+    };
+
+    const setDrawerContext = (mode: DrawerMode, selectedUserId: string | null) => {
+        const next = nextDrawerContext(drawerContextRef.current, mode, selectedUserId);
+        drawerContextRef.current = next;
+        setDrawerMode(next.mode);
+    };
+
     const openDetail = (userId: string) => {
+        rememberDrawerOpener();
         selectUser(userId);
-        setDrawerMode("detail");
+        setDrawerContext("detail", userId);
         setDrawerFeedback(null);
         setOperationMessage(null);
     };
 
     const openEdit = (userId: string) => {
+        rememberDrawerOpener();
         selectUser(userId);
-        setDrawerMode("edit");
+        setDrawerContext("edit", userId);
         setResetPassword(false);
         setEditSubmitted(false);
         setDrawerFeedback(null);
@@ -223,19 +267,20 @@ export function UserManagementPanel({ onBack }: { onBack: () => void }) {
     };
 
     const closeDrawer = () => {
-        setDrawerMode("closed");
+        setDrawerContext("closed", null);
         setCreateForm(emptyCreateForm());
         setCreateSubmitted(false);
         setEditSubmitted(false);
         setResetPassword(false);
         setEditForm((current) => ({ ...current, temporaryPassword: "" }));
         setDrawerFeedback(null);
+        restoreDrawerOpener();
     };
 
     const changeFilters = () => {
         setOffset(0);
         selectUser(null);
-        setDrawerMode("closed");
+        setDrawerContext("closed", null);
         setOperationMessage(null);
     };
 
@@ -268,6 +313,7 @@ export function UserManagementPanel({ onBack }: { onBack: () => void }) {
     };
 
     const submitCreate = async () => {
+        const startedDrawerContext = drawerContextRef.current;
         setCreateSubmitted(true);
         setDrawerFeedback(null);
         const email = validateApplicationUserEmail(createForm.email);
@@ -287,17 +333,20 @@ export function UserManagementPanel({ onBack }: { onBack: () => void }) {
                 application_roles: normalizeRoles(createForm.applicationRoles),
                 enabled: createForm.enabled,
             });
+            if (!drawerMutationIsCurrent(startedDrawerContext, drawerContextRef.current)) return;
             setCreateForm(emptyCreateForm());
             setCreateSubmitted(false);
             setDrawerFeedback({ kind: "success", message: "用户已创建。" });
             setOperationMessage("用户已创建。");
             selectUser(created.user_id);
-            setDrawerMode("detail");
+            setDrawerContext("detail", created.user_id);
             setRefreshKey((value) => value + 1);
         } catch (error) {
-            setDrawerFeedback({ kind: "error", message: mapUserManagementError(error) });
+            if (drawerMutationIsCurrent(startedDrawerContext, drawerContextRef.current)) {
+                setDrawerFeedback({ kind: "error", message: mapUserManagementError(error) });
+            }
         } finally {
-            setBusy(null);
+            setBusy((current) => (current === "create" ? null : current));
         }
     };
 
@@ -313,12 +362,13 @@ export function UserManagementPanel({ onBack }: { onBack: () => void }) {
         }
         const targetUserId = detail.user.user_id;
         const startedGeneration = selectionGenerationRef.current;
+        const startedDrawerContext = drawerContextRef.current;
         const isCurrent = () => mutationResultIsCurrent(
             targetUserId,
             startedGeneration,
             selectedUserRef.current,
             selectionGenerationRef.current,
-        );
+        ) && drawerMutationIsCurrent(startedDrawerContext, drawerContextRef.current);
         setBusy("edit");
         setDrawerFeedback({ kind: "info", message: "正在保存用户资料…" });
         try {
@@ -333,12 +383,12 @@ export function UserManagementPanel({ onBack }: { onBack: () => void }) {
             setEditSubmitted(false);
             setDrawerFeedback({ kind: "success", message: "用户资料已更新。" });
             setOperationMessage("用户资料已更新。");
-            setDrawerMode("detail");
+            setDrawerContext("detail", targetUserId);
             setRefreshKey((value) => value + 1);
         } catch (error) {
             if (isCurrent()) setDrawerFeedback({ kind: "error", message: mapUserManagementError(error) });
         } finally {
-            setBusy(null);
+            setBusy((current) => (current === "edit" ? null : current));
         }
     };
 
@@ -413,6 +463,46 @@ export function UserManagementPanel({ onBack }: { onBack: () => void }) {
     const preview = detail?.permission_preview;
     const drawerOpen = drawerMode !== "closed";
 
+    useEffect(() => {
+        if (!drawerOpen) return;
+        window.setTimeout(() => {
+            const drawer = drawerRef.current;
+            if (!drawer) return;
+            const firstFocusable = drawer.querySelector<HTMLElement>(
+                'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            );
+            (firstFocusable ?? drawer).focus();
+        }, 0);
+    }, [drawerOpen, drawerMode]);
+
+    const handleDrawerKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            closeDrawer();
+            return;
+        }
+        if (event.key !== "Tab") return;
+        const drawer = drawerRef.current;
+        if (!drawer) return;
+        const focusable = Array.from(drawer.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        )).filter((element) => !element.hasAttribute("disabled"));
+        if (focusable.length === 0) {
+            event.preventDefault();
+            drawer.focus();
+            return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    };
+
     return (
         <section
             role="region"
@@ -440,10 +530,11 @@ export function UserManagementPanel({ onBack }: { onBack: () => void }) {
                         <button
                             type="button"
                             onClick={() => {
+                                rememberDrawerOpener();
                                 setCreateForm(emptyCreateForm());
                                 setCreateSubmitted(false);
                                 setDrawerFeedback(null);
-                                setDrawerMode("create");
+                                setDrawerContext("create", null);
                             }}
                             className={`${buttonClass} bg-dai text-paper`}
                         >
@@ -532,7 +623,7 @@ export function UserManagementPanel({ onBack }: { onBack: () => void }) {
                                 disabled={offset === 0 || listLoading}
                                 onClick={() => {
                                     selectUser(null);
-                                    setDrawerMode("closed");
+                                    setDrawerContext("closed", null);
                                     setOffset(Math.max(0, offset - PAGE_SIZE));
                                 }}
                                 title="上一页"
@@ -547,7 +638,7 @@ export function UserManagementPanel({ onBack }: { onBack: () => void }) {
                                 disabled={listLoading || !list || offset + list.limit >= list.total}
                                 onClick={() => {
                                     selectUser(null);
-                                    setDrawerMode("closed");
+                                    setDrawerContext("closed", null);
                                     setOffset(offset + PAGE_SIZE);
                                 }}
                                 title="下一页"
@@ -653,8 +744,12 @@ export function UserManagementPanel({ onBack }: { onBack: () => void }) {
             {drawerOpen && (
                 <div className="fixed inset-0 z-40 flex justify-end bg-ink/20">
                     <aside
+                        ref={drawerRef}
                         role="dialog"
+                        aria-modal="true"
                         aria-label="用户详情抽屉"
+                        tabIndex={-1}
+                        onKeyDown={handleDrawerKeyDown}
                         className="h-full w-[560px] max-w-[calc(100vw-2rem)] overflow-y-auto border-l border-ink/15 bg-white shadow-panel"
                     >
                         <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-ink/10 bg-white px-6 py-5">
@@ -969,7 +1064,7 @@ export function UserManagementPanel({ onBack }: { onBack: () => void }) {
                                                 <button
                                                     type="button"
                                                     onClick={() => {
-                                                        setDrawerMode("detail");
+                                                        setDrawerContext("detail", selectedUser.user_id);
                                                         setResetPassword(false);
                                                         setEditForm(profileFormFromUser(selectedUser));
                                                         setEditSubmitted(false);
