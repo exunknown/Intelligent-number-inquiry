@@ -52,7 +52,6 @@ class QueryMessage:
     content: str
     status: str
     steps: dict[str, str] | None
-    process_events: list[QueryProcessEvent] | None
     metrics: list[MetricDisplayItem] | None
     query_mode: str | None
     route_reason: str | None
@@ -66,3 +65,4 @@ class QueryMessage:
     error_code: str | None
     retryable: bool | None
     created_at: datetime
+    process_events: list[QueryProcessEvent] | None = None
