@@ -99,6 +99,59 @@ class AppUserRepository:
             raise RuntimeError("upserted application user could not be loaded")
         return user
 
+    async def upsert_admin_user_snapshot(
+        self,
+        *,
+        user_id: str,
+        username: str | None,
+        display_name: str | None,
+        email: str | None,
+        observed_roles: Collection[str],
+        status: Literal["active", "disabled"],
+    ) -> ApplicationUser:
+        if status not in {"active", "disabled"}:
+            raise ValueError("unsupported application user status")
+        roles = sorted(self._normalize_observed_roles(observed_roles))
+        now = self._now()
+        disabled_at = now if status == "disabled" else None
+        values = {
+            "user_id": user_id,
+            "username": self._optional_value(username),
+            "display_name": self._optional_value(display_name),
+            "email": self._optional_value(email),
+            "observed_roles_json": roles,
+            "status": status,
+            "first_seen_at": now,
+            "last_seen_at": now,
+            "disabled_at": disabled_at,
+            "disabled_by": None,
+            "updated_at": now,
+        }
+        update_values = {
+            "username": values["username"],
+            "display_name": values["display_name"],
+            "email": values["email"],
+            "observed_roles_json": roles,
+            "status": status,
+            "disabled_at": disabled_at,
+            "disabled_by": None,
+            "updated_at": now,
+        }
+
+        statement = mysql_insert(AppUserMySQL).values(**values)
+        statement = statement.on_duplicate_key_update(**update_values)
+        try:
+            await self.session.execute(statement)
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+
+        user = await self.get(user_id)
+        if user is None:
+            raise RuntimeError("upserted application user could not be loaded")
+        return user
+
     async def get(self, user_id: str) -> ApplicationUser | None:
         model, roles = await self._load_user_with_roles(user_id)
         return self._to_entity(model, roles) if model is not None else None
@@ -166,6 +219,34 @@ class AppUserRepository:
             self._to_entity(model, role_map.get(model.user_id, set()))
             for model in models
         ], total
+
+    async def list_users_by_ids(
+        self, user_ids: Collection[str]
+    ) -> dict[str, ApplicationUser]:
+        ordered_ids = list(dict.fromkeys(user_ids))
+        if not ordered_ids:
+            return {}
+
+        user_result = await self.session.execute(
+            select(AppUserMySQL).where(AppUserMySQL.user_id.in_(ordered_ids))
+        )
+        models = list(user_result.scalars().all())
+        if not models:
+            return {}
+
+        roles_result = await self.session.execute(
+            select(AppUserRoleMySQL).where(
+                AppUserRoleMySQL.user_id.in_([model.user_id for model in models]),
+                AppUserRoleMySQL.revoked_at.is_(None),
+            )
+        )
+        role_map: dict[str, set[str]] = {}
+        for role_model in roles_result.scalars().all():
+            role_map.setdefault(role_model.user_id, set()).add(role_model.role_code)
+        return {
+            model.user_id: self._to_entity(model, role_map.get(model.user_id, set()))
+            for model in models
+        }
 
     async def get_active_roles(self, user_id: str) -> frozenset[str]:
         result = await self.session.execute(
