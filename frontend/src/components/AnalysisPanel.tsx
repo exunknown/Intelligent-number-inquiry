@@ -7,7 +7,6 @@ import { ChevronDown, Route } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "../lib/format";
 import { attachedMetricEntries, metricDisplayEntries, metricLabel } from "../lib/metricDisplay";
-import { routeReasonLabel } from "../lib/queryDisplay";
 import type { MetricItem, QueryMode } from "../types/agent";
 
 type AnalysisPanelProps = {
@@ -31,7 +30,6 @@ export function AnalysisPanel({
 
     const attachedMetrics = attachedMetricEntries(metrics);
     const summaryMetrics = metrics?.map(metricLabel) ?? [];
-    const displayedRouteReason = routeReasonLabel(routeReason);
     const allAttachedVisible = attachedMetrics.every(
         (metric) => !hiddenAttachedMetricIds.has(metric.member_id),
     );
@@ -99,9 +97,9 @@ export function AnalysisPanel({
                                 <span className="shrink-0 whitespace-nowrap font-mono text-indigo">
                                     {queryMode === "metric" ? "治理指标" : "智能 SQL"}
                                 </span>
-                                {displayedRouteReason && (
-                                    <span className="min-w-0 truncate text-ink/45">
-                                        {displayedRouteReason}
+                                {routeReason && (
+                                    <span className="min-w-0 truncate text-ink/45" title={routeReason}>
+                                        {routeReason}
                                     </span>
                                 )}
                             </div>

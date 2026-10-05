@@ -32,15 +32,29 @@ function processSummary(
     steps: StepState[],
     status: ChatMessage["status"] | undefined,
 ) {
-    const running = events.find((event) => event.status === "running") ??
-        steps.find((step) => step.status === "running");
-    if (running) return `正在执行：${running.message ?? running.step}`;
     if (status === "cancelled") return "查询已停止";
-    if (status === "error" || events.some((event) => event.status === "error")) {
+    if (status === "error") {
         return "查询失败";
     }
-    if (status === "done") return `查询完成，共 ${events.length || steps.length} 步`;
-    return `已执行 ${events.length || steps.length} 步`;
+    const latestEvents = new Map<string, ProcessEvent>();
+    for (const event of events) {
+        latestEvents.set(event.step, event);
+    }
+    if (status === "done") {
+        return `查询完成，共 ${latestEvents.size || steps.length} 步`;
+    }
+
+    const running = [...latestEvents.values()].reverse().find(
+        (event) => event.status === "running",
+    ) ?? [...steps].reverse().find((step) => step.status === "running");
+    if (running) return `正在执行：${running.message ?? running.step}`;
+    if (
+        [...latestEvents.values()].some((event) => event.status === "error") ||
+        steps.some((step) => step.status === "error")
+    ) {
+        return "查询失败";
+    }
+    return `已执行 ${latestEvents.size || steps.length} 步`;
 }
 
 export function QueryProcessPanel({
