@@ -7,21 +7,32 @@ import { ChevronDown, Route } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "../lib/format";
 import { attachedMetricEntries, metricDisplayEntries, metricLabel } from "../lib/metricDisplay";
-import type { MetricItem, QueryMode } from "../types/agent";
+import type { ChatMessage, MetricItem, QueryMode, StepState } from "../types/agent";
+import { StepRail } from "./StepRail";
 
 type AnalysisPanelProps = {
+    steps?: StepState[];
     metrics?: MetricItem[];
     queryMode?: QueryMode;
     routeReason?: string;
+    status?: ChatMessage["status"];
+    hasResult?: boolean;
+    verified?: boolean;
+    errorCode?: string;
     hiddenAttachedMetricIds?: ReadonlySet<string>;
     onToggleAttachedMetric?: (memberId: string, visible: boolean) => void;
     onToggleAllAttachedMetrics?: (visible: boolean) => void;
 };
 
 export function AnalysisPanel({
+    steps = [],
     metrics,
     queryMode,
     routeReason,
+    status,
+    hasResult = false,
+    verified = false,
+    errorCode,
     hiddenAttachedMetricIds = new Set(),
     onToggleAttachedMetric,
     onToggleAllAttachedMetrics,
@@ -44,7 +55,7 @@ export function AnalysisPanel({
         }
     }, [isPartiallyVisible]);
 
-    if (!queryMode && metricDisplayEntries(metrics).length === 0) {
+    if (steps.length === 0 && !queryMode && metricDisplayEntries(metrics).length === 0) {
         return null;
     }
 
@@ -90,6 +101,19 @@ export function AnalysisPanel({
             >
                 <div className="min-h-0 overflow-hidden">
                     <div className="space-y-4 border-t border-ink/10 px-4 py-4">
+                        {steps.length > 0 && (
+                            <div className="overflow-x-auto">
+                                <StepRail
+                                    steps={steps}
+                                    queryMode={queryMode}
+                                    status={status}
+                                    hasResult={hasResult}
+                                    verified={verified}
+                                    errorCode={errorCode}
+                                />
+                            </div>
+                        )}
+
                         {queryMode && (
                             <div className="flex min-w-0 items-center gap-2 text-xs leading-5 text-ink/60">
                                 <Route className="h-3.5 w-3.5 shrink-0 text-indigo" aria-hidden="true" />

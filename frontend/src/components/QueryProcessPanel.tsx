@@ -1,16 +1,14 @@
 /**
  * 查询过程模块
- * 独立展示实时过程事件和执行流程，避免过程展开状态影响指标分析面板
+ * 独立展示查询级状态，避免查询状态展开影响分析过程面板
  */
 import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { cn, formatTime } from "../lib/format";
-import type { ChatMessage, ProcessEvent, QueryMode, StepState } from "../types/agent";
-import { StepRail } from "./StepRail";
+import type { ChatMessage, ProcessEvent, QueryMode } from "../types/agent";
 
 type QueryProcessPanelProps = {
     processEvents?: ProcessEvent[];
-    steps?: StepState[];
     queryMode?: QueryMode;
     status?: ChatMessage["status"];
     hasResult?: boolean;
@@ -34,44 +32,32 @@ type ProcessSummaryState = {
     text: string;
 };
 
-function getProcessSummaryState(
-    events: ProcessEvent[],
-    steps: StepState[],
+function getQuerySummaryState(
     status: ChatMessage["status"] | undefined,
+    hasResult: boolean,
+    queryMode: QueryMode | undefined,
+    verified: boolean,
 ) : ProcessSummaryState {
     if (status === "cancelled") return { tone: "terminal", text: "查询已停止" };
     if (status === "error") {
         return { tone: "error", text: "查询失败" };
     }
-    const latestEvents = new Map<string, ProcessEvent>();
-    for (const event of events) {
-        latestEvents.set(event.step, event);
+    if (status === "streaming") return { tone: "running", text: "查询进行中" };
+    if (status === "done") return { tone: "terminal", text: "查询完成" };
+    if (hasResult) {
+        return { tone: "terminal", text: verified ? "结果已验证" : "结果未验证" };
     }
-    if (status === "done") {
+    if (queryMode) {
         return {
             tone: "terminal",
-            text: `查询完成，共 ${latestEvents.size || steps.length} 步`,
+            text: queryMode === "metric" ? "治理指标查询" : "智能 SQL 查询",
         };
     }
-
-    const running = [...latestEvents.values()].reverse().find(
-        (event) => event.status === "running",
-    ) ?? [...steps].reverse().find((step) => step.status === "running");
-    if (running) {
-        return { tone: "running", text: `正在执行：${running.message ?? running.step}` };
-    }
-    if (
-        [...latestEvents.values()].some((event) => event.status === "error") ||
-        steps.some((step) => step.status === "error")
-    ) {
-        return { tone: "error", text: "查询失败" };
-    }
-    return { tone: "terminal", text: `已执行 ${latestEvents.size || steps.length} 步` };
+    return { tone: "terminal", text: "查询已创建" };
 }
 
 export function QueryProcessPanel({
     processEvents = [],
-    steps = [],
     queryMode,
     status,
     hasResult = false,
@@ -79,15 +65,12 @@ export function QueryProcessPanel({
     errorCode,
 }: QueryProcessPanelProps) {
     const [open, setOpen] = useState(false);
-    const summaryState = getProcessSummaryState(processEvents, steps, status);
+    const summaryState = getQuerySummaryState(status, hasResult, queryMode, verified);
     const hasProcessState =
         processEvents.length > 0 ||
-        steps.length > 0 ||
         Boolean(queryMode) ||
         hasResult ||
-        status === "done" ||
-        status === "error" ||
-        status === "cancelled" ||
+        Boolean(status) ||
         Boolean(errorCode);
 
     if (!hasProcessState) return null;
@@ -130,33 +113,51 @@ export function QueryProcessPanel({
             >
                 <div className="min-h-0 overflow-hidden">
                     <div className="space-y-4 border-t border-ink/10 px-4 py-4">
-                        <div className="overflow-x-auto">
-                            <StepRail
-                                steps={steps}
-                                queryMode={queryMode}
-                                status={status}
-                                hasResult={hasResult}
-                                verified={verified}
-                                errorCode={errorCode}
-                            />
-                        </div>
-
                         {processEvents.length > 0 && (
-                            <ol className="space-y-2 border-t border-ink/10 pt-3">
-                                {processEvents.map((event, index) => (
-                                    <li
-                                        key={`${event.step}-${event.occurredAt}-${index}`}
-                                        className="grid min-w-[620px] grid-cols-[minmax(140px,0.35fr)_minmax(280px,1fr)_auto] items-baseline gap-3 text-xs leading-5"
-                                    >
-                                        <span className="font-mono text-indigo">{event.step}</span>
-                                        <span className="text-ink/75">{eventLabel(event)}</span>
-                                        <time dateTime={new Date(event.occurredAt).toISOString()} className="text-ink/45">
-                                            {formatTime(event.occurredAt)}
-                                        </time>
-                                    </li>
-                                ))}
-                            </ol>
+                            <div>
+                                <div className="font-serif text-sm font-bold text-ink">节点明细</div>
+                                <ol className="mt-2 space-y-2">
+                                    {processEvents.map((event, index) => (
+                                        <li
+                                            key={`${event.step}-${event.occurredAt}-${index}`}
+                                            className="grid min-w-[620px] grid-cols-[minmax(140px,0.35fr)_minmax(280px,1fr)_auto] items-baseline gap-3 text-xs leading-5"
+                                        >
+                                            <span className="font-mono text-indigo">{event.step}</span>
+                                            <span className="text-ink/75">{eventLabel(event)}</span>
+                                            <time
+                                                dateTime={new Date(event.occurredAt).toISOString()}
+                                                className="text-ink/45"
+                                            >
+                                                {formatTime(event.occurredAt)}
+                                            </time>
+                                        </li>
+                                    ))}
+                                </ol>
+                            </div>
                         )}
+
+                        <div className="grid gap-2 text-xs leading-5 text-ink/65 sm:grid-cols-3">
+                            <div>
+                                <div className="font-semibold text-ink/75">查询状态</div>
+                                <div>{summaryState.text}</div>
+                            </div>
+                            <div>
+                                <div className="font-semibold text-ink/75">查询方式</div>
+                                <div>
+                                    {queryMode === "metric"
+                                        ? "治理指标"
+                                        : queryMode === "sql"
+                                          ? "智能 SQL"
+                                          : "待确定"}
+                                </div>
+                            </div>
+                            <div>
+                                <div className="font-semibold text-ink/75">结果状态</div>
+                                <div>
+                                    {hasResult ? (verified ? "已验证" : "未验证") : "尚未返回"}
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

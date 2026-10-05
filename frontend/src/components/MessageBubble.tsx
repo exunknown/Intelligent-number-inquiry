@@ -70,16 +70,20 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
                 {!isUser && (
                     <>
                         <AnalysisPanel
+                            steps={message.steps}
                             metrics={message.metrics}
                             queryMode={message.queryMode}
                             routeReason={message.routeReason}
+                            status={message.status}
+                            hasResult={message.result !== undefined}
+                            verified={message.verified}
+                            errorCode={message.errorCode}
                             hiddenAttachedMetricIds={hiddenAttachedMetricIds}
                             onToggleAttachedMetric={toggleAttachedMetric}
                             onToggleAllAttachedMetrics={toggleAllAttachedMetrics}
                         />
                         <QueryProcessPanel
                             processEvents={message.processEvents}
-                            steps={message.steps}
                             queryMode={message.queryMode}
                             status={message.status}
                             hasResult={message.result !== undefined}
