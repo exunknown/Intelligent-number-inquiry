@@ -15,6 +15,7 @@ from app.agent.state import DataAgentState
 from app.conf.app_config import app_config
 from app.core.context import request_id_ctx_var
 from app.core.log import logger
+from app.core.query_error_catalog import present_query_error
 from app.core.query_errors import QueryExecutionError
 from app.core.query_metrics import QueryMetrics, get_query_metrics
 from app.core.resource_governance import (
@@ -27,7 +28,7 @@ from app.core.resource_governance import (
 from app.entities.auth import QueryPrincipal
 from app.entities.metric_display import MetricDisplayItem, safe_metric_display_items
 from app.entities.query_audit import QueryAuditRecord
-from app.entities.query_message import QueryMessageSnapshot
+from app.entities.query_message import QueryMessageSnapshot, QueryProcessEvent
 from app.entities.query_turn_context import QueryTurnContext
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
@@ -81,6 +82,38 @@ _AUDIT_EVENT_FIELDS = (
 )
 _SSE_PROTOCOL_VERSION = 1
 _SEMANTIC_SNAPSHOT_TIMEOUT_SECONDS = 1.0
+
+
+def _query_error_event(
+    error: QueryExecutionError,
+    route_reason: str | None = None,
+    query: str | None = None,
+) -> dict:
+    """将内部异常序列化为不泄露实现细节的 SSE 错误事件。"""
+
+    presentation = present_query_error(
+        error,
+        route_reason=route_reason,
+        query=query,
+    )
+    payload = {
+        "type": "error",
+        "code": presentation.code,
+        "message": presentation.message,
+        "retryable": error.retryable,
+    }
+    if presentation.suggestions:
+        payload["suggestions"] = list(presentation.suggestions)
+    if presentation.missing_requirements:
+        payload["missing_requirements"] = [
+            {
+                "type": requirement.type,
+                "label": requirement.label,
+                "example": requirement.example,
+            }
+            for requirement in presentation.missing_requirements
+        ]
+    return payload
 
 
 def build_turn_context_payload(
@@ -145,6 +178,39 @@ def _terminal_result_summary(event: dict) -> dict[str, object]:
     return summary
 
 
+def _safe_query_process_event(
+    event: object, occurred_at: object = None
+) -> QueryProcessEvent | None:
+    """投影可持久化的过程事件，拒绝未知状态并限制展示消息长度。"""
+
+    if not isinstance(event, dict):
+        return None
+    step = event.get("step")
+    status = event.get("status")
+    if (
+        not isinstance(step, str)
+        or not step
+        or len(step) > 128
+        or status not in {"running", "success", "error"}
+    ):
+        return None
+    if not isinstance(occurred_at, datetime):
+        occurred_at = datetime.now(timezone.utc)
+    elif occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+    message = event.get("message")
+    if not isinstance(message, str):
+        message = None
+    elif len(message) > 512:
+        message = message[:512]
+    return QueryProcessEvent(
+        step=step,
+        status=status,
+        message=message,
+        occurred_at=occurred_at,
+    )
+
+
 async def _lookup_user_message_sequence(
     repository: QueryMessageRepository | None,
     session_id: str,
@@ -180,6 +246,7 @@ def build_query_message_snapshot(
     """把允许展示的 SSE 事件转换成安全的会话消息快照。"""
 
     steps: dict[str, str] = {}
+    process_events: list[QueryProcessEvent] = []
     metrics: list[MetricDisplayItem] = []
     query_mode = None
     route_reason = None
@@ -187,10 +254,17 @@ def build_query_message_snapshot(
     for event in events:
         if not isinstance(event, dict):
             continue
-        event_type = event.get("type")
+        stamped_event = event.get("event") if "event" in event else event
+        occurred_at = event.get("occurred_at") if "event" in event else None
+        event_type = (
+            stamped_event.get("type") if isinstance(stamped_event, dict) else None
+        )
         if event_type == "progress":
-            step = event.get("step")
-            status = event.get("status")
+            process_event = _safe_query_process_event(stamped_event, occurred_at)
+            if process_event is not None:
+                process_events.append(process_event)
+            step = stamped_event.get("step")
+            status = stamped_event.get("status")
             if (
                 isinstance(step, str)
                 and isinstance(status, str)
@@ -224,6 +298,7 @@ def build_query_message_snapshot(
             status="done",
             content=content,
             steps=steps,
+            process_events=process_events,
             metrics=metrics,
             query_mode=terminal_event.get("source") or query_mode,
             route_reason=route_reason,
@@ -239,6 +314,7 @@ def build_query_message_snapshot(
             status="cancelled",
             content="已停止本次查询。",
             steps=steps,
+            process_events=process_events,
             metrics=metrics,
             query_mode=query_mode,
             route_reason=route_reason,
@@ -248,6 +324,7 @@ def build_query_message_snapshot(
         status="error",
         content="这次查询没有成功。",
         steps=steps,
+        process_events=process_events,
         metrics=metrics,
         query_mode=query_mode,
         route_reason=route_reason,
@@ -455,12 +532,7 @@ class QueryService:
                 max_embedding_calls=app_config.resource.max_embedding_calls,
             )
         except QueryExecutionError as e:
-            error = {
-                "type": "error",
-                "code": e.code,
-                "message": e.message,
-                "retryable": e.retryable,
-            }
+            error = _query_error_event(e, query=query)
             yield f"data: {json.dumps(error, ensure_ascii=False)}\n\n"
             return
 
@@ -674,7 +746,15 @@ class QueryService:
                         "metrics",
                         "route",
                     }:
-                        snapshot_events.append(dict(chunk))
+                        if chunk.get("type") == "progress":
+                            snapshot_events.append(
+                                {
+                                    "event": dict(chunk),
+                                    "occurred_at": datetime.now(timezone.utc),
+                                }
+                            )
+                        else:
+                            snapshot_events.append(dict(chunk))
                     if isinstance(chunk, dict) and chunk.get("type") == "route":
                         audit["query_mode"] = chunk.get("mode")
                         audit["route_reason"] = chunk.get("reason")
@@ -709,12 +789,15 @@ class QueryService:
             logger.warning("Question execution exceeded resource deadline")
             audit["outcome"] = "error"
             audit["error_code"] = "resource_deadline_exceeded"
-            error = {
-                "type": "error",
-                "code": "resource_deadline_exceeded",
-                "message": "问数请求已超过时间预算",
-                "retryable": False,
-            }
+            error = _query_error_event(
+                QueryExecutionError(
+                    "resource_deadline_exceeded",
+                    "问数请求已超过时间预算",
+                    False,
+                ),
+                route_reason=audit["route_reason"],
+                query=query,
+            )
             if not terminal_sent:
                 terminal_sent = True
                 terminal_event = error
@@ -727,12 +810,11 @@ class QueryService:
             logger.error("Question execution failed code={}", e.code)
             audit["outcome"] = "error"
             audit["error_code"] = e.code
-            error = {
-                "type": "error",
-                "code": e.code,
-                "message": e.message,
-                "retryable": e.retryable,
-            }
+            error = _query_error_event(
+                e,
+                route_reason=audit["route_reason"],
+                query=query,
+            )
             if not terminal_sent:
                 terminal_sent = True
                 terminal_event = error
