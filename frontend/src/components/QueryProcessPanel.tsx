@@ -27,34 +27,46 @@ function eventLabel(event: ProcessEvent) {
               : `已完成：${event.step}`);
 }
 
-function processSummary(
+type ProcessSummaryTone = "running" | "error" | "terminal";
+
+type ProcessSummaryState = {
+    tone: ProcessSummaryTone;
+    text: string;
+};
+
+function getProcessSummaryState(
     events: ProcessEvent[],
     steps: StepState[],
     status: ChatMessage["status"] | undefined,
-) {
-    if (status === "cancelled") return "查询已停止";
+) : ProcessSummaryState {
+    if (status === "cancelled") return { tone: "terminal", text: "查询已停止" };
     if (status === "error") {
-        return "查询失败";
+        return { tone: "error", text: "查询失败" };
     }
     const latestEvents = new Map<string, ProcessEvent>();
     for (const event of events) {
         latestEvents.set(event.step, event);
     }
     if (status === "done") {
-        return `查询完成，共 ${latestEvents.size || steps.length} 步`;
+        return {
+            tone: "terminal",
+            text: `查询完成，共 ${latestEvents.size || steps.length} 步`,
+        };
     }
 
     const running = [...latestEvents.values()].reverse().find(
         (event) => event.status === "running",
     ) ?? [...steps].reverse().find((step) => step.status === "running");
-    if (running) return `正在执行：${running.message ?? running.step}`;
+    if (running) {
+        return { tone: "running", text: `正在执行：${running.message ?? running.step}` };
+    }
     if (
         [...latestEvents.values()].some((event) => event.status === "error") ||
         steps.some((step) => step.status === "error")
     ) {
-        return "查询失败";
+        return { tone: "error", text: "查询失败" };
     }
-    return `已执行 ${latestEvents.size || steps.length} 步`;
+    return { tone: "terminal", text: `已执行 ${latestEvents.size || steps.length} 步` };
 }
 
 export function QueryProcessPanel({
@@ -67,6 +79,7 @@ export function QueryProcessPanel({
     errorCode,
 }: QueryProcessPanelProps) {
     const [open, setOpen] = useState(false);
+    const summaryState = getProcessSummaryState(processEvents, steps, status);
     const hasProcessState =
         processEvents.length > 0 ||
         steps.length > 0 ||
@@ -91,17 +104,14 @@ export function QueryProcessPanel({
                 <span
                     className={cn(
                         "min-w-0 flex-1 truncate text-xs",
-                        status === "error" ||
-                            steps.some((step) => step.status === "error") ||
-                            processEvents.some((event) => event.status === "error")
+                        summaryState.tone === "error"
                             ? "text-oxide"
-                            : steps.some((step) => step.status === "running") ||
-                                processEvents.some((event) => event.status === "running")
+                            : summaryState.tone === "running"
                               ? "text-cinnabar"
                               : "text-ink/45",
                     )}
                 >
-                    {processSummary(processEvents, steps, status)}
+                    {summaryState.text}
                 </span>
                 <ChevronDown
                     className={cn(
