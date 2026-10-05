@@ -28,7 +28,11 @@ from app.core.resource_governance import (
 from app.entities.auth import QueryPrincipal
 from app.entities.metric_display import MetricDisplayItem, safe_metric_display_items
 from app.entities.query_audit import QueryAuditRecord
-from app.entities.query_message import QueryMessageSnapshot, QueryProcessEvent
+from app.entities.query_message import (
+    QueryMessageSnapshot,
+    QueryProcessEvent,
+    safe_query_missing_requirements,
+)
 from app.entities.query_turn_context import QueryTurnContext
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
@@ -191,6 +195,7 @@ def _safe_query_process_event(
         not isinstance(step, str)
         or not step
         or len(step) > 128
+        or not isinstance(status, str)
         or status not in {"running", "success", "error"}
     ):
         return None
@@ -199,10 +204,10 @@ def _safe_query_process_event(
     elif occurred_at.tzinfo is None:
         occurred_at = occurred_at.replace(tzinfo=timezone.utc)
     message = event.get("message")
-    if not isinstance(message, str):
-        message = None
-    elif len(message) > 512:
-        message = message[:512]
+    if message is not None and not isinstance(message, str):
+        return None
+    if isinstance(message, str) and len(message) > 512:
+        return None
     return QueryProcessEvent(
         step=step,
         status=status,
@@ -299,6 +304,7 @@ def build_query_message_snapshot(
             content=content,
             steps=steps,
             process_events=process_events,
+            missing_requirements=[],
             metrics=metrics,
             query_mode=terminal_event.get("source") or query_mode,
             route_reason=route_reason,
@@ -315,6 +321,7 @@ def build_query_message_snapshot(
             content="已停止本次查询。",
             steps=steps,
             process_events=process_events,
+            missing_requirements=[],
             metrics=metrics,
             query_mode=query_mode,
             route_reason=route_reason,
@@ -325,6 +332,9 @@ def build_query_message_snapshot(
         content="这次查询没有成功。",
         steps=steps,
         process_events=process_events,
+        missing_requirements=safe_query_missing_requirements(
+            terminal_event.get("missing_requirements")
+        ),
         metrics=metrics,
         query_mode=query_mode,
         route_reason=route_reason,

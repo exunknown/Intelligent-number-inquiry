@@ -10,7 +10,9 @@ from app.entities.metric_display import safe_metric_display_items
 from app.entities.query_message import (
     QueryMessage,
     QueryMessageSnapshot,
+    QueryMissingRequirement,
     QueryProcessEvent,
+    safe_query_missing_requirements,
 )
 from app.models.query_message import QueryMessageMySQL
 from app.models.query_session import QuerySessionMySQL
@@ -53,6 +55,9 @@ class QueryMessageRepository:
             occurred_at = item.get("occurred_at")
             if (
                 not isinstance(step, str)
+                or not step
+                or len(step) > 128
+                or not isinstance(status, str)
                 or status not in {"running", "success", "error"}
                 or not isinstance(occurred_at, str)
             ):
@@ -62,8 +67,10 @@ class QueryMessageRepository:
             except ValueError:
                 continue
             message = item.get("message")
-            if message is not None and not isinstance(message, str):
-                message = None
+            if message is not None and (
+                not isinstance(message, str) or len(message) > 512
+            ):
+                continue
             events.append(
                 QueryProcessEvent(
                     step=step,
@@ -73,6 +80,19 @@ class QueryMessageRepository:
                 )
             )
         return events
+
+    @staticmethod
+    def _serialize_missing_requirements(
+        requirements: list[QueryMissingRequirement],
+    ) -> list[dict[str, str]]:
+        return [
+            {
+                "type": requirement.type,
+                "label": requirement.label,
+                "example": requirement.example,
+            }
+            for requirement in requirements
+        ]
 
     @staticmethod
     def _to_entity(model: QueryMessageMySQL) -> QueryMessage:
@@ -88,9 +108,16 @@ class QueryMessageRepository:
             steps=model.steps_json,
             process_events=(
                 QueryMessageRepository._deserialize_process_events(
-                    model.process_events_json
+                    getattr(model, "process_events_json", None)
                 )
-                if model.process_events_json is not None
+                if getattr(model, "process_events_json", None) is not None
+                else None
+            ),
+            missing_requirements=(
+                safe_query_missing_requirements(
+                    getattr(model, "missing_requirements_json", None)
+                )
+                if getattr(model, "missing_requirements_json", None) is not None
                 else None
             ),
             metrics=(
@@ -163,6 +190,11 @@ class QueryMessageRepository:
             steps_json=snapshot.steps if snapshot is not None else None,
             process_events_json=(
                 self._serialize_process_events(snapshot.process_events)
+                if snapshot is not None
+                else None
+            ),
+            missing_requirements_json=(
+                self._serialize_missing_requirements(snapshot.missing_requirements)
                 if snapshot is not None
                 else None
             ),
