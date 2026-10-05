@@ -82,9 +82,13 @@ function sanitizeMissingRequirements(
     });
 }
 
-function messageTime(value: string) {
+function parseMessageTime(value: string): number | undefined {
     const parsed = new Date(value).getTime();
-    return Number.isFinite(parsed) ? parsed : 0;
+    return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function messageTime(value: string) {
+    return parseMessageTime(value) ?? 0;
 }
 
 function queryMode(value: string | null | undefined): QueryMode | undefined {
@@ -127,8 +131,8 @@ export function hydrateProcessEvents(
             ) {
                 return [];
             }
-            const parsedOccurredAt = messageTime(occurredAt);
-            if (!Number.isFinite(parsedOccurredAt)) return [];
+            const parsedOccurredAt = parseMessageTime(occurredAt);
+            if (parsedOccurredAt === undefined) return [];
             const message = candidate.message;
             if (message !== null && message !== undefined && typeof message !== "string") {
                 return [];
