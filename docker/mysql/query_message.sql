@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS query_message
     status               VARCHAR(16) NOT NULL,
     steps_json           JSON,
     process_events_json  JSON NULL,
+    missing_requirements_json JSON NULL,
     metrics_json         JSON,
     query_mode           VARCHAR(16),
     route_reason         VARCHAR(64),
