@@ -39,7 +39,7 @@ import {
     semanticBuildTabForPath,
 } from "./lib/semanticModel";
 import { capabilityPresentation, shouldAutoScrollChat } from "./lib/userManagement";
-import type { AgentEvent, ChatMessage, StepState } from "./types/agent";
+import type { AgentEvent, ChatMessage, ProcessEvent, StepState } from "./types/agent";
 
 const examples = [
     "统计 2025 年第一季度各大区的 GMV，并按 GMV 从高到低排序",
@@ -57,9 +57,25 @@ function upsertStep(steps: StepState[] = [], event: Extract<AgentEvent, { type: 
     next.push({
         step: event.step,
         status: event.status,
+        message: event.message,
         updatedAt: Date.now(),
     });
     return next;
+}
+
+function appendProcessEvent(
+    processEvents: ProcessEvent[] = [],
+    event: Extract<AgentEvent, { type: "progress" }>,
+) {
+    return [
+        ...processEvents,
+        {
+            step: event.step,
+            status: event.status,
+            message: event.message ?? null,
+            occurredAt: Date.now(),
+        },
+    ];
 }
 
 function assertNever(value: never): never {
@@ -408,10 +424,12 @@ export default function App({ username }: AppProps) {
                             return {
                                 ...message,
                                 content:
-                                    event.status === "running"
+                                    event.message ??
+                                    (event.status === "running"
                                         ? `正在执行：${event.step}`
-                                        : message.content,
+                                        : message.content),
                                 steps: upsertStep(message.steps, event),
+                                processEvents: appendProcessEvent(message.processEvents, event),
                             };
                         case "metrics":
                             return {
@@ -448,6 +466,8 @@ export default function App({ username }: AppProps) {
                                 error: event.message,
                                 errorCode: event.code,
                                 retryable: event.retryable,
+                                suggestions: event.suggestions,
+                                missingRequirements: event.missing_requirements,
                             };
                         case "heartbeat":
                             return message;

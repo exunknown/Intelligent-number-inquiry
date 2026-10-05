@@ -5,6 +5,7 @@
 import { Bot, Check, Copy, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AnalysisPanel } from "./AnalysisPanel";
+import { QueryProcessPanel } from "./QueryProcessPanel";
 import { ResultTable } from "./ResultTable";
 import { cn, formatTime, toClipboardText } from "../lib/format";
 import { attachedMetricEntries } from "../lib/metricDisplay";
@@ -67,19 +68,25 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
 
             <div className={cn("max-w-[920px] flex-1", isUser && "flex max-w-[760px] justify-end")}>
                 {!isUser && (
-                    <AnalysisPanel
-                        steps={message.steps}
-                        metrics={message.metrics}
-                        queryMode={message.queryMode}
-                        routeReason={message.routeReason}
-                        status={message.status}
-                        hasResult={message.result !== undefined}
-                        verified={message.verified}
-                        errorCode={message.errorCode}
-                        hiddenAttachedMetricIds={hiddenAttachedMetricIds}
-                        onToggleAttachedMetric={toggleAttachedMetric}
-                        onToggleAllAttachedMetrics={toggleAllAttachedMetrics}
-                    />
+                    <>
+                        <AnalysisPanel
+                            metrics={message.metrics}
+                            queryMode={message.queryMode}
+                            routeReason={message.routeReason}
+                            hiddenAttachedMetricIds={hiddenAttachedMetricIds}
+                            onToggleAttachedMetric={toggleAttachedMetric}
+                            onToggleAllAttachedMetrics={toggleAllAttachedMetrics}
+                        />
+                        <QueryProcessPanel
+                            processEvents={message.processEvents}
+                            steps={message.steps}
+                            queryMode={message.queryMode}
+                            status={message.status}
+                            hasResult={message.result !== undefined}
+                            verified={message.verified}
+                            errorCode={message.errorCode}
+                        />
+                    </>
                 )}
 
                 <div
@@ -141,24 +148,32 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
                                 </div>
                             )}
                             {message.error}
+                            {message.missingRequirements &&
+                                message.missingRequirements.length > 0 && (
+                                    <div className="mt-3">
+                                        <div className="font-semibold text-ink/80">
+                                            还需要补充
+                                        </div>
+                                        <ul className="mt-1 list-disc space-y-1 pl-5 text-ink/75">
+                                            {message.missingRequirements.map((item) => (
+                                                <li key={item.type}>
+                                                    {item.label}，例如：{item.example}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            {message.suggestions && message.suggestions.length > 0 && (
+                                <ul className="mt-2 list-disc space-y-1 pl-5 text-ink/75">
+                                    {message.suggestions.map((suggestion) => (
+                                        <li key={suggestion}>{suggestion}</li>
+                                    ))}
+                                </ul>
+                            )}
                             {message.retryable && message.errorCode?.startsWith("cube_") && (
                                 <span className="ml-2 whitespace-nowrap font-semibold">可重试</span>
                             )}
                         </div>
-                    )}
-
-                    {!isUser && message.result !== undefined && (
-                        <ResultTable
-                            data={message.result}
-                            source={message.queryMode}
-                            verified={message.verified}
-                            warning={message.warning}
-                            exportId={message.exportId}
-                            rowCount={message.rowCount}
-                            truncated={message.truncated}
-                            metrics={message.metrics}
-                            hiddenAttachedMetricIds={hiddenAttachedMetricIds}
-                        />
                     )}
 
                     <div
@@ -170,6 +185,20 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
                         {formatTime(message.createdAt)}
                     </div>
                 </div>
+
+                {!isUser && message.result !== undefined && (
+                    <ResultTable
+                        data={message.result}
+                        source={message.queryMode}
+                        verified={message.verified}
+                        warning={message.warning}
+                        exportId={message.exportId}
+                        rowCount={message.rowCount}
+                        truncated={message.truncated}
+                        metrics={message.metrics}
+                        hiddenAttachedMetricIds={hiddenAttachedMetricIds}
+                    />
+                )}
             </div>
 
             {isUser && (

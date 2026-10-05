@@ -5,44 +5,33 @@
  */
 import { ChevronDown, Route } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { StepRail } from "./StepRail";
 import { cn } from "../lib/format";
 import { attachedMetricEntries, metricDisplayEntries, metricLabel } from "../lib/metricDisplay";
-import type { ChatMessage, MetricItem, QueryMode, StepState } from "../types/agent";
+import { routeReasonLabel } from "../lib/queryDisplay";
+import type { MetricItem, QueryMode } from "../types/agent";
 
 type AnalysisPanelProps = {
-    steps?: StepState[];
     metrics?: MetricItem[];
     queryMode?: QueryMode;
     routeReason?: string;
-    status?: ChatMessage["status"];
-    hasResult?: boolean;
-    verified?: boolean;
-    errorCode?: string;
     hiddenAttachedMetricIds?: ReadonlySet<string>;
     onToggleAttachedMetric?: (memberId: string, visible: boolean) => void;
     onToggleAllAttachedMetrics?: (visible: boolean) => void;
 };
 
 export function AnalysisPanel({
-    steps = [],
     metrics,
     queryMode,
     routeReason,
-    status,
-    hasResult = false,
-    verified = false,
-    errorCode,
     hiddenAttachedMetricIds = new Set(),
     onToggleAttachedMetric,
     onToggleAllAttachedMetrics,
 }: AnalysisPanelProps) {
     const [open, setOpen] = useState(false);
 
-    const runningStep = steps.find((item) => item.status === "running")?.step ?? null;
-    const doneCount = steps.filter((item) => item.status === "success").length;
     const attachedMetrics = attachedMetricEntries(metrics);
     const summaryMetrics = metrics?.map(metricLabel) ?? [];
+    const displayedRouteReason = routeReasonLabel(routeReason);
     const allAttachedVisible = attachedMetrics.every(
         (metric) => !hiddenAttachedMetricIds.has(metric.member_id),
     );
@@ -57,15 +46,13 @@ export function AnalysisPanel({
         }
     }, [isPartiallyVisible]);
 
-    if (steps.length === 0 && !queryMode && !hasResult && status !== "error" && !errorCode) {
+    if (!queryMode && metricDisplayEntries(metrics).length === 0) {
         return null;
     }
 
-    const summary = runningStep
-        ? `正在执行：${runningStep}`
-        : summaryMetrics.length > 0
-          ? `查询指标：${summaryMetrics.join("，")}`
-          : `已执行 ${doneCount} 步`;
+    const summary = summaryMetrics.length > 0
+        ? `查询指标：${summaryMetrics.join("，")}`
+        : "查询分析";
 
     const toggle = () => {
         setOpen((current) => !current);
@@ -83,7 +70,7 @@ export function AnalysisPanel({
                 <span
                     className={cn(
                         "min-w-0 flex-1 truncate text-xs",
-                        runningStep ? "text-cinnabar" : "text-ink/45",
+                        "text-ink/45",
                     )}
                 >
                     {summary}
@@ -112,22 +99,13 @@ export function AnalysisPanel({
                                 <span className="shrink-0 whitespace-nowrap font-mono text-indigo">
                                     {queryMode === "metric" ? "治理指标" : "智能 SQL"}
                                 </span>
-                                {routeReason && (
-                                    <span className="min-w-0 truncate text-ink/45" title={routeReason}>
-                                        {routeReason}
+                                {displayedRouteReason && (
+                                    <span className="min-w-0 truncate text-ink/45">
+                                        {displayedRouteReason}
                                     </span>
                                 )}
                             </div>
                         )}
-
-                        <StepRail
-                            steps={steps}
-                            queryMode={queryMode}
-                            status={status}
-                            hasResult={hasResult}
-                            verified={verified}
-                            errorCode={errorCode}
-                        />
 
                         <div className="border-t border-ink/10 pt-3">
                             <div className="font-serif text-sm font-bold text-ink">指标信息</div>
