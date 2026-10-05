@@ -18,6 +18,25 @@ class MetricDisplayEntryResponse(BaseModel):
     compatibility_note: str | None = None
 
 
+class MissingRequirementResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["metric", "dimension", "time_range", "field", "data_scope"]
+    label: str
+    example: str
+
+
+class ProcessEventResponse(BaseModel):
+    """Strict public shape for persisted query process events."""
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+    step: str
+    status: Literal["running", "success", "error"]
+    message: str | None = None
+    occurred_at: datetime
+
+
 MetricDisplayItemResponse = Annotated[
     str | MetricDisplayEntryResponse,
     Field(union_mode="left_to_right"),
@@ -47,4 +66,6 @@ class QueryMessageResponse(BaseModel):
     error: str | None
     error_code: str | None
     retryable: bool | None
+    missing_requirements: list[MissingRequirementResponse] | None = None
+    process_events: list[ProcessEventResponse] | None = None
     created_at: datetime

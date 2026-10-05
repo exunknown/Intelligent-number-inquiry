@@ -8,6 +8,7 @@ export type ProgressEvent = {
   type: "progress";
   step: string;
   status: ProgressStatus;
+  message?: string;
 };
 
 export type MetricDisplayEntry = {
@@ -46,11 +47,19 @@ export type ResultEvent = {
   export_expires_at?: string;
 };
 
+export type MissingRequirement = {
+  type: string;
+  label: string;
+  example: string;
+};
+
 export type ErrorEvent = {
   type: "error";
   code: string;
   message: string;
   retryable: boolean;
+  suggestions?: string[];
+  missing_requirements?: MissingRequirement[];
 };
 
 export type HeartbeatEvent = {
@@ -68,7 +77,15 @@ export type AgentEvent =
 export type StepState = {
   step: string;
   status: ProgressStatus;
+  message?: string;
   updatedAt: number;
+};
+
+export type ProcessEvent = {
+  step: string;
+  status: ProgressStatus;
+  message?: string | null;
+  occurredAt: number;
 };
 
 export type ChatMessage = {
@@ -78,6 +95,7 @@ export type ChatMessage = {
   createdAt: number;
   status?: "streaming" | "done" | "error" | "cancelled";
   steps?: StepState[];
+  processEvents?: ProcessEvent[];
   metrics?: MetricItem[];
   queryMode?: QueryMode;
   routeReason?: string;
@@ -87,6 +105,8 @@ export type ChatMessage = {
   error?: string;
   errorCode?: string;
   retryable?: boolean;
+  suggestions?: string[];
+  missingRequirements?: MissingRequirement[];
   rowCount?: number;
   truncated?: boolean;
   exportId?: string;

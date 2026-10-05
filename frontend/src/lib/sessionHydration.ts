@@ -1,6 +1,7 @@
 import type {
     ChatMessage,
     MetricDisplayEntry,
+    ProcessEvent,
     ProgressStatus,
     QueryMode,
     StepState,
@@ -43,6 +44,44 @@ function sanitizeMetricItems(value: unknown): ChatMessage["metrics"] {
     });
 }
 
+function sanitizeMissingRequirements(
+    value: unknown,
+): ChatMessage["missingRequirements"] {
+    if (!Array.isArray(value)) return [];
+    const allowedTypes = new Set([
+        "metric",
+        "dimension",
+        "time_range",
+        "field",
+        "data_scope",
+    ]);
+    const seenTypes = new Set<string>();
+    return value.slice(0, 8).flatMap((item): NonNullable<ChatMessage["missingRequirements"]> => {
+        if (!item || typeof item !== "object") return [];
+        const candidate = item as Record<string, unknown>;
+        if (
+            typeof candidate.type !== "string" ||
+            !candidate.type ||
+            !allowedTypes.has(candidate.type) ||
+            seenTypes.has(candidate.type) ||
+            typeof candidate.label !== "string" ||
+            !candidate.label ||
+            typeof candidate.example !== "string" ||
+            !candidate.example
+        ) {
+            return [];
+        }
+        seenTypes.add(candidate.type);
+        return [
+            {
+                type: candidate.type,
+                label: candidate.label.slice(0, 128),
+                example: candidate.example.slice(0, 128),
+            },
+        ];
+    });
+}
+
 function messageTime(value: string) {
     const parsed = new Date(value).getTime();
     return Number.isFinite(parsed) ? parsed : 0;
@@ -65,6 +104,50 @@ function hydrateSteps(
         step,
         status: progressStatus(status),
         updatedAt,
+    }));
+}
+
+export function hydrateProcessEvents(
+    processEvents: QueryMessageResponse["process_events"],
+    steps: Record<string, string> | null | undefined,
+    createdAt: number,
+): ProcessEvent[] | undefined {
+    if (processEvents !== null && processEvents !== undefined) {
+        if (!Array.isArray(processEvents)) return [];
+        return processEvents.flatMap((item): ProcessEvent[] => {
+            if (!item || typeof item !== "object") return [];
+            const candidate = item as Record<string, unknown>;
+            const status = candidate.status;
+            const occurredAt = candidate.occurred_at;
+            if (
+                typeof candidate.step !== "string" ||
+                !candidate.step ||
+                (status !== "running" && status !== "success" && status !== "error") ||
+                typeof occurredAt !== "string"
+            ) {
+                return [];
+            }
+            const parsedOccurredAt = messageTime(occurredAt);
+            if (!Number.isFinite(parsedOccurredAt)) return [];
+            const message = candidate.message;
+            if (message !== null && message !== undefined && typeof message !== "string") {
+                return [];
+            }
+            return [{
+                step: candidate.step,
+                status,
+                message: message ?? null,
+                occurredAt: parsedOccurredAt,
+            }];
+        });
+    }
+
+    if (!steps || Object.keys(steps).length === 0) return undefined;
+    return Object.entries(steps).map(([step, status]) => ({
+        step,
+        status: progressStatus(status),
+        message: null,
+        occurredAt: createdAt,
     }));
 }
 
@@ -94,6 +177,7 @@ function hydrateQueryMessage(message: QueryMessageResponse): ChatMessage {
     return {
         ...base,
         steps: hydrateSteps(message.steps, createdAt),
+        processEvents: hydrateProcessEvents(message.process_events, message.steps, createdAt),
         metrics: message.metrics ? sanitizeMetricItems(message.metrics) : undefined,
         queryMode: queryMode(message.query_mode),
         routeReason: message.route_reason ?? undefined,
@@ -105,6 +189,7 @@ function hydrateQueryMessage(message: QueryMessageResponse): ChatMessage {
         error: message.error ?? undefined,
         errorCode: message.error_code ?? undefined,
         retryable: message.retryable ?? undefined,
+        missingRequirements: sanitizeMissingRequirements(message.missing_requirements),
         rowCount: message.row_count ?? undefined,
         truncated: message.truncated ?? undefined,
         exportId: message.export_id ?? undefined,
