@@ -11,6 +11,7 @@
     "lint": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
+    "@antv/g6": "^5.1.1",
     "@vitejs/plugin-react": "^5.1.2",
     "@xyflow/react": "^12.12.0",
     "keycloak-js": "26.2.4",

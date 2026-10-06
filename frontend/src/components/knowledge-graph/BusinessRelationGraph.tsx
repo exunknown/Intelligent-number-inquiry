@@ -1,17 +1,9 @@
-import "@xyflow/react/dist/style.css";
-import { Background, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, applyNodeChanges, type Edge, type Node, type NodeProps, type NodeChange } from "@xyflow/react";
-import { useEffect, useMemo, useState } from "react";
-import { knowledgeGraphNodeTypeLabel, knowledgeGraphRelationLabel, type KnowledgeGraphGraphResponse, type KnowledgeGraphNode } from "../../lib/knowledgeGraph";
-
-type GraphNodeData = { node: KnowledgeGraphNode };
-type GraphNode = Node<GraphNodeData>;
-
-function BusinessNode({ data, selected }: NodeProps<GraphNode>) {
-    const tone = data.node.node_type === "product" ? "border-indigo/40 bg-indigo/5" : data.node.node_type === "category" ? "border-amber/40 bg-amber/5" : data.node.node_type === "customer_segment" ? "border-cinnabar/40 bg-cinnabar/5" : "border-pine/30 bg-pine/5";
-    return <div className={`relative min-w-[156px] border px-3 py-2.5 shadow-line ${tone} ${selected ? "ring-2 ring-cinnabar/35" : ""}`}><Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-cinnabar" /><div className="truncate text-sm font-semibold text-ink" title={data.node.title}>{data.node.title}</div><div className="mt-1 text-[10px] text-ink/50">{knowledgeGraphNodeTypeLabel(data.node.node_type)}</div><Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-cinnabar" /></div>;
-}
-
-const nodeTypes = { business: BusinessNode };
+import { Graph, type IEvent } from "@antv/g6";
+import { useEffect, useRef } from "react";
+import {
+    knowledgeGraphRelationLabel,
+    type KnowledgeGraphGraphResponse,
+} from "../../lib/knowledgeGraph";
 
 type BusinessRelationGraphProps = {
     graph: KnowledgeGraphGraphResponse | null;
@@ -22,19 +14,172 @@ type BusinessRelationGraphProps = {
     onSelectEdge: (edgeId: string) => void;
 };
 
-function layout(nodes: KnowledgeGraphNode[]): GraphNode[] {
-    return nodes.map((node, index) => ({ id: node.node_id, type: "business", position: { x: 80 + (index % 4) * 245, y: 60 + Math.floor(index / 4) * 140 }, data: { node } }));
+const nodeTones: Record<string, { fill: string; stroke: string; label: string }> = {
+    product: { fill: "#DBEAFE", stroke: "#2563EB", label: "商品" },
+    category: { fill: "#FEF3C7", stroke: "#D97706", label: "品类" },
+    customer_segment: { fill: "#FCE7F3", stroke: "#DB2777", label: "客户群体" },
+};
+
+function toneForType(nodeType: string) {
+    return nodeTones[nodeType] ?? { fill: "#D1FAE5", stroke: "#059669", label: "经营对象" };
 }
 
-export function BusinessRelationGraph({ graph, loading, selectedNodeId, selectedEdgeId, onSelectNode, onSelectEdge }: BusinessRelationGraphProps) {
-    const initialNodes = useMemo(() => layout(graph?.nodes ?? []), [graph]);
-    const [nodes, setNodes] = useState<GraphNode[]>(initialNodes);
-    useEffect(() => setNodes(initialNodes), [initialNodes]);
-    const edges = useMemo<Edge[]>(() => {
-        const nodeIds = new Set((graph?.nodes ?? []).map((node) => node.node_id));
-        return (graph?.edges ?? []).filter((edge) => nodeIds.has(edge.source_node_id) && nodeIds.has(edge.target_node_id)).map((edge) => ({ id: edge.edge_id, source: edge.source_node_id, target: edge.target_node_id, label: knowledgeGraphRelationLabel(edge.edge_type), markerEnd: { type: MarkerType.ArrowClosed, color: selectedEdgeId === edge.edge_id ? "#0E7490" : "#94A3B8" }, style: { stroke: selectedEdgeId === edge.edge_id ? "#0E7490" : "#94A3B8", strokeWidth: selectedEdgeId === edge.edge_id ? 2.4 : 1.2 }, labelStyle: { fill: "#64748B", fontSize: 10 }, labelBgStyle: { fill: "#FFFFFF", fillOpacity: 0.88 } }));
-    }, [graph, selectedEdgeId]);
+function eventTargetId(event: IEvent) {
+    if (!("target" in event)) return null;
+    const target = event.target as { id?: string | number };
+    return target.id === undefined ? null : String(target.id);
+}
+
+function toGraphData(graph: KnowledgeGraphGraphResponse) {
+    const nodeIds = new Set(graph.nodes.map((node) => node.node_id));
+
+    return {
+        nodes: graph.nodes.map((node) => ({
+            id: node.node_id,
+            data: {
+                title: node.title,
+                nodeType: node.node_type,
+            },
+        })),
+        edges: graph.edges
+            .filter((edge) => nodeIds.has(edge.source_node_id) && nodeIds.has(edge.target_node_id))
+            .map((edge) => ({
+                id: edge.edge_id,
+                source: edge.source_node_id,
+                target: edge.target_node_id,
+                data: { label: knowledgeGraphRelationLabel(edge.edge_type) },
+            })),
+    };
+}
+
+export function BusinessRelationGraph({
+    graph,
+    loading,
+    selectedNodeId,
+    selectedEdgeId,
+    onSelectNode,
+    onSelectEdge,
+}: BusinessRelationGraphProps) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const graphRef = useRef<Graph | null>(null);
+    const previousSelectionRef = useRef<string[]>([]);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container || !graph || graph.nodes.length === 0) return;
+
+        const instance = new Graph({
+            container,
+            autoFit: "view",
+            padding: 56,
+            data: toGraphData(graph),
+            node: {
+                type: "circle",
+                style: {
+                    size: 24,
+                    fill: (datum) => toneForType(String(datum.data?.nodeType)).fill,
+                    stroke: (datum) => toneForType(String(datum.data?.nodeType)).stroke,
+                    lineWidth: 2,
+                    labelText: (datum) => String(datum.data?.title ?? datum.id),
+                    labelFill: "#1F2937",
+                    labelFontSize: 11,
+                    labelPlacement: "bottom",
+                    labelOffsetY: 8,
+                    labelMaxWidth: 150,
+                },
+                state: {
+                    selected: {
+                        lineWidth: 4,
+                        stroke: "#C2410C",
+                        halo: true,
+                        haloStroke: "#C2410C",
+                        haloLineWidth: 8,
+                        haloStrokeOpacity: 0.18,
+                    },
+                },
+            },
+            edge: {
+                type: "quadratic",
+                style: {
+                    stroke: "#94A3B8",
+                    lineWidth: 1.2,
+                    endArrow: true,
+                    labelText: (datum) => String(datum.data?.label ?? ""),
+                    labelFill: "#64748B",
+                    labelFontSize: 10,
+                    labelBackground: true,
+                    labelBackgroundFill: "#FFFFFF",
+                    labelBackgroundOpacity: 0.86,
+                    labelPadding: [2, 4],
+                },
+                state: {
+                    selected: {
+                        stroke: "#0E7490",
+                        lineWidth: 2.6,
+                    },
+                },
+            },
+            layout: {
+                type: "d3-force",
+                animation: false,
+                link: { distance: 150 },
+                manyBody: { strength: -180 },
+                collide: { radius: 42 },
+            },
+            behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
+        });
+
+        graphRef.current = instance;
+        instance.on("node:click", (event) => {
+            const nodeId = eventTargetId(event);
+            if (nodeId) onSelectNode(nodeId);
+        });
+        instance.on("edge:click", (event) => {
+            const edgeId = eventTargetId(event);
+            if (edgeId) onSelectEdge(edgeId);
+        });
+        void instance.render();
+
+        return () => {
+            instance.destroy();
+            graphRef.current = null;
+            previousSelectionRef.current = [];
+        };
+    }, [graph, onSelectEdge, onSelectNode]);
+
+    useEffect(() => {
+        const instance = graphRef.current;
+        if (!instance) return;
+
+        const currentSelection = [selectedNodeId, selectedEdgeId].filter(
+            (id): id is string => Boolean(id),
+        );
+        const states: Record<string, "selected" | []> = {};
+        for (const id of previousSelectionRef.current) {
+            if (!currentSelection.includes(id)) states[id] = [];
+        }
+        for (const id of currentSelection) states[id] = "selected";
+        previousSelectionRef.current = currentSelection;
+        if (Object.keys(states).length > 0) void instance.setElementState(states);
+    }, [selectedEdgeId, selectedNodeId]);
+
     if (loading) return <div className="grid min-h-[620px] place-items-center border border-ink/10 bg-white text-sm text-ink/45">正在展开业务关系…</div>;
     if (!graph || graph.nodes.length === 0) return <div className="grid min-h-[620px] place-items-center border border-ink/10 bg-white text-sm text-ink/45">当前版本暂无业务关系数据</div>;
-    return <div className="relative min-h-[620px] overflow-hidden border border-ink/10 bg-white shadow-line"><div className="absolute left-4 top-4 z-10 border border-ink/10 bg-white/90 px-3 py-2 text-xs text-ink/55">{graph.nodes.length} 个对象 · {graph.edges.length} 条经营关系{graph.partial ? " · 已按预算截断" : ""}</div><ReactFlow nodes={nodes.map((node) => ({ ...node, selected: node.id === selectedNodeId }))} edges={edges} nodeTypes={nodeTypes} onNodesChange={(changes: NodeChange<GraphNode>[]) => setNodes((current) => applyNodeChanges(changes, current) as GraphNode[])} onNodeClick={(_, node) => onSelectNode(node.id)} onEdgeClick={(_, edge) => onSelectEdge(edge.id)} fitView fitViewOptions={{ padding: 0.2 }} minZoom={0.35} maxZoom={1.6}><Background color="#D6E0E6" gap={24} size={1} /><Controls showInteractive={false} /><MiniMap pannable zoomable nodeColor="#0E7490" /></ReactFlow></div>;
+
+    return (
+        <div className="relative min-h-[620px] overflow-hidden border border-ink/10 bg-white shadow-line" aria-label="业务关系图">
+            <div className="pointer-events-none absolute left-4 top-4 z-10 border border-ink/10 bg-white/90 px-3 py-2 text-xs text-ink/55">
+                {graph.nodes.length} 个对象 · {graph.edges.length} 条经营关系{graph.partial ? " · 已按预算截断" : ""}
+            </div>
+            <div className="pointer-events-none absolute bottom-4 left-4 z-10 flex flex-wrap gap-2 border border-ink/10 bg-white/90 px-3 py-2 text-[11px] text-ink/60">
+                {Object.entries(nodeTones).map(([type, tone]) => (
+                    <span key={type} className="flex items-center gap-1.5">
+                        <i className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tone.fill, border: `2px solid ${tone.stroke}` }} />
+                        {tone.label}
+                    </span>
+                ))}
+            </div>
+            <div ref={containerRef} className="h-[620px] w-full" />
+        </div>
+    );
 }

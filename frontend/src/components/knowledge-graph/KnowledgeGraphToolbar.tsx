@@ -10,12 +10,20 @@ type KnowledgeGraphToolbarProps = {
     releases: KnowledgeGraphRelease[];
     selectedRelease: string;
     backend: "mysql" | "neo4j";
+    workspace: KnowledgeGraphWorkspace;
     scenario: KnowledgeGraphScenario;
     search: string;
     onReleaseChange: (releaseVersion: string) => void;
+    onWorkspaceChange: (workspace: KnowledgeGraphWorkspace) => void;
     onScenarioChange: (scenario: KnowledgeGraphScenario) => void;
     onSearchChange: (value: string) => void;
 };
+
+const workspaces: Array<[KnowledgeGraphWorkspace, string, string]> = [
+    ["ontology", "本体底座", "对象类型和关系类型"],
+    ["relation", "关系图", "业务对象和经营关系"],
+    ["schema", "Schema 图谱", "表、字段和指标证据"],
+];
 
 const scenarios: Array<[KnowledgeGraphScenario, string]> = [
     ["product", "商品经营"],
@@ -28,9 +36,11 @@ export function KnowledgeGraphToolbar({
     releases,
     selectedRelease,
     backend,
+    workspace,
     scenario,
     search,
     onReleaseChange,
+    onWorkspaceChange,
     onScenarioChange,
     onSearchChange,
 }: KnowledgeGraphToolbarProps) {
@@ -67,7 +77,24 @@ export function KnowledgeGraphToolbar({
                     />
                 </label>
             </div>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="mt-5 border-y border-ink/10 py-1" role="tablist" aria-label="知识图谱类别">
+                <div className="grid grid-cols-3 gap-1">
+                    {workspaces.map(([value, label, description]) => (
+                        <button
+                            key={value}
+                            type="button"
+                            role="tab"
+                            aria-selected={workspace === value}
+                            onClick={() => onWorkspaceChange(value)}
+                            className={`border-b-2 px-3 py-3 text-left transition ${workspace === value ? "border-cinnabar bg-cinnabar/5 text-cinnabar" : "border-transparent text-ink/55 hover:bg-paper hover:text-ink"}`}
+                        >
+                            <span className="block text-sm font-bold">{label}</span>
+                            <span className="mt-1 block text-[11px] font-normal text-ink/45">{description}</span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+            {workspace === "relation" && <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink/45">经营场景</div>
                     <div className="flex items-center gap-1 overflow-x-auto" role="tablist" aria-label="关系图场景">
@@ -84,7 +111,7 @@ export function KnowledgeGraphToolbar({
                     ))}
                     </div>
                 </div>
-            </div>
+            </div>}
         </div>
     );
 }
