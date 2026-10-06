@@ -10,7 +10,7 @@ from dataclasses import asdict
 from types import MappingProxyType
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -75,6 +75,7 @@ from app.services.authorization_service import (
 from app.services.cache_service import CacheService
 from app.services.cube_semantic_model_compiler import CubeSemanticModelCompiler
 from app.services.keycloak_user_service import KeycloakUserService
+from app.services.knowledge_graph_query_service import KnowledgeGraphQueryService
 from app.services.knowledge_graph_service import KnowledgeGraphService
 from app.services.metadata_release_coordinator import SemanticModelReleaseCoordinator
 from app.services.metric_candidate_service import MetricCandidateService
@@ -225,6 +226,43 @@ async def get_metadata_release_repository(
     """创建请求级元数据发布版本仓储。"""
 
     return MetadataReleaseRepository(session)
+
+
+async def get_knowledge_graph_query_repository(
+    meta_mysql_repository: Annotated[
+        MetaMySQLRepository, Depends(get_meta_mysql_repository)
+    ],
+) -> KnowledgeGraphRepository | Neo4jKnowledgeGraphRepository:
+    """将图谱后端初始化失败转换为管理 API 可识别的 503。"""
+
+    try:
+        return await get_knowledge_graph_repository(meta_mysql_repository)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="knowledge graph service unavailable",
+        ) from exc
+
+
+async def get_knowledge_graph_query_service(
+    graph_repository: Annotated[
+        KnowledgeGraphRepository | Neo4jKnowledgeGraphRepository,
+        Depends(get_knowledge_graph_query_repository),
+    ],
+    metadata_release_repository: Annotated[
+        MetadataReleaseRepository, Depends(get_metadata_release_repository)
+    ],
+) -> KnowledgeGraphQueryService:
+    """组装 Agent 管理页使用的知识图谱只读服务。"""
+
+    backend = app_config.knowledge_graph.backend
+    if backend not in {"mysql", "neo4j"}:
+        raise HTTPException(status_code=503, detail="knowledge graph unavailable")
+    return KnowledgeGraphQueryService(
+        graph_repository=graph_repository,
+        metadata_release_repository=metadata_release_repository,
+        backend=backend,
+    )
 
 
 async def get_semantic_model_repository(

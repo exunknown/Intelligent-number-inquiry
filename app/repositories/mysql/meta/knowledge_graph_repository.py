@@ -3,7 +3,7 @@
 from collections import deque
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.entities.knowledge_graph import (
@@ -65,6 +65,79 @@ class KnowledgeGraphRepository:
             .limit(1)
         )
         return result.scalar_one_or_none() is not None
+
+    async def count_release(self, release_version: str) -> tuple[int, int]:
+        """返回指定版本的节点和边数量。"""
+
+        node_result = await self.session.execute(
+            select(func.count())
+            .select_from(KnowledgeGraphNodeMySQL)
+            .where(KnowledgeGraphNodeMySQL.release_version == release_version)
+        )
+        edge_result = await self.session.execute(
+            select(func.count())
+            .select_from(KnowledgeGraphEdgeMySQL)
+            .where(KnowledgeGraphEdgeMySQL.release_version == release_version)
+        )
+        return int(node_result.scalar_one()), int(edge_result.scalar_one())
+
+    async def list_release_versions(self) -> list[str]:
+        """返回实际已物化的图谱版本，最新写入版本排在前面。"""
+
+        result = await self.session.execute(
+            select(
+                KnowledgeGraphNodeMySQL.release_version,
+                func.max(KnowledgeGraphNodeMySQL.created_at).label("latest_created_at"),
+            )
+            .group_by(KnowledgeGraphNodeMySQL.release_version)
+            .order_by(
+                func.max(KnowledgeGraphNodeMySQL.created_at).desc(),
+                KnowledgeGraphNodeMySQL.release_version.desc(),
+            )
+        )
+        return [row[0] for row in result.all()]
+
+    async def search_nodes(
+        self,
+        release_version: str,
+        *,
+        query: str = "",
+        node_type: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[KnowledgeGraphNode], int]:
+        """按标题或节点编号搜索指定版本的节点。"""
+
+        conditions = [KnowledgeGraphNodeMySQL.release_version == release_version]
+        normalized_query = query.strip()
+        if normalized_query:
+            pattern = f"%{normalized_query}%"
+            conditions.append(
+                or_(
+                    KnowledgeGraphNodeMySQL.title.like(pattern),
+                    KnowledgeGraphNodeMySQL.node_id.like(pattern),
+                )
+            )
+        if node_type:
+            conditions.append(KnowledgeGraphNodeMySQL.node_type == node_type)
+
+        count_result = await self.session.execute(
+            select(func.count()).select_from(KnowledgeGraphNodeMySQL).where(*conditions)
+        )
+        result = await self.session.execute(
+            select(KnowledgeGraphNodeMySQL)
+            .where(*conditions)
+            .order_by(
+                KnowledgeGraphNodeMySQL.node_type,
+                KnowledgeGraphNodeMySQL.title,
+                KnowledgeGraphNodeMySQL.node_id,
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+        return [self._node_entity(model) for model in result.scalars().all()], int(
+            count_result.scalar_one()
+        )
 
     async def list_release(
         self, release_version: str

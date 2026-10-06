@@ -14,6 +14,7 @@ from app.api.lifespan import lifespan
 from app.api.routers.authz_router import authz_router
 from app.api.routers.export_router import export_router
 from app.api.routers.health_router import health_router
+from app.api.routers.knowledge_graph_router import knowledge_graph_router
 from app.api.routers.metric_candidate_router import metric_candidate_router
 from app.api.routers.metric_catalog_router import metric_catalog_router
 from app.api.routers.metrics_router import metrics_handler
@@ -44,6 +45,7 @@ app.include_router(metric_candidate_router)
 app.include_router(authz_router)
 app.include_router(user_router)
 app.include_router(health_router)
+app.include_router(knowledge_graph_router)
 app.add_api_route(
     app_config.metrics.path,
     metrics_handler,

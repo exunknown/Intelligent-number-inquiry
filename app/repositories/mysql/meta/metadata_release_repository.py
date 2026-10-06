@@ -46,6 +46,24 @@ class MetadataReleaseRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_releases(self) -> list[dict]:
+        """按创建时间倒序返回发布版本的安全摘要。"""
+
+        result = await self.session.execute(
+            select(MetadataReleaseMySQL).order_by(
+                MetadataReleaseMySQL.created_at.desc()
+            )
+        )
+        return [
+            {
+                "release_version": model.release_version,
+                "status": model.status,
+                "active": model.active,
+                "created_at": model.created_at,
+            }
+            for model in result.scalars().all()
+        ]
+
     async def _lock(self) -> None:
         result = await self.session.execute(
             select(MetadataReleaseLockMySQL)

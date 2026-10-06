@@ -67,6 +67,40 @@ MATCH (node:{_NODE_LABEL} {{release_version: $release_version}})
 RETURN count(node) > 0 AS exists
 """
 
+_SEARCH_NODES_QUERY = f"""
+MATCH (node:{_NODE_LABEL} {{release_version: $release_version}})
+WHERE ($search_query = ''
+       OR toLower(node.title) CONTAINS toLower($search_query)
+       OR toLower(node.node_id) CONTAINS toLower($search_query))
+  AND ($node_type = '' OR node.node_type = $node_type)
+RETURN node.node_id AS node_id,
+       node.node_type AS node_type,
+       node.title AS title,
+       node.description AS description,
+       node.payload_json AS payload_json,
+       node.source AS source,
+       node.confidence AS confidence,
+       node.release_version AS release_version
+ORDER BY node.node_type, node.title, node.node_id
+SKIP $offset
+LIMIT $limit
+"""
+
+_COUNT_NODES_QUERY = f"""
+MATCH (node:{_NODE_LABEL} {{release_version: $release_version}})
+WHERE ($search_query = ''
+       OR toLower(node.title) CONTAINS toLower($search_query)
+       OR toLower(node.node_id) CONTAINS toLower($search_query))
+  AND ($node_type = '' OR node.node_type = $node_type)
+RETURN count(node) AS total
+"""
+
+_LIST_RELEASE_VERSIONS_QUERY = f"""
+MATCH (node:{_NODE_LABEL})
+RETURN DISTINCT node.release_version AS release_version
+ORDER BY release_version DESC
+"""
+
 _COUNT_RELEASE_QUERY = f"""
 MATCH (node:{_NODE_LABEL} {{release_version: $release_version}})
 WITH count(node) AS node_count
@@ -223,6 +257,35 @@ class Neo4jKnowledgeGraphRepository:
             release_version=version,
         )
         return bool(records and records[0].get("exists"))
+
+    async def search_nodes(
+        self,
+        release_version: str,
+        *,
+        query: str = "",
+        node_type: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[KnowledgeGraphNode], int]:
+        """按标题或节点编号搜索指定版本的节点。"""
+
+        params = {
+            "release_version": release_version,
+            "search_query": query.strip(),
+            "node_type": node_type or "",
+            "limit": limit,
+            "offset": offset,
+        }
+        records = await self._execute(_SEARCH_NODES_QUERY, **params)
+        count_records = await self._execute(_COUNT_NODES_QUERY, **params)
+        total = int(count_records[0].get("total", 0)) if count_records else 0
+        return [self._node_entity(record) for record in records], total
+
+    async def list_release_versions(self) -> list[str]:
+        """返回 Neo4j 中实际已物化的图谱版本。"""
+
+        records = await self._execute(_LIST_RELEASE_VERSIONS_QUERY)
+        return [record["release_version"] for record in records]
 
     async def count_release(
         self, release_version: str | None = None
