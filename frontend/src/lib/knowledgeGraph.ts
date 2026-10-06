@@ -22,11 +22,27 @@ export const BUSINESS_KNOWLEDGE_GRAPH_NODE_TYPES = [
 export const KNOWLEDGE_GRAPH_VIEWS = ["relation", "schema"] as const;
 export const KNOWLEDGE_GRAPH_SCENARIOS = ["product", "customer", "region", "metric"] as const;
 
+export const BUSINESS_KNOWLEDGE_GRAPH_RELATION_TYPES = [
+    "CUSTOMER_IN_SEGMENT",
+    "CUSTOMER_PURCHASED_PRODUCT",
+    "SEGMENT_PREFERS_CATEGORY",
+    "SEGMENT_PREFERS_BRAND",
+    "PRODUCT_BELONGS_TO_CATEGORY",
+    "PRODUCT_OF_BRAND",
+    "PRODUCT_HOT_IN_REGION",
+    "CATEGORY_CONTRIBUTES_TO_REGION",
+    "PRODUCT_ASSOCIATED_WITH_PRODUCT",
+    "METRIC_MEASURES_OBJECT",
+    "METRIC_IN_PERIOD",
+] as const;
+
 export type TechnicalKnowledgeGraphNodeType = (typeof KNOWLEDGE_GRAPH_NODE_TYPES)[number];
 export type BusinessKnowledgeGraphNodeType = (typeof BUSINESS_KNOWLEDGE_GRAPH_NODE_TYPES)[number];
 export type KnowledgeGraphNodeType = TechnicalKnowledgeGraphNodeType | BusinessKnowledgeGraphNodeType;
 export type KnowledgeGraphView = (typeof KNOWLEDGE_GRAPH_VIEWS)[number];
 export type KnowledgeGraphScenario = (typeof KNOWLEDGE_GRAPH_SCENARIOS)[number];
+
+export type KnowledgeGraphRelationType = (typeof BUSINESS_KNOWLEDGE_GRAPH_RELATION_TYPES)[number];
 
 export type KnowledgeGraphNode = {
     node_id: string;
@@ -153,6 +169,26 @@ const NODE_TYPE_LABELS: Record<KnowledgeGraphNodeType, string> = {
 
 export function knowledgeGraphNodeTypeLabel(type: KnowledgeGraphNodeType): string {
     return NODE_TYPE_LABELS[type];
+}
+
+export function knowledgeGraphRelationLabel(type: string): string {
+    const labels: Record<string, string> = {
+        CUSTOMER_IN_SEGMENT: "客户属于群体",
+        CUSTOMER_PURCHASED_PRODUCT: "客户购买商品",
+        SEGMENT_PREFERS_CATEGORY: "群体偏好品类",
+        SEGMENT_PREFERS_BRAND: "群体偏好品牌",
+        PRODUCT_BELONGS_TO_CATEGORY: "商品属于品类",
+        PRODUCT_OF_BRAND: "商品属于品牌",
+        PRODUCT_HOT_IN_REGION: "商品热销区域",
+        CATEGORY_CONTRIBUTES_TO_REGION: "品类贡献区域",
+        PRODUCT_ASSOCIATED_WITH_PRODUCT: "商品关联购买",
+        METRIC_MEASURES_OBJECT: "指标度量对象",
+        METRIC_IN_PERIOD: "指标属于周期",
+        TABLE_HAS_COLUMN: "包含字段",
+        COLUMN_BELONGS_TO_TABLE: "字段属于表",
+        VALUE_BELONGS_TO_COLUMN: "取值属于字段",
+    };
+    return labels[type] ?? type;
 }
 
 export function knowledgeGraphReleaseLabel(release: KnowledgeGraphRelease): string {

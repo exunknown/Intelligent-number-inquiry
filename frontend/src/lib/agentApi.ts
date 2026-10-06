@@ -20,10 +20,13 @@ import type {
 } from "./semanticModel";
 import { safeUserManagementMessage, type ApplicationRole, type ApplicationUserStatus } from "./userManagement";
 import type {
+    KnowledgeGraphGraphResponse,
     KnowledgeGraphNodeListResponse,
     KnowledgeGraphNodeType,
+    KnowledgeGraphOntologyResponse,
     KnowledgeGraphReleaseListResponse,
     KnowledgeGraphSubgraphResponse,
+    KnowledgeGraphView,
 } from "./knowledgeGraph";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "";
@@ -623,6 +626,51 @@ export async function getKnowledgeGraphSubgraph(
     });
     return getKnowledgeGraphJson<KnowledgeGraphSubgraphResponse>(
         `/api/admin/knowledge-graph/subgraph?${params.toString()}`,
+        "知识图谱关系加载失败",
+    );
+}
+
+export async function listKnowledgeGraphOntology(
+    releaseVersion: string,
+    scope: "business" | "schema" | "all" = "business",
+): Promise<KnowledgeGraphOntologyResponse> {
+    const params = new URLSearchParams({ release_version: releaseVersion, scope });
+    return getKnowledgeGraphJson<KnowledgeGraphOntologyResponse>(
+        `/api/admin/knowledge-graph/ontology?${params.toString()}`,
+        "知识图谱本体加载失败",
+    );
+}
+
+export type KnowledgeGraphGraphParams = {
+    releaseVersion: string;
+    view: KnowledgeGraphView;
+    scenario?: string;
+    seedNodeId?: string;
+    objectTypes?: KnowledgeGraphNodeType[];
+    relationTypes?: string[];
+    maxHops?: number;
+    maxNodes?: number;
+    maxEdges?: number;
+    includeEvidence?: boolean;
+};
+
+export async function getKnowledgeGraphGraph(
+    options: KnowledgeGraphGraphParams,
+): Promise<KnowledgeGraphGraphResponse> {
+    const params = new URLSearchParams({
+        release_version: options.releaseVersion,
+        view: options.view,
+        max_hops: String(options.maxHops ?? 2),
+        max_nodes: String(options.maxNodes ?? 80),
+        max_edges: String(options.maxEdges ?? 160),
+        include_evidence: String(options.includeEvidence ?? true),
+    });
+    if (options.scenario) params.set("scenario", options.scenario);
+    if (options.seedNodeId) params.set("seed_node_id", options.seedNodeId);
+    options.objectTypes?.forEach((type) => params.append("object_type", type));
+    options.relationTypes?.forEach((type) => params.append("relation_type", type));
+    return getKnowledgeGraphJson<KnowledgeGraphGraphResponse>(
+        `/api/admin/knowledge-graph/graph?${params.toString()}`,
         "知识图谱关系加载失败",
     );
 }
