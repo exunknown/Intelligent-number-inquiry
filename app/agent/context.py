@@ -24,6 +24,9 @@ from app.repositories.mysql.meta.knowledge_graph_repository import (
     KnowledgeGraphRepository,
 )
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
+from app.repositories.neo4j.knowledge_graph_repository import (
+    Neo4jKnowledgeGraphRepository,
+)
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
@@ -63,7 +66,9 @@ class DataAgentContext(TypedDict):
     # 当前生效的元数据版本，用于缓存隔离和审计关联
     metadata_release_version: NotRequired[str | None]
     # 图谱仓储只按当前发布版本查询有界关系路径
-    knowledge_graph_repository: NotRequired[KnowledgeGraphRepository]
+    knowledge_graph_repository: NotRequired[
+        KnowledgeGraphRepository | Neo4jKnowledgeGraphRepository
+    ]
     # 图谱开关和查询预算；不放入 State，也不包含凭据
     knowledge_graph_config: NotRequired[Mapping[str, object]]
     # 无状态的指标关系解析器，不持有仓储或客户端

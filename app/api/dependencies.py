@@ -24,6 +24,7 @@ from app.clients.mysql_client_manager import (
     meta_mysql_client_manager,
     sql_fallback_mysql_client_manager,
 )
+from app.clients.neo4j_client_manager import get_neo4j_client_manager
 from app.clients.qdrant_client_manager import get_qdrant_client_manager
 from app.clients.redis_client_manager import get_redis_client_manager
 from app.conf.app_config import app_config
@@ -53,6 +54,9 @@ from app.repositories.mysql.meta.query_turn_context_repository import (
 )
 from app.repositories.mysql.meta.semantic_model_repository import (
     SemanticModelRepository,
+)
+from app.repositories.neo4j.knowledge_graph_repository import (
+    Neo4jKnowledgeGraphRepository,
 )
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.cube_member_qdrant_repository import (
@@ -131,6 +135,24 @@ async def get_meta_mysql_repository(
     """基于请求级 Session 创建元数据仓储"""
 
     return MetaMySQLRepository(session)
+
+
+async def get_knowledge_graph_repository(
+    meta_mysql_repository: Annotated[
+        MetaMySQLRepository, Depends(get_meta_mysql_repository)
+    ],
+) -> KnowledgeGraphRepository | Neo4jKnowledgeGraphRepository:
+    """按配置创建查询使用的知识图谱仓储。"""
+
+    if app_config.knowledge_graph.backend == "neo4j":
+        manager = get_neo4j_client_manager()
+        if not app_config.neo4j.enabled or manager.client is None:
+            raise RuntimeError(
+                "Neo4j knowledge graph backend requires NEO4J_ENABLED=true "
+                "and an initialized client"
+            )
+        return Neo4jKnowledgeGraphRepository(manager.client, manager.database)
+    return KnowledgeGraphRepository(meta_mysql_repository.session)
 
 
 async def get_query_audit_repository(
@@ -486,6 +508,10 @@ async def get_query_service(
     query_turn_context_repository: Annotated[
         QueryTurnContextRepository, Depends(get_query_turn_context_repository)
     ],
+    knowledge_graph_repository: Annotated[
+        KnowledgeGraphRepository | Neo4jKnowledgeGraphRepository,
+        Depends(get_knowledge_graph_repository),
+    ],
     cache_service: Annotated[CacheService, Depends(get_cache_service)],
 ) -> QueryService:
     """组装一次查询所需的业务服务"""
@@ -513,8 +539,6 @@ async def get_query_service(
         sql_policy_engine=sql_policy_engine,
         query_turn_context_repository=query_turn_context_repository,
         cache_service=cache_service,
-        knowledge_graph_repository=KnowledgeGraphRepository(
-            meta_mysql_repository.session
-        ),
+        knowledge_graph_repository=knowledge_graph_repository,
         knowledge_graph_config=MappingProxyType(asdict(app_config.knowledge_graph)),
     )

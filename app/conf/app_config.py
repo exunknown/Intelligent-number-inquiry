@@ -183,6 +183,7 @@ class SelectorConfig:
 class KnowledgeGraphConfig:
     """知识图谱在线召回的开关和资源预算。"""
 
+    backend: str = "mysql"
     enabled: bool = False
     max_hops: int = 2
     max_paths: int = 20
@@ -190,6 +191,8 @@ class KnowledgeGraphConfig:
     timeout_seconds: float = 0.25
 
     def __post_init__(self) -> None:
+        if self.backend not in {"mysql", "neo4j"}:
+            raise ValueError("knowledge graph backend must be mysql or neo4j")
         if not 1 <= self.max_hops <= 2:
             raise ValueError("knowledge graph max_hops must be between 1 and 2")
         if not 1 <= self.max_paths <= 100:

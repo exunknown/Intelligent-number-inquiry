@@ -60,6 +60,9 @@ from app.repositories.mysql.meta.query_turn_context_repository import (
 from app.repositories.mysql.meta.semantic_model_repository import (
     SemanticModelRepository,
 )
+from app.repositories.neo4j.knowledge_graph_repository import (
+    Neo4jKnowledgeGraphRepository,
+)
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.cube_member_qdrant_repository import (
     CubeMemberQdrantRepository,
@@ -401,7 +404,9 @@ class QueryService:
         sql_policy_engine: SQLPolicyEngine | None = None,
         query_turn_context_repository: QueryTurnContextRepository | None = None,
         cache_service: CacheService | None = None,
-        knowledge_graph_repository: KnowledgeGraphRepository | None = None,
+        knowledge_graph_repository: (
+            KnowledgeGraphRepository | Neo4jKnowledgeGraphRepository | None
+        ) = None,
         knowledge_graph_config: Mapping[str, object] | None = None,
         metrics: QueryMetrics | None = None,
     ):

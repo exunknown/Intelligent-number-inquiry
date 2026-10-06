@@ -110,6 +110,7 @@ selector:
   token_estimate_chars_per_token: 2.0
 
 knowledge_graph:
+  backend: ${oc.env:KNOWLEDGE_GRAPH_BACKEND,mysql}
   enabled: ${oc.env:KNOWLEDGE_GRAPH_ENABLED,false}
   max_hops: ${oc.env:KNOWLEDGE_GRAPH_MAX_HOPS,2}
   max_paths: ${oc.env:KNOWLEDGE_GRAPH_MAX_PATHS,20}
