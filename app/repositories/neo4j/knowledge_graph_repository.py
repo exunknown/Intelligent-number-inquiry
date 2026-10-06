@@ -322,7 +322,7 @@ class Neo4jKnowledgeGraphRepository:
         operation: Callable[[AsyncManagedTransaction], Awaitable[None]],
     ) -> None:
         async with self.driver.session(database=self.database) as session:
-            async with session.begin_transaction() as transaction:
+            async with await session.begin_transaction() as transaction:
                 await operation(transaction)
 
     async def _execute(self, query: str, **parameters: Any) -> list[Any]:
