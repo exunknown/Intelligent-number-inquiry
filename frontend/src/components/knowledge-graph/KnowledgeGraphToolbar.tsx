@@ -1,29 +1,26 @@
-import { Database, Layers3, Network, Search, Table2 } from "lucide-react";
+import { Database, Search } from "lucide-react";
 import type {
     KnowledgeGraphRelease,
     KnowledgeGraphScenario,
-    KnowledgeGraphView,
 } from "../../lib/knowledgeGraph";
 
-export type KnowledgeGraphWorkspace = "ontology" | KnowledgeGraphView;
+export type KnowledgeGraphWorkspace = "ontology" | "relation" | "schema";
 
 type KnowledgeGraphToolbarProps = {
     releases: KnowledgeGraphRelease[];
     selectedRelease: string;
     backend: "mysql" | "neo4j";
-    workspace: KnowledgeGraphWorkspace;
     scenario: KnowledgeGraphScenario;
     search: string;
     onReleaseChange: (releaseVersion: string) => void;
-    onWorkspaceChange: (workspace: KnowledgeGraphWorkspace) => void;
     onScenarioChange: (scenario: KnowledgeGraphScenario) => void;
     onSearchChange: (value: string) => void;
 };
 
 const scenarios: Array<[KnowledgeGraphScenario, string]> = [
     ["product", "商品经营"],
-    ["customer", "客群偏好"],
-    ["region", "区域热销"],
+    ["customer", "客户行为"],
+    ["region", "区域经营"],
     ["metric", "指标证据"],
 ];
 
@@ -31,11 +28,9 @@ export function KnowledgeGraphToolbar({
     releases,
     selectedRelease,
     backend,
-    workspace,
     scenario,
     search,
     onReleaseChange,
-    onWorkspaceChange,
     onScenarioChange,
     onSearchChange,
 }: KnowledgeGraphToolbarProps) {
@@ -73,26 +68,9 @@ export function KnowledgeGraphToolbar({
                 </label>
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-1 rounded-md border border-ink/10 bg-paper p-1" role="tablist" aria-label="知识图谱视图">
-                    {([
-                        ["ontology", "本体底座", Layers3],
-                        ["relation", "关系图", Network],
-                        ["schema", "Schema 图谱", Table2],
-                    ] as const).map(([value, label, Icon]) => (
-                        <button
-                            key={value}
-                            type="button"
-                            role="tab"
-                            aria-selected={workspace === value}
-                            onClick={() => onWorkspaceChange(value)}
-                            className={`inline-flex min-h-9 items-center gap-2 rounded px-3 text-xs font-semibold transition ${workspace === value ? "bg-ink text-white" : "text-ink/55 hover:bg-white hover:text-ink"}`}
-                        >
-                            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                            {label}
-                        </button>
-                    ))}
-                </div>
-                <div className="flex items-center gap-1 overflow-x-auto" role="tablist" aria-label="关系图场景">
+                <div>
+                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink/45">经营场景</div>
+                    <div className="flex items-center gap-1 overflow-x-auto" role="tablist" aria-label="关系图场景">
                     {scenarios.map(([value, label]) => (
                         <button
                             key={value}
@@ -104,6 +82,7 @@ export function KnowledgeGraphToolbar({
                             {label}
                         </button>
                     ))}
+                    </div>
                 </div>
             </div>
         </div>

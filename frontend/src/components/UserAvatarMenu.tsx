@@ -1,4 +1,4 @@
-import { Gauge, LogOut, UserCog, UserRound } from "lucide-react";
+import { Gauge, LogOut, Network, UserCog, UserRound } from "lucide-react";
 import {
     forwardRef,
     useEffect,
@@ -19,6 +19,8 @@ type UserAvatarMenuProps = {
     onOpenManagement: () => void;
     showGovernance: boolean;
     onOpenGovernance: () => void;
+    showKnowledgeGraph: boolean;
+    onOpenKnowledgeGraph: () => void;
     onLogout: () => void;
     menuPlacement?: "above" | "below";
     className?: string;
@@ -32,6 +34,8 @@ export const UserAvatarMenu = forwardRef<UserAvatarMenuHandle, UserAvatarMenuPro
             onOpenManagement,
             showGovernance,
             onOpenGovernance,
+            showKnowledgeGraph,
+            onOpenKnowledgeGraph,
             onLogout,
             menuPlacement = "below",
             className,
@@ -109,6 +113,11 @@ export const UserAvatarMenu = forwardRef<UserAvatarMenuHandle, UserAvatarMenuPro
             onOpenGovernance();
         };
 
+        const handleKnowledgeGraph = () => {
+            closeMenu(false);
+            onOpenKnowledgeGraph();
+        };
+
         return (
             <div ref={wrapperRef} className={className ? `relative ${className}` : "relative"}>
                 <button
@@ -165,6 +174,18 @@ export const UserAvatarMenu = forwardRef<UserAvatarMenuHandle, UserAvatarMenuPro
                             >
                                 <Gauge className="h-4 w-4 text-indigo" aria-hidden="true" />
                                 Agent 管理
+                            </button>
+                        )}
+                        {showKnowledgeGraph && (
+                            <button
+                                type="button"
+                                role="menuitem"
+                                tabIndex={0}
+                                onClick={handleKnowledgeGraph}
+                                className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-sm text-ink transition hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar/50"
+                            >
+                                <Network className="h-4 w-4 text-cinnabar" aria-hidden="true" />
+                                知识图谱
                             </button>
                         )}
                         <button

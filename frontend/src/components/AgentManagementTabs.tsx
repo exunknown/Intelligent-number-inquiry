@@ -13,7 +13,6 @@ export function AgentManagementTabs({ activeTab, onChange, disabled = false }: A
                 ["metrics", "指标建设", "agent-panel-metrics"],
                 ["dimensions", "维度建设", "agent-panel-dimensions"],
                 ["cubes", "Cube 管理", "agent-panel-cubes"],
-                ["knowledge-graph", "知识图谱", "agent-panel-knowledge-graph"],
             ] as const).map(([tab, label, panelId]) => (
                 <button
                     key={tab}

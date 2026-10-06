@@ -105,14 +105,15 @@ type AppPath =
     | "/"
     | "/history"
     | "/user-management"
+    | "/knowledge-graph"
     | "/agent-management/metrics"
     | "/agent-management/dimensions"
-    | "/agent-management/cubes"
-    | "/agent-management/knowledge-graph";
+    | "/agent-management/cubes";
 
 function readAppPath(): AppPath {
     if (window.location.pathname === "/history") return "/history";
     if (window.location.pathname === "/user-management") return "/user-management";
+    if (window.location.pathname === "/knowledge-graph") return "/knowledge-graph";
     if (window.location.pathname === "/semantic-model") {
         window.history.replaceState({}, "", "/agent-management/metrics");
         return "/agent-management/metrics";
@@ -125,9 +126,6 @@ function readAppPath(): AppPath {
     }
     if (window.location.pathname === "/agent-management/cubes") {
         return "/agent-management/cubes";
-    }
-    if (window.location.pathname === "/agent-management/knowledge-graph") {
-        return "/agent-management/knowledge-graph";
     }
     return "/";
 }
@@ -181,13 +179,9 @@ export default function App({ username }: AppProps) {
             setNavigationError("查询进行中，请先停止查询后再切换页面。");
             return;
         }
-        const leavingSemanticEditor =
-            isAgentManagementPath(path) &&
-            path !== "/agent-management/knowledge-graph" &&
-            nextPath === "/agent-management/knowledge-graph";
         const leavingAgentManagement =
             isAgentManagementPath(path) && !isAgentManagementPath(nextPath);
-        if (semanticModelDirty && (leavingSemanticEditor || leavingAgentManagement)) {
+        if (semanticModelDirty && leavingAgentManagement) {
             if (!window.confirm("当前 Agent 管理草稿尚未保存，确定离开吗？")) return;
             setSemanticModelDirty(false);
         }
@@ -204,13 +198,9 @@ export default function App({ username }: AppProps) {
                 setNavigationError("查询进行中，请先停止查询后再切换页面。");
                 return;
             }
-            const leavingSemanticEditor =
-                isAgentManagementPath(path) &&
-                path !== "/agent-management/knowledge-graph" &&
-                nextPath === "/agent-management/knowledge-graph";
             const leavingAgentManagement =
                 isAgentManagementPath(path) && !isAgentManagementPath(nextPath);
-            if (semanticModelDirty && (leavingSemanticEditor || leavingAgentManagement)) {
+            if (semanticModelDirty && leavingAgentManagement) {
                 window.history.pushState({}, "", path);
                 setNavigationError("当前 Agent 管理草稿尚未保存，请先保存或确认离开。");
                 return;
@@ -566,6 +556,8 @@ export default function App({ username }: AppProps) {
     const pageTitle =
         path === "/user-management"
             ? "用户管理"
+            : path === "/knowledge-graph"
+              ? "知识图谱"
             : path === "/history"
               ? "历史对话"
               : isAgentManagementPath(path)
@@ -574,6 +566,8 @@ export default function App({ username }: AppProps) {
     const pageSubtitle =
         path === "/user-management"
             ? "管理应用角色、账号状态和有效权限摘要"
+            : path === "/knowledge-graph"
+              ? "商品经营、客户行为与区域关系"
             : path === "/history"
               ? "检索、恢复和维护历史问数会话"
               : isAgentManagementPath(path)
@@ -581,7 +575,8 @@ export default function App({ username }: AppProps) {
                 : "自然语言直连数仓";
     const isAgentManagementPage = isAgentManagementPath(path);
     const isUserManagementPage = path === "/user-management";
-    const isAdminPage = isUserManagementPage || isAgentManagementPage;
+    const isKnowledgeGraphPage = path === "/knowledge-graph";
+    const isAdminPage = isUserManagementPage || isAgentManagementPage || isKnowledgeGraphPage;
 
     return (
         <div className="h-dvh overflow-hidden bg-paper text-ink">
@@ -642,6 +637,8 @@ export default function App({ username }: AppProps) {
                                     onOpenManagement={() => navigateTo("/user-management")}
                                     showGovernance={semanticModelCapability}
                                     onOpenGovernance={() => navigateTo("/agent-management/metrics")}
+                                    showKnowledgeGraph={semanticModelCapability}
+                                    onOpenKnowledgeGraph={() => navigateTo("/knowledge-graph")}
                                     onLogout={() => void handleLogout()}
                                     menuPlacement="above"
                                 />
@@ -658,7 +655,7 @@ export default function App({ username }: AppProps) {
                 )}
 
                 <main className="relative flex min-h-0 min-w-0 flex-col overflow-hidden">
-                    {!isAgentManagementPage && <header inert={mobileSessionsOpen} className="flex h-16 shrink-0 items-center justify-between border-b border-ink/10 bg-paper px-4 lg:px-6">
+                    {!isAgentManagementPage && !isKnowledgeGraphPage && <header inert={mobileSessionsOpen} className="flex h-16 shrink-0 items-center justify-between border-b border-ink/10 bg-paper px-4 lg:px-6">
                         <div className="flex min-w-0 items-center gap-3">
                             <Seal className="h-9 w-9 text-lg lg:hidden" />
                             <div className="min-w-0">
@@ -710,6 +707,8 @@ export default function App({ username }: AppProps) {
                                 onOpenManagement={() => navigateTo("/user-management")}
                                 showGovernance={semanticModelCapability}
                                 onOpenGovernance={() => navigateTo("/agent-management/metrics")}
+                                showKnowledgeGraph={semanticModelCapability}
+                                onOpenKnowledgeGraph={() => navigateTo("/knowledge-graph")}
                                 onLogout={() => void handleLogout()}
                                 menuPlacement="below"
                                 className="lg:hidden"
@@ -756,21 +755,16 @@ export default function App({ username }: AppProps) {
                             ) : (
                                 <div className="grid min-h-0 flex-1 place-items-center bg-canvas px-6 text-center"><div><p className="font-serif text-xl font-bold text-ink">没有用户管理权限</p><p className="mt-2 text-sm text-ink/55">请联系平台管理员申请用户管理权限。</p></div></div>
                             )
+                        ) : path === "/knowledge-graph" ? (
+                            <KnowledgeGraphPage onBack={() => navigateTo("/")} />
                         ) : isAgentManagementPath(path) ? (
                         semanticModelCapability ? (
-                            path === "/agent-management/knowledge-graph" ? (
-                                <KnowledgeGraphPage
-                                    onBack={() => navigateTo("/")}
-                                    onTabChange={(tab) => navigateTo(semanticBuildPath(tab))}
-                                />
-                            ) : (
-                                <SemanticModelPage
-                                    onBack={() => navigateTo("/")}
-                                    onDirtyChange={setSemanticModelDirty}
-                                    initialTab={semanticBuildTabForPath(path)}
-                                    onTabChange={(tab) => navigateTo(semanticBuildPath(tab))}
-                                />
-                            )
+                            <SemanticModelPage
+                                onBack={() => navigateTo("/")}
+                                onDirtyChange={setSemanticModelDirty}
+                                initialTab={semanticBuildTabForPath(path)}
+                                onTabChange={(tab) => navigateTo(semanticBuildPath(tab))}
+                            />
                         ) : (
                             <div className="grid min-h-0 flex-1 place-items-center bg-canvas px-6 text-center"><div><p className="font-serif text-xl font-bold text-ink">没有 Agent 管理权限</p><p className="mt-2 text-sm text-ink/55">请联系平台管理员申请语义模型操作权限。</p></div></div>
                         )
