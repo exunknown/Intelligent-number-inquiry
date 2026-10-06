@@ -162,6 +162,32 @@ services:
       retries: 12
       start_period: 15s
 
+  neo4j:
+    image: neo4j:2026.09.0
+    container_name: neo4j
+    profiles:
+      - neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-neo4j_dev_password}
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-neo4j_dev_password}
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "cypher-shell -a bolt://127.0.0.1:7687 -u \"$$NEO4J_USER\" -p \"$$NEO4J_PASSWORD\" 'RETURN 1' >/dev/null",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
   embedding:
     image: ghcr.io/huggingface/text-embeddings-inference:turing-latest
     platform: linux/amd64
@@ -295,6 +321,7 @@ volumes:
   cubestore_data:
   redis_data:
   minio_data:
+  neo4j_data:
   prometheus_data:
   grafana_data:
 
