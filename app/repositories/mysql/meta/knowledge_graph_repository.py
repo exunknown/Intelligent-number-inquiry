@@ -66,6 +66,26 @@ class KnowledgeGraphRepository:
         )
         return result.scalar_one_or_none() is not None
 
+    async def list_release(
+        self, release_version: str
+    ) -> tuple[list[KnowledgeGraphNode], list[KnowledgeGraphEdge]]:
+        """读取指定发布版本的完整图谱，供只读同步任务使用。"""
+
+        node_result = await self.session.execute(
+            select(KnowledgeGraphNodeMySQL)
+            .where(KnowledgeGraphNodeMySQL.release_version == release_version)
+            .order_by(KnowledgeGraphNodeMySQL.node_id)
+        )
+        edge_result = await self.session.execute(
+            select(KnowledgeGraphEdgeMySQL)
+            .where(KnowledgeGraphEdgeMySQL.release_version == release_version)
+            .order_by(KnowledgeGraphEdgeMySQL.edge_id)
+        )
+        return (
+            [self._node_entity(model) for model in node_result.scalars().all()],
+            [self._edge_entity(model) for model in edge_result.scalars().all()],
+        )
+
     async def expand_paths(
         self,
         release_version: str,
