@@ -108,6 +108,32 @@ OPTIONAL MATCH ()-[edge:{_EDGE_TYPE} {{release_version: $release_version}}]->()
 RETURN node_count, count(edge) AS edge_count
 """
 
+_LIST_RELEASE_NODES_QUERY = f"""
+MATCH (node:{_NODE_LABEL} {{release_version: $release_version}})
+RETURN node.node_id AS node_id,
+       node.node_type AS node_type,
+       node.title AS title,
+       node.description AS description,
+       node.payload_json AS payload_json,
+       node.source AS source,
+       node.confidence AS confidence,
+       node.release_version AS release_version
+ORDER BY node.node_id
+"""
+
+_LIST_RELEASE_EDGES_QUERY = f"""
+MATCH ()-[edge:{_EDGE_TYPE} {{release_version: $release_version}}]->()
+RETURN edge.edge_id AS edge_id,
+       edge.source_node_id AS source_node_id,
+       edge.target_node_id AS target_node_id,
+       edge.edge_type AS edge_type,
+       edge.weight AS weight,
+       edge.evidence_json AS evidence_json,
+       edge.source AS source,
+       edge.release_version AS release_version
+ORDER BY edge.edge_id
+"""
+
 _SCHEMA_QUERIES = (
     f"CREATE INDEX knowledge_graph_node_release IF NOT EXISTS "
     f"FOR (node:{_NODE_LABEL}) ON (node.release_version)",
@@ -302,6 +328,25 @@ class Neo4jKnowledgeGraphRepository:
             return 0, 0
         return int(records[0].get("node_count", 0)), int(
             records[0].get("edge_count", 0)
+        )
+
+    async def list_release(
+        self, release_version: str
+    ) -> tuple[list[KnowledgeGraphNode], list[KnowledgeGraphEdge]]:
+        """读取指定版本的完整图谱，供管理视图做安全聚合。"""
+
+        self._validate_release_version(release_version)
+        node_records = await self._execute(
+            _LIST_RELEASE_NODES_QUERY,
+            release_version=release_version,
+        )
+        edge_records = await self._execute(
+            _LIST_RELEASE_EDGES_QUERY,
+            release_version=release_version,
+        )
+        return (
+            [self._node_entity(record) for record in node_records],
+            [self._edge_entity(record) for record in edge_records],
         )
 
     async def expand_paths(

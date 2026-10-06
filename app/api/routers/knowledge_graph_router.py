@@ -1,15 +1,17 @@
 """Agent 管理页知识图谱只读接口。"""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.dependencies import get_knowledge_graph_query_service
 from app.api.schemas.knowledge_graph_schema import (
     KnowledgeGraphEdgeResponse,
+    KnowledgeGraphGraphResponse,
     KnowledgeGraphNodeListResponse,
     KnowledgeGraphNodeResponse,
     KnowledgeGraphNodeType,
+    KnowledgeGraphOntologyResponse,
     KnowledgeGraphPathResponse,
     KnowledgeGraphReleaseListResponse,
     KnowledgeGraphReleaseResponse,
@@ -171,3 +173,80 @@ async def expand_knowledge_graph_handler(
         backend=service.backend,
         partial=partial,
     )
+
+
+@knowledge_graph_router.get(
+    "/api/admin/knowledge-graph/ontology",
+    response_model=KnowledgeGraphOntologyResponse,
+)
+async def get_knowledge_graph_ontology_handler(
+    service: Annotated[
+        KnowledgeGraphQueryService, Depends(get_knowledge_graph_query_service)
+    ],
+    _auth=Depends(_require_read),
+    release_version: str | None = Query(None, min_length=1, max_length=64),
+    scope: Literal["business", "schema", "all"] = Query("business"),
+) -> KnowledgeGraphOntologyResponse:
+    try:
+        return await service.get_ontology(release_version, scope)
+    except KnowledgeGraphReleaseNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail="knowledge graph release not found"
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="knowledge graph service unavailable",
+        ) from exc
+
+
+@knowledge_graph_router.get(
+    "/api/admin/knowledge-graph/graph",
+    response_model=KnowledgeGraphGraphResponse,
+)
+async def get_knowledge_graph_graph_handler(
+    service: Annotated[
+        KnowledgeGraphQueryService, Depends(get_knowledge_graph_query_service)
+    ],
+    _auth=Depends(_require_read),
+    release_version: str | None = Query(None, min_length=1, max_length=64),
+    view: Literal["relation", "schema"] = Query("relation"),
+    scenario: str | None = Query(None, max_length=32),
+    seed_node_id: str | None = Query(None, min_length=1, max_length=192),
+    object_type: list[KnowledgeGraphNodeType] = Query(default_factory=list),
+    relation_type: list[str] = Query(default_factory=list),
+    max_hops: int = Query(2, ge=1, le=2),
+    max_nodes: int = Query(80, ge=1, le=200),
+    max_edges: int = Query(160, ge=1, le=400),
+    include_evidence: bool = Query(True),
+) -> KnowledgeGraphGraphResponse:
+    try:
+        return await service.get_graph(
+            release_version,
+            view,
+            scenario,
+            seed_node_id,
+            set(object_type),
+            set(relation_type),
+            max_hops,
+            max_nodes,
+            max_edges,
+            include_evidence,
+        )
+    except KnowledgeGraphReleaseNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail="knowledge graph release not found"
+        ) from exc
+    except KnowledgeGraphNodeNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail="knowledge graph node not found"
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="knowledge graph service unavailable",
+        ) from exc
