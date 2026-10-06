@@ -10,7 +10,7 @@ from langgraph.runtime import Runtime
 from app.agent.context import DataAgentContext
 from app.agent.llm import llm
 from app.agent.metric_query import validate_metric_query_shape
-from app.agent.state import DataAgentState
+from app.agent.state import DataAgentState, build_graph_evidence
 from app.conf.app_config import app_config
 from app.core.log import logger
 from app.core.query_errors import QueryExecutionError
@@ -139,6 +139,23 @@ def _build_prompt(state: DataAgentState, max_limit: int) -> str:
         f"Maximum query limit: {max_limit}",
         "Member candidates JSON:",
         json.dumps(candidate_payload, ensure_ascii=False, indent=2),
+        "Metric graph evidence JSON:",
+        json.dumps(
+            build_graph_evidence(
+                state,
+                allowed_edge_types={
+                    "METRIC_EQUIVALENT_TO",
+                    "METRIC_ATTACHED_TO",
+                    "MEASURE_DEPENDS_ON_MEMBER",
+                },
+                allowed_node_types={
+                    "semantic_member",
+                    "metric_equivalence_group",
+                },
+            ),
+            ensure_ascii=False,
+            indent=2,
+        ),
         "Question:",
         state["query"],
     ]

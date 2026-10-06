@@ -31,6 +31,7 @@ async def generate_sql(state: DataAgentState, runtime: Runtime[DataAgentContext]
         metric_infos = state["metric_infos"]
         date_info = state["date_info"]
         db_info = state["db_info"]
+        graph_evidence = state.get("graph_evidence", {})
         query = state["query"]
         resource_budget = runtime.context.get("resource_budget")
         llm_breaker = runtime.context.get("dependency_breakers", {}).get("llm")
@@ -42,6 +43,7 @@ async def generate_sql(state: DataAgentState, runtime: Runtime[DataAgentContext]
                 "metric_infos",
                 "date_info",
                 "db_info",
+                "graph_evidence",
                 "query",
             ],
         )
@@ -63,6 +65,9 @@ async def generate_sql(state: DataAgentState, runtime: Runtime[DataAgentContext]
                         date_info, allow_unicode=True, sort_keys=False
                     ),
                     "db_info": yaml.dump(db_info, allow_unicode=True, sort_keys=False),
+                    "graph_evidence": yaml.dump(
+                        graph_evidence, allow_unicode=True, sort_keys=False
+                    ),
                     "query": query,
                 }
             ),

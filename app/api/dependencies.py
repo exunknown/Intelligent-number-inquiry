@@ -6,6 +6,8 @@ FastAPI 依赖组装
 都收敛在这里，避免 HTTP 处理函数直接感知底层基础设施。
 """
 
+from dataclasses import asdict
+from types import MappingProxyType
 from typing import Annotated
 
 from fastapi import Depends
@@ -511,4 +513,8 @@ async def get_query_service(
         sql_policy_engine=sql_policy_engine,
         query_turn_context_repository=query_turn_context_repository,
         cache_service=cache_service,
+        knowledge_graph_repository=KnowledgeGraphRepository(
+            meta_mysql_repository.session
+        ),
+        knowledge_graph_config=MappingProxyType(asdict(app_config.knowledge_graph)),
     )

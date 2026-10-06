@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from time import perf_counter
 from uuid import uuid4
@@ -39,6 +40,9 @@ from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.minio.result_object_store import ResultObjectStore
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
 from app.repositories.mysql.dw.sql_fallback_repository import SQLFallbackRepository
+from app.repositories.mysql.meta.knowledge_graph_repository import (
+    KnowledgeGraphRepository,
+)
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
 from app.repositories.mysql.meta.metadata_release_repository import (
     MetadataReleaseRepository,
@@ -397,6 +401,8 @@ class QueryService:
         sql_policy_engine: SQLPolicyEngine | None = None,
         query_turn_context_repository: QueryTurnContextRepository | None = None,
         cache_service: CacheService | None = None,
+        knowledge_graph_repository: KnowledgeGraphRepository | None = None,
+        knowledge_graph_config: Mapping[str, object] | None = None,
         metrics: QueryMetrics | None = None,
     ):
         self.meta_mysql_repository = meta_mysql_repository
@@ -422,6 +428,8 @@ class QueryService:
         self.sql_policy_engine = sql_policy_engine
         self.query_turn_context_repository = query_turn_context_repository
         self.cache_service = cache_service
+        self.knowledge_graph_repository = knowledge_graph_repository
+        self.knowledge_graph_config = knowledge_graph_config
         self.metrics = metrics or get_query_metrics()
 
     async def _load_semantic_model_snapshot(self, budget: RequestBudget):
@@ -627,6 +635,10 @@ class QueryService:
             dependency_breakers=get_dependency_breakers(),
             cache_service=self.cache_service,
         )
+        if self.knowledge_graph_repository is not None:
+            context["knowledge_graph_repository"] = self.knowledge_graph_repository
+        if self.knowledge_graph_config is not None:
+            context["knowledge_graph_config"] = self.knowledge_graph_config
         usage_callback = LLMUsageCallbackHandler()
         started_at = perf_counter()
         audit = {

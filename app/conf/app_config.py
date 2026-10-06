@@ -168,6 +168,29 @@ class SelectorConfig:
 
 
 @dataclass
+class KnowledgeGraphConfig:
+    """知识图谱在线召回的开关和资源预算。"""
+
+    enabled: bool = False
+    max_hops: int = 2
+    max_paths: int = 20
+    max_nodes: int = 80
+    timeout_seconds: float = 0.25
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.max_hops <= 2:
+            raise ValueError("knowledge graph max_hops must be between 1 and 2")
+        if not 1 <= self.max_paths <= 100:
+            raise ValueError("knowledge graph max_paths must be between 1 and 100")
+        if not 1 <= self.max_nodes <= 500:
+            raise ValueError("knowledge graph max_nodes must be between 1 and 500")
+        if not 0.05 <= self.timeout_seconds <= 2.0:
+            raise ValueError(
+                "knowledge graph timeout_seconds must be between 0.05 and 2.0"
+            )
+
+
+@dataclass
 class ConversationConfig:
     """多轮问数会话解析配置。"""
 
@@ -272,6 +295,7 @@ class AppConfig:
     llm: LLMConfig
     ini: IniConfig
     selector: SelectorConfig
+    knowledge_graph: KnowledgeGraphConfig
     conversation: ConversationConfig
     cube: CubeConfig
     keycloak_admin: KeycloakAdminConfig

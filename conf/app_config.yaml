@@ -101,6 +101,13 @@ selector:
   schema_token_threshold: 4000
   token_estimate_chars_per_token: 2.0
 
+knowledge_graph:
+  enabled: ${oc.env:KNOWLEDGE_GRAPH_ENABLED,false}
+  max_hops: ${oc.env:KNOWLEDGE_GRAPH_MAX_HOPS,2}
+  max_paths: ${oc.env:KNOWLEDGE_GRAPH_MAX_PATHS,20}
+  max_nodes: ${oc.env:KNOWLEDGE_GRAPH_MAX_NODES,80}
+  timeout_seconds: ${oc.env:KNOWLEDGE_GRAPH_TIMEOUT_SECONDS,0.25}
+
 conversation:
   enabled: ${oc.env:CONVERSATION_ENABLED,true}
   recent_turns: ${oc.env:CONVERSATION_RECENT_TURNS,3}

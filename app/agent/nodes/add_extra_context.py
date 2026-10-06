@@ -10,7 +10,12 @@ from datetime import date
 from langgraph.runtime import Runtime
 
 from app.agent.context import DataAgentContext
-from app.agent.state import DataAgentState, DateInfoState, DBInfoState
+from app.agent.state import (
+    DataAgentState,
+    DateInfoState,
+    DBInfoState,
+    build_graph_evidence,
+)
 from app.core.log import logger
 from app.core.resource_governance import await_with_budget
 
@@ -50,7 +55,20 @@ async def add_extra_context(state: DataAgentState, runtime: Runtime[DataAgentCon
         )
 
         writer({"type": "progress", "step": step, "status": "success"})
-        return {"date_info": date_info, "db_info": db_info}
+        return {
+            "date_info": date_info,
+            "db_info": db_info,
+            "graph_evidence": build_graph_evidence(
+                state,
+                allowed_edge_types={
+                    "CUBE_ON_TABLE",
+                    "CUBE_JOIN_CUBE",
+                    "COLUMN_BELONGS_TO_TABLE",
+                    "COLUMN_REFERENCES_COLUMN",
+                },
+                allowed_node_types={"table", "column", "cube"},
+            ),
+        }
 
     except Exception as e:
         logger.error("{} failed error_type={}", step, type(e).__name__)

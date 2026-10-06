@@ -19,6 +19,7 @@ from app.agent.state import (
     SelectorTableState,
     SelectorValueState,
     TableInfoState,
+    build_graph_evidence,
 )
 from app.core.log import logger
 from app.core.resource_governance import await_with_budget
@@ -199,6 +200,7 @@ async def merge_retrieved_info(
             "table_infos": table_infos,
             "metric_infos": metric_infos,
             "selector_candidates": selector_candidates,
+            "graph_evidence": build_graph_evidence(state),
         }
     except Exception as e:
         logger.error("{} failed error_type={}", step, type(e).__name__)

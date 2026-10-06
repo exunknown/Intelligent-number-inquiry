@@ -140,6 +140,7 @@ class DataAgentState(TypedDict):
     retrieved_graph_edges: NotRequired[list[KnowledgeGraphEdge]]
     graph_paths: NotRequired[list[KnowledgeGraphPath]]
     graph_evidence_summary: NotRequired[dict[str, object]]
+    graph_evidence: NotRequired[dict[str, object]]
 
     table_infos: list[TableInfoState]  # 合并和补齐后的表结构上下文
     metric_infos: list[MetricInfoState]  # 合并后的指标上下文
@@ -178,6 +179,96 @@ class DataAgentState(TypedDict):
     sql_correction_attempts: int  # 当前自动修正次数，最多一次
     sql_cost_estimate: dict  # estimated_rows 与 query_cost
     sql_result_stats: dict  # 行数、字节数、截断标记和耗时
+
+
+def build_graph_evidence(
+    state: DataAgentState,
+    *,
+    allowed_edge_types: set[str] | frozenset[str] | None = None,
+    allowed_node_types: set[str] | frozenset[str] | None = None,
+    max_nodes: int = 40,
+    max_edges: int = 40,
+    max_paths: int = 20,
+) -> dict[str, object]:
+    """把图谱实体投影为可进入后续上下文的最小安全证据。"""
+
+    raw_nodes = [
+        node
+        for node in state.get("retrieved_graph_nodes", [])
+        if isinstance(node, KnowledgeGraphNode)
+        and (allowed_node_types is None or node.node_type in allowed_node_types)
+    ]
+    node_by_id = {node.node_id: node for node in raw_nodes}
+    raw_edges = [
+        edge
+        for edge in state.get("retrieved_graph_edges", [])
+        if isinstance(edge, KnowledgeGraphEdge)
+        and (allowed_edge_types is None or edge.edge_type in allowed_edge_types)
+        and edge.source_node_id in node_by_id
+        and edge.target_node_id in node_by_id
+    ]
+    raw_edges.sort(key=lambda edge: edge.edge_id)
+    raw_edges = raw_edges[: max(0, max_edges)]
+    related_node_ids = {
+        node_id
+        for edge in raw_edges
+        for node_id in (edge.source_node_id, edge.target_node_id)
+    }
+    selected_nodes = [
+        node for node in raw_nodes if not raw_edges or node.node_id in related_node_ids
+    ]
+    selected_nodes.sort(key=lambda node: node.node_id)
+    selected_nodes = selected_nodes[: max(0, max_nodes)]
+    selected_node_ids = {node.node_id for node in selected_nodes}
+    selected_edge_ids = {
+        edge.edge_id
+        for edge in raw_edges
+        if (
+            edge.source_node_id in selected_node_ids
+            and edge.target_node_id in selected_node_ids
+        )
+    }
+
+    edges: list[dict[str, object]] = []
+    for edge in raw_edges:
+        if edge.edge_id not in selected_edge_ids:
+            continue
+        note = None
+        for key in ("relationship", "relation_type", "note"):
+            value = edge.evidence.get(key)
+            if isinstance(value, str) and value.strip():
+                note = value.strip()[:80]
+                break
+        item: dict[str, object] = {
+            "id": edge.edge_id,
+            "type": edge.edge_type,
+            "source": edge.source_node_id,
+            "target": edge.target_node_id,
+        }
+        if note is not None:
+            item["note"] = note
+        edges.append(item)
+
+    edge_id_set = {item["id"] for item in edges}
+    paths: list[dict[str, object]] = []
+    for path in state.get("graph_paths", []):
+        if not isinstance(path, KnowledgeGraphPath):
+            continue
+        if not set(path.edge_ids).issubset(edge_id_set):
+            continue
+        if not set(path.node_ids).issubset(selected_node_ids):
+            continue
+        paths.append(path.to_dict())
+        if len(paths) >= max(0, max_paths):
+            break
+
+    return {
+        "nodes": [
+            {"id": node.node_id, "type": node.node_type} for node in selected_nodes
+        ],
+        "edges": edges,
+        "paths": paths,
+    }
 
 
 def _safe_context_value(value: Any) -> Any:
