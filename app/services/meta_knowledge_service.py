@@ -28,6 +28,7 @@ from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantRepository
+from app.services.knowledge_graph_service import KnowledgeGraphService
 
 _POINT_ID_NAMESPACE = uuid.UUID("b2a84750-45e7-5e50-8887-c5e81322a4f5")
 
@@ -63,6 +64,7 @@ class MetaKnowledgeService:
         embedding_client: HuggingFaceEndpointEmbeddings,
         value_es_repository: ValueESRepository,
         metric_qdrant_repository: MetricQdrantRepository,
+        knowledge_graph_service: KnowledgeGraphService | None = None,
     ):
         # meta repository 负责结构化元数据的落库
         self.meta_mysql_repository: MetaMySQLRepository = meta_mysql_repository
@@ -76,6 +78,8 @@ class MetaKnowledgeService:
         self.value_es_repository: ValueESRepository = value_es_repository
         # 指标向量集合和字段向量集合分开管理，便于后续按对象类型独立召回
         self.metric_qdrant_repository: MetricQdrantRepository = metric_qdrant_repository
+        # 图谱服务复用当前 Meta MySQL 会话；旧调用不注入时保持原构建行为
+        self.knowledge_graph_service = knowledge_graph_service
         self._build_lock = asyncio.Lock()
 
     async def _commit_staged_indexes(self, staged_indexes):
@@ -122,7 +126,7 @@ class MetaKnowledgeService:
 
     async def _save_tables_to_meta_db(
         self, meta_config: MetaConfig, release_version: str | None = None
-    ) -> list[ColumnInfo]:
+    ) -> tuple[list[TableInfo], list[ColumnInfo]]:
         """把配置里的表字段信息补齐后写入 Meta MySQL"""
         table_infos: list[TableInfo] = []
         column_infos: list[ColumnInfo] = []
@@ -166,7 +170,26 @@ class MetaKnowledgeService:
                 column_infos, release_version
             )
 
-        return column_infos
+        return table_infos, column_infos
+
+    async def _persist_knowledge_graph(
+        self,
+        table_infos: list[TableInfo],
+        column_infos: list[ColumnInfo],
+        release_version: str,
+    ) -> None:
+        """构建并在当前 Meta MySQL 会话中替换指定版本的图谱。"""
+
+        if self.knowledge_graph_service is None:
+            return
+        build_result = await self.knowledge_graph_service.build(
+            table_infos,
+            column_infos,
+            None,
+            release_version,
+        )
+        async with self.meta_mysql_repository.session.begin():
+            await self.knowledge_graph_service.persist(build_result)
 
     async def _save_column_info_to_qdrant(
         self,
@@ -426,6 +449,8 @@ class MetaKnowledgeService:
         active_column_target = None
         active_value_target = None
         active_metric_target = None
+        table_infos: list[TableInfo] = []
+        column_infos: list[ColumnInfo] = []
         try:
             if release_version:
                 if meta_config.tables:
@@ -512,7 +537,7 @@ class MetaKnowledgeService:
                     await self.meta_mysql_repository.clear_release(release_version)
 
             if meta_config.tables:
-                column_infos = await self._save_tables_to_meta_db(
+                table_infos, column_infos = await self._save_tables_to_meta_db(
                     meta_config, release_version
                 )
                 logger.info("保存表信息和字段信息到 Meta MySQL")
@@ -576,6 +601,13 @@ class MetaKnowledgeService:
                     != await self.metric_qdrant_repository.count_points(metric_index[2])
                 ):
                     raise ValueError("metric staging point count mismatch")
+
+            if table_infos:
+                await self._persist_knowledge_graph(
+                    table_infos,
+                    column_infos,
+                    release_version or "legacy",
+                )
 
             if release_version and staged_indexes and activate_aliases:
                 commit_started = True

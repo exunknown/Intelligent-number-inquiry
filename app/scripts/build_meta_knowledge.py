@@ -22,9 +22,13 @@ from app.clients.mysql_client_manager import (
 from app.clients.qdrant_client_manager import get_qdrant_client_manager
 from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
+from app.repositories.mysql.meta.knowledge_graph_repository import (
+    KnowledgeGraphRepository,
+)
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantRepository
+from app.services.knowledge_graph_service import KnowledgeGraphService
 from app.services.meta_knowledge_service import MetaKnowledgeService
 
 
@@ -73,6 +77,7 @@ async def build(
     ):
         # 创建 repository 对象
         meta_mysql_repository = MetaMySQLRepository(meta_session)
+        knowledge_graph_repository = KnowledgeGraphRepository(meta_session)
         dw_mysql_repository = DWMySQLRepository(dw_session)
         # 字段和指标分别写入不同的 Qdrant collection，后续可以独立召回
         column_qdrant_repository = ColumnQdrantRepository(
@@ -92,6 +97,7 @@ async def build(
             embedding_client=embedding_client,
             value_es_repository=value_es_repository,
             metric_qdrant_repository=metric_qdrant_repository,
+            knowledge_graph_service=KnowledgeGraphService(knowledge_graph_repository),
         )
 
         # 真正进入服务层的构建逻辑

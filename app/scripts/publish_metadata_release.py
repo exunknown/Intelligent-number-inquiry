@@ -23,6 +23,9 @@ from app.entities.metadata_release import MetadataReleaseManifest
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
+from app.repositories.mysql.meta.knowledge_graph_repository import (
+    KnowledgeGraphRepository,
+)
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
 from app.repositories.mysql.meta.metadata_release_repository import (
     MetadataReleaseRepository,
@@ -33,6 +36,7 @@ from app.repositories.qdrant.cube_member_qdrant_repository import (
 )
 from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantRepository
 from app.scripts.build_meta_knowledge import metadata_build_lock
+from app.services.knowledge_graph_service import KnowledgeGraphService
 from app.services.meta_knowledge_service import MetaKnowledgeService
 from app.services.metadata_release_coordinator import (
     MetadataAliasBinding,
@@ -84,8 +88,9 @@ async def _build_staging(config_path: Path, release_version: str):
         meta_mysql_client_manager.session_factory() as meta_session,
         dw_mysql_client_manager.session_factory() as dw_session,
     ):
+        meta_mysql_repository = MetaMySQLRepository(meta_session)
         service = MetaKnowledgeService(
-            meta_mysql_repository=MetaMySQLRepository(meta_session),
+            meta_mysql_repository=meta_mysql_repository,
             dw_mysql_repository=DWMySQLRepository(dw_session),
             column_qdrant_repository=ColumnQdrantRepository(
                 get_qdrant_client_manager().client
@@ -94,6 +99,9 @@ async def _build_staging(config_path: Path, release_version: str):
             value_es_repository=ValueESRepository(get_es_client_manager().client),
             metric_qdrant_repository=MetricQdrantRepository(
                 get_qdrant_client_manager().client
+            ),
+            knowledge_graph_service=KnowledgeGraphService(
+                KnowledgeGraphRepository(meta_session)
             ),
         )
         return await service.build(
