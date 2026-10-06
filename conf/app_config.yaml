@@ -116,6 +116,8 @@ knowledge_graph:
   max_paths: ${oc.env:KNOWLEDGE_GRAPH_MAX_PATHS,20}
   max_nodes: ${oc.env:KNOWLEDGE_GRAPH_MAX_NODES,80}
   timeout_seconds: ${oc.env:KNOWLEDGE_GRAPH_TIMEOUT_SECONDS,0.25}
+  min_order_count: ${oc.env:KNOWLEDGE_GRAPH_MIN_ORDER_COUNT,2}
+  max_associations_per_product: ${oc.env:KNOWLEDGE_GRAPH_MAX_ASSOCIATIONS_PER_PRODUCT,20}
 
 conversation:
   enabled: ${oc.env:CONVERSATION_ENABLED,true}

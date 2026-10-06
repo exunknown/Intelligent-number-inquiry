@@ -189,6 +189,8 @@ class KnowledgeGraphConfig:
     max_paths: int = 20
     max_nodes: int = 80
     timeout_seconds: float = 0.25
+    min_order_count: int = 2
+    max_associations_per_product: int = 20
 
     def __post_init__(self) -> None:
         if self.backend not in {"mysql", "neo4j"}:
@@ -202,6 +204,12 @@ class KnowledgeGraphConfig:
         if not 0.05 <= self.timeout_seconds <= 2.0:
             raise ValueError(
                 "knowledge graph timeout_seconds must be between 0.05 and 2.0"
+            )
+        if self.min_order_count < 1:
+            raise ValueError("knowledge graph min_order_count must be at least 1")
+        if not 1 <= self.max_associations_per_product <= 100:
+            raise ValueError(
+                "knowledge graph max_associations_per_product must be between 1 and 100"
             )
 
 

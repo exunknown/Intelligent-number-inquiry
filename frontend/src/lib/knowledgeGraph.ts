@@ -8,7 +8,25 @@ export const KNOWLEDGE_GRAPH_NODE_TYPES = [
     "value",
 ] as const;
 
-export type KnowledgeGraphNodeType = (typeof KNOWLEDGE_GRAPH_NODE_TYPES)[number];
+export const BUSINESS_KNOWLEDGE_GRAPH_NODE_TYPES = [
+    "customer_segment",
+    "customer",
+    "product",
+    "category",
+    "brand",
+    "region",
+    "metric",
+    "time_period",
+] as const;
+
+export const KNOWLEDGE_GRAPH_VIEWS = ["relation", "schema"] as const;
+export const KNOWLEDGE_GRAPH_SCENARIOS = ["product", "customer", "region", "metric"] as const;
+
+export type TechnicalKnowledgeGraphNodeType = (typeof KNOWLEDGE_GRAPH_NODE_TYPES)[number];
+export type BusinessKnowledgeGraphNodeType = (typeof BUSINESS_KNOWLEDGE_GRAPH_NODE_TYPES)[number];
+export type KnowledgeGraphNodeType = TechnicalKnowledgeGraphNodeType | BusinessKnowledgeGraphNodeType;
+export type KnowledgeGraphView = (typeof KNOWLEDGE_GRAPH_VIEWS)[number];
+export type KnowledgeGraphScenario = (typeof KNOWLEDGE_GRAPH_SCENARIOS)[number];
 
 export type KnowledgeGraphNode = {
     node_id: string;
@@ -68,6 +86,53 @@ export type KnowledgeGraphSubgraphResponse = {
     partial: boolean;
 };
 
+export type KnowledgeGraphOntologyType = {
+    type_name: string;
+    label: string;
+    description: string;
+    node_count: number;
+    relation_count: number;
+};
+
+export type KnowledgeGraphOntologyRelation = {
+    relation_type: string;
+    label: string;
+    description: string;
+    source_types: string[];
+    target_types: string[];
+    edge_count: number;
+};
+
+export type KnowledgeGraphOntologyResponse = {
+    release_version: string;
+    scope: "business" | "schema" | "all";
+    object_types: KnowledgeGraphOntologyType[];
+    relation_types: KnowledgeGraphOntologyRelation[];
+    backend: "mysql" | "neo4j";
+};
+
+export type KnowledgeGraphEvidence = {
+    edge_id: string;
+    period?: string | null;
+    order_count?: number | null;
+    sales_amount?: number | null;
+    share?: number | null;
+    rank?: number | null;
+    confidence?: number | null;
+    source_refs: Array<Record<string, unknown>>;
+};
+
+export type KnowledgeGraphGraphResponse = {
+    view: KnowledgeGraphView;
+    release_version: string;
+    nodes: KnowledgeGraphNode[];
+    edges: KnowledgeGraphEdge[];
+    paths: KnowledgeGraphPath[];
+    evidence: KnowledgeGraphEvidence[];
+    partial: boolean;
+    backend: "mysql" | "neo4j";
+};
+
 const NODE_TYPE_LABELS: Record<KnowledgeGraphNodeType, string> = {
     table: "数据表",
     column: "字段",
@@ -76,6 +141,14 @@ const NODE_TYPE_LABELS: Record<KnowledgeGraphNodeType, string> = {
     metric_equivalence_group: "指标等效组",
     business_term: "业务术语",
     value: "业务取值",
+    customer_segment: "客户群体",
+    customer: "客户",
+    product: "商品",
+    category: "品类",
+    brand: "品牌",
+    region: "地区",
+    metric: "业务指标",
+    time_period: "时间周期",
 };
 
 export function knowledgeGraphNodeTypeLabel(type: KnowledgeGraphNodeType): string {

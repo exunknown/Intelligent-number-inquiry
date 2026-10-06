@@ -7,7 +7,7 @@ from typing import Final, TypeAlias
 NodeType: TypeAlias = str
 EdgeType: TypeAlias = str
 
-NODE_TYPES: Final[frozenset[str]] = frozenset(
+TECHNICAL_NODE_TYPES: Final[frozenset[str]] = frozenset(
     {
         "table",
         "column",
@@ -19,7 +19,22 @@ NODE_TYPES: Final[frozenset[str]] = frozenset(
     }
 )
 
-EDGE_TYPES: Final[frozenset[str]] = frozenset(
+BUSINESS_NODE_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        "customer_segment",
+        "customer",
+        "product",
+        "category",
+        "brand",
+        "region",
+        "metric",
+        "time_period",
+    }
+)
+
+NODE_TYPES: Final[frozenset[str]] = TECHNICAL_NODE_TYPES | BUSINESS_NODE_TYPES
+
+TECHNICAL_EDGE_TYPES: Final[frozenset[str]] = frozenset(
     {
         "TABLE_HAS_COLUMN",
         "COLUMN_BELONGS_TO_TABLE",
@@ -36,6 +51,24 @@ EDGE_TYPES: Final[frozenset[str]] = frozenset(
     }
 )
 
+BUSINESS_EDGE_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        "CUSTOMER_IN_SEGMENT",
+        "CUSTOMER_PURCHASED_PRODUCT",
+        "SEGMENT_PREFERS_CATEGORY",
+        "SEGMENT_PREFERS_BRAND",
+        "PRODUCT_BELONGS_TO_CATEGORY",
+        "PRODUCT_OF_BRAND",
+        "PRODUCT_HOT_IN_REGION",
+        "CATEGORY_CONTRIBUTES_TO_REGION",
+        "PRODUCT_ASSOCIATED_WITH_PRODUCT",
+        "METRIC_MEASURES_OBJECT",
+        "METRIC_IN_PERIOD",
+    }
+)
+
+EDGE_TYPES: Final[frozenset[str]] = TECHNICAL_EDGE_TYPES | BUSINESS_EDGE_TYPES
+
 NODE_ID_PREFIXES: Final[dict[str, str]] = {
     "table": "table:",
     "column": "column:",
@@ -44,6 +77,14 @@ NODE_ID_PREFIXES: Final[dict[str, str]] = {
     "metric_equivalence_group": "equivalence:",
     "business_term": "term:",
     "value": "value:",
+    "customer_segment": "segment:",
+    "customer": "customer:",
+    "product": "product:",
+    "category": "category:",
+    "brand": "brand:",
+    "region": "region:",
+    "metric": "metric:",
+    "time_period": "period:",
 }
 
 SENSITIVE_KEYS: Final[frozenset[str]] = frozenset(
