@@ -6,6 +6,7 @@ from langgraph.runtime import Runtime
 
 from app.agent.context import DataAgentContext
 from app.agent.state import DataAgentState
+from app.core.query_error_catalog import get_sql_policy_error_presentation
 from app.core.query_errors import QueryExecutionError
 from app.entities.sql_execution import SQLPolicyInput
 from app.security.sql_policy import SQLPolicyReason, SQLPolicyViolation
@@ -61,11 +62,22 @@ async def validate_sql(
             }
         )
         if exc.reason in _CORRECTABLE_REASONS and attempts == 0:
-            writer({"type": "progress", "step": step, "status": "success"})
+            writer(
+                {
+                    "type": "progress",
+                    "step": step,
+                    "status": "success",
+                    "message": "发现查询结构问题，正在自动修正",
+                }
+            )
             return {"sql_validation_error": reason}
         writer({"type": "progress", "step": step, "status": "error"})
+        presentation = get_sql_policy_error_presentation(reason)
         raise QueryExecutionError(
-            "sql_rejected", "SQL 查询未通过安全检查", False
+            "sql_rejected",
+            presentation.message,
+            False,
+            details={"sql_rejection_reason": reason},
         ) from None
 
     writer({"type": "progress", "step": step, "status": "success"})
