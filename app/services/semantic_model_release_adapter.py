@@ -40,12 +40,14 @@ class SemanticModelReleaseAdapter:
         qdrant_repository,
         embedding_client: HuggingFaceEndpointEmbeddings,
         compiler: CubeSemanticModelCompiler | None = None,
+        knowledge_graph_service=None,
     ):
         self.semantic_repository = semantic_repository
         self.metadata_release_repository = metadata_release_repository
         self.qdrant_repository = qdrant_repository
         self.embedding_client = embedding_client
         self.compiler = compiler or CubeSemanticModelCompiler()
+        self.knowledge_graph_service = knowledge_graph_service
         self.compilation: CubeCompilationResult | None = None
         self.staging: SemanticSearchStagingResult | None = None
 
@@ -97,6 +99,10 @@ class SemanticModelReleaseAdapter:
                     f"expected {len(entries)}, got {point_count}"
                 )
             previous_collection = await self.qdrant_repository.get_alias_target()
+            if self.knowledge_graph_service is not None:
+                await self.knowledge_graph_service.stage(
+                    snapshot, snapshot.release_version
+                )
         except Exception:
             if collection_name is not None:
                 try:
@@ -184,6 +190,11 @@ class SemanticModelReleaseAdapter:
         snapshot = await self.semantic_repository.get_snapshot(release_version)
         if snapshot is None:
             raise ValueError("semantic model release snapshot not found")
+        if (
+            self.knowledge_graph_service is not None
+            and not await self.knowledge_graph_service.has_release(release_version)
+        ):
+            raise ValueError("knowledge graph release is missing")
         await self.compile_model(snapshot)
         await self.stage_search_index(snapshot)
 

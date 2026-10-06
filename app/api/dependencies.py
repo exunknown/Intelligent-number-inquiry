@@ -32,6 +32,9 @@ from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
 from app.repositories.mysql.dw.sql_fallback_repository import SQLFallbackRepository
 from app.repositories.mysql.meta.app_user_repository import AppUserRepository
 from app.repositories.mysql.meta.authz_policy_repository import AuthzPolicyRepository
+from app.repositories.mysql.meta.knowledge_graph_repository import (
+    KnowledgeGraphRepository,
+)
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
 from app.repositories.mysql.meta.metadata_release_repository import (
     MetadataReleaseRepository,
@@ -66,6 +69,7 @@ from app.services.authorization_service import (
 from app.services.cache_service import CacheService
 from app.services.cube_semantic_model_compiler import CubeSemanticModelCompiler
 from app.services.keycloak_user_service import KeycloakUserService
+from app.services.knowledge_graph_service import KnowledgeGraphService
 from app.services.metadata_release_coordinator import SemanticModelReleaseCoordinator
 from app.services.metric_candidate_service import MetricCandidateService
 from app.services.metric_catalog_service import MetricCatalogService
@@ -232,6 +236,7 @@ async def get_semantic_model_service(
     """组装语义模型治理服务。"""
 
     metadata_release_repository = MetadataReleaseRepository(repository.session)
+    meta_repository = MetaMySQLRepository(repository.session)
     adapter = SemanticModelReleaseAdapter(
         semantic_repository=repository,
         metadata_release_repository=metadata_release_repository,
@@ -244,6 +249,10 @@ async def get_semantic_model_service(
                 get_cube_client_manager().client,
                 app_config.cube,
             )
+        ),
+        knowledge_graph_service=KnowledgeGraphService(
+            KnowledgeGraphRepository(repository.session),
+            meta_repository,
         ),
     )
     coordinator = SemanticModelReleaseCoordinator(

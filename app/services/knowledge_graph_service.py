@@ -37,8 +37,43 @@ class GraphBuildResult:
 class KnowledgeGraphService:
     """从元数据和语义模型快照构建版本化知识图谱。"""
 
-    def __init__(self, repository: KnowledgeGraphRepository | None = None):
+    def __init__(
+        self,
+        repository: KnowledgeGraphRepository | None = None,
+        metadata_repository=None,
+    ):
         self.repository = repository
+        self.metadata_repository = metadata_repository
+
+    async def stage(
+        self, snapshot: SemanticModelSnapshot, release_version: str
+    ) -> GraphBuildResult:
+        """读取同版本表字段元数据，构建并替换候选图谱。"""
+
+        table_infos: list[TableInfo] = []
+        column_infos: list[ColumnInfo] = []
+        if self.metadata_repository is not None:
+            table_infos = await self.metadata_repository.list_table_infos(
+                release_version
+            )
+            column_infos = await self.metadata_repository.list_column_infos(
+                release_version
+            )
+        result = await self.build(
+            table_infos,
+            column_infos,
+            snapshot,
+            release_version,
+        )
+        await self.persist(result)
+        return result
+
+    async def has_release(self, release_version: str) -> bool:
+        """判断图谱是否已经为指定发布版本物化。"""
+
+        if self.repository is None:
+            return False
+        return await self.repository.has_release(release_version)
 
     async def build(
         self,

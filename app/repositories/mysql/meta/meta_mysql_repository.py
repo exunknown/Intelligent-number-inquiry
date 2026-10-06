@@ -8,7 +8,7 @@ Repository 自身只关心“如何写入”，而“哪些写操作要放在同
 问数链路运行时也会从这里读取元数据，用来把召回到的 id 补齐成完整实体
 """
 
-from sqlalchemy import delete, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
@@ -144,6 +144,32 @@ class MetaMySQLRepository:
             return TableInfoMapper.to_entity(table_info)
         else:
             return None
+
+    async def list_table_infos(
+        self, release_version: str | None = None
+    ) -> list[TableInfo]:
+        """按发布版本读取全部表元数据，供图谱 staging 组装节点。"""
+
+        version = release_version or self.release_version
+        result = await self.session.execute(
+            select(TableInfoMySQL)
+            .where(TableInfoMySQL.release_version == version)
+            .order_by(TableInfoMySQL.id)
+        )
+        return [TableInfoMapper.to_entity(model) for model in result.scalars().all()]
+
+    async def list_column_infos(
+        self, release_version: str | None = None
+    ) -> list[ColumnInfo]:
+        """按发布版本读取全部字段元数据，供图谱 staging 组装节点。"""
+
+        version = release_version or self.release_version
+        result = await self.session.execute(
+            select(ColumnInfoMySQL)
+            .where(ColumnInfoMySQL.release_version == version)
+            .order_by(ColumnInfoMySQL.id)
+        )
+        return [ColumnInfoMapper.to_entity(model) for model in result.scalars().all()]
 
     async def get_key_columns_by_table_id(self, table_id: str) -> list[ColumnInfo]:
         """查询指定表的主外键字段，避免 Join 关键字段被向量召回漏掉"""
