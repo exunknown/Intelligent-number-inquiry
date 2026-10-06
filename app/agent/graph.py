@@ -24,6 +24,7 @@ from app.agent.nodes.generate_sql import generate_sql
 from app.agent.nodes.merge_retrieved_info import merge_retrieved_info
 from app.agent.nodes.recall_column import recall_column
 from app.agent.nodes.recall_cube_member import recall_cube_member
+from app.agent.nodes.recall_knowledge_graph import recall_knowledge_graph
 from app.agent.nodes.recall_value import recall_value
 from app.agent.nodes.resolve_conversation import resolve_conversation
 from app.agent.nodes.route_selector import route_selector
@@ -79,6 +80,7 @@ graph_builder.add_node("extract_keywords", extract_keywords)
 graph_builder.add_node("recall_column", recall_column)
 graph_builder.add_node("recall_value", recall_value)
 graph_builder.add_node("recall_cube_member", recall_cube_member)
+graph_builder.add_node("recall_knowledge_graph", recall_knowledge_graph)
 graph_builder.add_node("merge_retrieved_info", merge_retrieved_info)
 graph_builder.add_node("semantic_coverage_gate", semantic_coverage_gate)
 graph_builder.add_node("generate_metric_query", generate_metric_query)
@@ -113,10 +115,11 @@ graph_builder.add_edge("extract_keywords", "recall_column")
 graph_builder.add_edge("extract_keywords", "recall_value")
 graph_builder.add_edge("extract_keywords", "recall_cube_member")
 
-# 三路召回都完成后，再进入统一的信息合并节点
-graph_builder.add_edge("recall_column", "merge_retrieved_info")
-graph_builder.add_edge("recall_value", "merge_retrieved_info")
-graph_builder.add_edge("recall_cube_member", "merge_retrieved_info")
+# 三路召回都完成后，先做可降级图谱推理，再进入统一信息合并节点
+graph_builder.add_edge("recall_column", "recall_knowledge_graph")
+graph_builder.add_edge("recall_value", "recall_knowledge_graph")
+graph_builder.add_edge("recall_cube_member", "recall_knowledge_graph")
+graph_builder.add_edge("recall_knowledge_graph", "merge_retrieved_info")
 
 # 优先尝试受治理指标链路；语义未覆盖或 unmatched 决策在阶段 1 由安全门禁拒绝
 graph_builder.add_edge("merge_retrieved_info", "semantic_coverage_gate")

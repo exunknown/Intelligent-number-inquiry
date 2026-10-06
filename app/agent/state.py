@@ -16,6 +16,11 @@ from sqlglot import exp
 from app.agent.selector import SelectorDecision
 from app.entities.column_info import ColumnInfo
 from app.entities.cube_member import CubeMember
+from app.entities.knowledge_graph import (
+    KnowledgeGraphEdge,
+    KnowledgeGraphNode,
+    KnowledgeGraphPath,
+)
 from app.entities.metric_info import MetricInfo
 from app.entities.metric_query import MetricQueryDecision, SemanticMissReason
 from app.entities.query_turn_context import QueryTurnContext
@@ -131,6 +136,10 @@ class DataAgentState(TypedDict):
     retrieved_column_infos: list[ColumnInfo]  # 检索到的字段信息
     retrieved_metric_infos: list[MetricInfo]  # 检索到的指标信息
     retrieved_value_infos: list[ValueInfo]  # 检索到的取值信息
+    retrieved_graph_nodes: NotRequired[list[KnowledgeGraphNode]]
+    retrieved_graph_edges: NotRequired[list[KnowledgeGraphEdge]]
+    graph_paths: NotRequired[list[KnowledgeGraphPath]]
+    graph_evidence_summary: NotRequired[dict[str, object]]
 
     table_infos: list[TableInfoState]  # 合并和补齐后的表结构上下文
     metric_infos: list[MetricInfoState]  # 合并后的指标上下文

@@ -8,6 +8,7 @@ Context 用来保存一次图执行过程中不参与状态合并的外部依赖
 这样节点可以通过 runtime.context 复用外部工具，而不需要把连接类对象塞进 State
 """
 
+from collections.abc import Mapping
 from typing import NotRequired, TypedDict
 
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
@@ -19,6 +20,9 @@ from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
 from app.repositories.mysql.dw.sql_fallback_repository import SQLFallbackRepository
+from app.repositories.mysql.meta.knowledge_graph_repository import (
+    KnowledgeGraphRepository,
+)
 from app.repositories.mysql.meta.meta_mysql_repository import MetaMySQLRepository
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.cube_member_qdrant_repository import (
@@ -58,6 +62,10 @@ class DataAgentContext(TypedDict):
     semantic_model_snapshot: NotRequired[SemanticModelSnapshot]
     # 当前生效的元数据版本，用于缓存隔离和审计关联
     metadata_release_version: NotRequired[str | None]
+    # 图谱仓储只按当前发布版本查询有界关系路径
+    knowledge_graph_repository: NotRequired[KnowledgeGraphRepository]
+    # 图谱开关和查询预算；不放入 State，也不包含凭据
+    knowledge_graph_config: NotRequired[Mapping[str, object]]
     # 无状态的指标关系解析器，不持有仓储或客户端
     semantic_metric_relation_service: NotRequired[SemanticMetricRelationService]
     # 请求级端到端资源预算；调试入口和旧调用可暂不提供
