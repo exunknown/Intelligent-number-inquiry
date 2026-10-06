@@ -31,6 +31,9 @@ from app.conf.app_config import app_config
 from app.repositories.cube.cube_repository import CubeRepository
 from app.repositories.es.value_es_repository import ValueESRepository
 from app.repositories.minio.result_object_store import ResultObjectStore
+from app.repositories.mysql.dw.business_graph_repository import (
+    BusinessGraphSourceRepository,
+)
 from app.repositories.mysql.dw.dw_mysql_repository import DWMySQLRepository
 from app.repositories.mysql.dw.sql_fallback_repository import SQLFallbackRepository
 from app.repositories.mysql.meta.app_user_repository import AppUserRepository
@@ -404,6 +407,14 @@ async def get_dw_mysql_repository(
     """基于请求级 Session 创建数仓仓储"""
 
     return DWMySQLRepository(session)
+
+
+async def get_business_graph_source_repository(
+    session: Annotated[AsyncSession, Depends(get_dw_session)],
+) -> BusinessGraphSourceRepository:
+    """创建业务知识图谱构建所需的数仓源仓储。"""
+
+    return BusinessGraphSourceRepository(session)
 
 
 async def get_sql_fallback_session():
