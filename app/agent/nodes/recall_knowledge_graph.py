@@ -11,6 +11,8 @@ from app.agent.context import DataAgentContext
 from app.agent.state import DataAgentState
 from app.core.log import logger
 from app.entities.knowledge_graph import (
+    BUSINESS_EDGE_TYPES,
+    BUSINESS_NODE_TYPES,
     EDGE_TYPES,
     KnowledgeGraphEdge,
     KnowledgeGraphNode,
@@ -29,6 +31,7 @@ _ALLOWED_EDGE_TYPES = frozenset(
         "COLUMN_REFERENCES_COLUMN",
         "VALUE_BELONGS_TO_COLUMN",
     }
+    | BUSINESS_EDGE_TYPES
 )
 _DEFAULT_CONFIG = {
     "enabled": False,
@@ -104,6 +107,38 @@ def _seed_node_ids(state: DataAgentState) -> list[str]:
     return seeds
 
 
+def _business_seed_node_ids(state: DataAgentState) -> list[str]:
+    """从业务关键词生成稳定候选 ID，实际可见性仍由权限投影决定。"""
+
+    terms: list[str] = []
+    for value in [state.get("query", ""), *state.get("keywords", [])]:
+        if not isinstance(value, str):
+            continue
+        normalized = value.strip()
+        if normalized and normalized not in terms:
+            terms.append(normalized)
+
+    seeds: list[str] = []
+
+    def add(node_id: str) -> None:
+        if node_id not in seeds:
+            seeds.append(node_id)
+
+    for term in terms:
+        segment = (
+            term.replace("会员", "").replace("客户", "").replace("群体", "").strip()
+        )
+        if segment:
+            add(f"segment:{segment}")
+        for prefix in ("product", "category", "brand", "region"):
+            add(f"{prefix}:{term}")
+        if term in {"销售额", "成交金额", "成交额", "gmv"}:
+            add("metric:sales_amount")
+        if term in {"订单数", "订单量", "购买次数"}:
+            add("metric:order_count")
+    return seeds
+
+
 def _directly_allowed_node(node: KnowledgeGraphNode, permissions) -> bool:
     node_id = node.node_id
     if node.node_type == "table":
@@ -135,6 +170,17 @@ def _directly_allowed_node(node: KnowledgeGraphNode, permissions) -> bool:
             isinstance(table_id, str)
             and table_id.rsplit(".", 1)[-1] in permissions.allowed_tables
         )
+    if node.node_type in BUSINESS_NODE_TYPES:
+        allowed_fact_scope = "fact_order" in permissions.allowed_tables or any(
+            column.startswith("fact_order.") for column in permissions.allowed_columns
+        )
+        if node.node_type == "metric":
+            business_key = node.payload.get("business_key")
+            return (
+                isinstance(business_key, str)
+                and f"ecommerce.{business_key}" in permissions.allowed_metrics
+            ) or allowed_fact_scope
+        return allowed_fact_scope
     return False
 
 
@@ -229,6 +275,9 @@ async def recall_knowledge_graph(
         return result
 
     seed_ids = _seed_node_ids(state)
+    for business_seed in _business_seed_node_ids(state):
+        if business_seed not in seed_ids:
+            seed_ids.append(business_seed)
     repository = context.get("knowledge_graph_repository")
     release_version = context.get("metadata_release_version")
     if (
