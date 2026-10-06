@@ -27,6 +27,7 @@ _ALLOWED_EDGE_TYPES = frozenset(
         "CUBE_JOIN_CUBE",
         "COLUMN_BELONGS_TO_TABLE",
         "COLUMN_REFERENCES_COLUMN",
+        "VALUE_BELONGS_TO_COLUMN",
     }
 )
 _DEFAULT_CONFIG = {

@@ -137,6 +137,44 @@ class KnowledgeGraphService:
                         weight=1.0,
                     ),
                 )
+            if column.role in {"dimension", "foreign_key"}:
+                column_node_id = f"column:{column.id}"
+                for example in column.examples:
+                    if example is None:
+                        continue
+                    value = str(example).strip()
+                    if not value:
+                        continue
+                    value_node_id = f"value:{column.id}.{value}"
+                    self._add_node(
+                        nodes,
+                        KnowledgeGraphNode(
+                            node_id=value_node_id,
+                            node_type="value",
+                            title=value,
+                            description=f"{column.name}业务取值",
+                            payload={"value": value, "column_id": column.id},
+                            source="business_data",
+                            confidence=0.9,
+                            release_version=release_version,
+                        ),
+                    )
+                    self._add_edge(
+                        edges,
+                        KnowledgeGraphEdge(
+                            edge_id=(
+                                f"edge:value_belongs_to_column:"
+                                f"{value_node_id}->{column_node_id}"
+                            ),
+                            source_node_id=value_node_id,
+                            target_node_id=column_node_id,
+                            edge_type="VALUE_BELONGS_TO_COLUMN",
+                            weight=0.9,
+                            evidence={"column_id": column.id},
+                            source="business_data",
+                            release_version=release_version,
+                        ),
+                    )
                 self._add_edge(
                     edges,
                     self._edge(
