@@ -12,6 +12,7 @@ import { logout } from "./auth/keycloak";
 import { Composer } from "./components/Composer";
 import { EmptyState } from "./components/EmptyState";
 import { HistoryPage } from "./components/HistoryPage";
+import { KnowledgeGraphPage } from "./components/KnowledgeGraphPage";
 import { MessageBubble } from "./components/MessageBubble";
 import { MobileSessionDrawer } from "./components/MobileSessionDrawer";
 import { SemanticModelPage } from "./components/SemanticModelPage";
@@ -106,7 +107,8 @@ type AppPath =
     | "/user-management"
     | "/agent-management/metrics"
     | "/agent-management/dimensions"
-    | "/agent-management/cubes";
+    | "/agent-management/cubes"
+    | "/agent-management/knowledge-graph";
 
 function readAppPath(): AppPath {
     if (window.location.pathname === "/history") return "/history";
@@ -123,6 +125,9 @@ function readAppPath(): AppPath {
     }
     if (window.location.pathname === "/agent-management/cubes") {
         return "/agent-management/cubes";
+    }
+    if (window.location.pathname === "/agent-management/knowledge-graph") {
+        return "/agent-management/knowledge-graph";
     }
     return "/";
 }
@@ -176,11 +181,13 @@ export default function App({ username }: AppProps) {
             setNavigationError("查询进行中，请先停止查询后再切换页面。");
             return;
         }
-        if (
+        const leavingSemanticEditor =
             isAgentManagementPath(path) &&
-            semanticModelDirty &&
-            !isAgentManagementPath(nextPath)
-        ) {
+            path !== "/agent-management/knowledge-graph" &&
+            nextPath === "/agent-management/knowledge-graph";
+        const leavingAgentManagement =
+            isAgentManagementPath(path) && !isAgentManagementPath(nextPath);
+        if (semanticModelDirty && (leavingSemanticEditor || leavingAgentManagement)) {
             if (!window.confirm("当前 Agent 管理草稿尚未保存，确定离开吗？")) return;
             setSemanticModelDirty(false);
         }
@@ -197,11 +204,13 @@ export default function App({ username }: AppProps) {
                 setNavigationError("查询进行中，请先停止查询后再切换页面。");
                 return;
             }
-            if (
+            const leavingSemanticEditor =
                 isAgentManagementPath(path) &&
-                semanticModelDirty &&
-                !isAgentManagementPath(nextPath)
-            ) {
+                path !== "/agent-management/knowledge-graph" &&
+                nextPath === "/agent-management/knowledge-graph";
+            const leavingAgentManagement =
+                isAgentManagementPath(path) && !isAgentManagementPath(nextPath);
+            if (semanticModelDirty && (leavingSemanticEditor || leavingAgentManagement)) {
                 window.history.pushState({}, "", path);
                 setNavigationError("当前 Agent 管理草稿尚未保存，请先保存或确认离开。");
                 return;
@@ -749,12 +758,19 @@ export default function App({ username }: AppProps) {
                             )
                         ) : isAgentManagementPath(path) ? (
                         semanticModelCapability ? (
-                            <SemanticModelPage
-                                onBack={() => navigateTo("/")}
-                                onDirtyChange={setSemanticModelDirty}
-                                initialTab={semanticBuildTabForPath(path)}
-                                onTabChange={(tab) => navigateTo(semanticBuildPath(tab))}
-                            />
+                            path === "/agent-management/knowledge-graph" ? (
+                                <KnowledgeGraphPage
+                                    onBack={() => navigateTo("/")}
+                                    onTabChange={(tab) => navigateTo(semanticBuildPath(tab))}
+                                />
+                            ) : (
+                                <SemanticModelPage
+                                    onBack={() => navigateTo("/")}
+                                    onDirtyChange={setSemanticModelDirty}
+                                    initialTab={semanticBuildTabForPath(path)}
+                                    onTabChange={(tab) => navigateTo(semanticBuildPath(tab))}
+                                />
+                            )
                         ) : (
                             <div className="grid min-h-0 flex-1 place-items-center bg-canvas px-6 text-center"><div><p className="font-serif text-xl font-bold text-ink">没有 Agent 管理权限</p><p className="mt-2 text-sm text-ink/55">请联系平台管理员申请语义模型操作权限。</p></div></div>
                         )

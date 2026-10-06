@@ -1,7 +1,8 @@
 export type SemanticMemberType = "measure" | "dimension" | "time_dimension";
-export type SemanticBuildTab = "metrics" | "dimensions" | "cubes";
+export type SemanticBuildTab = "metrics" | "dimensions" | "cubes" | "knowledge-graph";
 
 export function semanticBuildTabForPath(pathname: string): SemanticBuildTab {
+    if (pathname === "/agent-management/knowledge-graph") return "knowledge-graph";
     if (pathname === "/agent-management/cubes") return "cubes";
     if (pathname === "/agent-management/dimensions") return "dimensions";
     return "metrics";
@@ -9,7 +10,8 @@ export function semanticBuildTabForPath(pathname: string): SemanticBuildTab {
 
 export function semanticBuildPath(
     tab: SemanticBuildTab,
-): "/agent-management/metrics" | "/agent-management/dimensions" | "/agent-management/cubes" {
+): "/agent-management/metrics" | "/agent-management/dimensions" | "/agent-management/cubes" | "/agent-management/knowledge-graph" {
+    if (tab === "knowledge-graph") return "/agent-management/knowledge-graph";
     if (tab === "dimensions") return "/agent-management/dimensions";
     if (tab === "cubes") return "/agent-management/cubes";
     return "/agent-management/metrics";
@@ -18,7 +20,7 @@ export function semanticBuildPath(
 export function semanticMemberTypesForBuildTab(
     tab: SemanticBuildTab,
 ): SemanticMemberType[] {
-    if (tab === "cubes") return [];
+    if (tab === "cubes" || tab === "knowledge-graph") return [];
     return tab === "dimensions" ? ["dimension", "time_dimension"] : ["measure"];
 }
 

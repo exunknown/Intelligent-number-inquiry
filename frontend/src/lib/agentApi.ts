@@ -19,6 +19,12 @@ import type {
     SemanticValidationIssue,
 } from "./semanticModel";
 import { safeUserManagementMessage, type ApplicationRole, type ApplicationUserStatus } from "./userManagement";
+import type {
+    KnowledgeGraphNodeListResponse,
+    KnowledgeGraphNodeType,
+    KnowledgeGraphReleaseListResponse,
+    KnowledgeGraphSubgraphResponse,
+} from "./knowledgeGraph";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "";
 
@@ -556,6 +562,68 @@ export async function getCurrentUserCapability(): Promise<ApplicationUserMeRespo
     return getUserManagementJson<ApplicationUserMeResponse>(
         "/api/admin/users/me",
         { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+}
+
+async function getKnowledgeGraphJson<T>(path: string, action: string): Promise<T> {
+    const accessToken = await getAccessToken();
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) {
+        if (response.status === 401) throw new Error("登录已失效，请重新登录");
+        if (response.status === 403) throw new Error("没有知识图谱管理权限");
+        if (response.status === 404) throw new Error("知识图谱版本或节点不存在");
+        if (response.status === 503) throw new Error("知识图谱服务暂不可用，请稍后重试");
+        throw new Error(action);
+    }
+    return (await response.json()) as T;
+}
+
+export async function listKnowledgeGraphReleases(): Promise<KnowledgeGraphReleaseListResponse> {
+    return getKnowledgeGraphJson<KnowledgeGraphReleaseListResponse>(
+        "/api/admin/knowledge-graph/releases",
+        "知识图谱版本加载失败",
+    );
+}
+
+export async function searchKnowledgeGraphNodes(
+    releaseVersion: string,
+    query = "",
+    nodeType?: KnowledgeGraphNodeType,
+    limit = 30,
+    offset = 0,
+): Promise<KnowledgeGraphNodeListResponse> {
+    const params = new URLSearchParams({
+        release_version: releaseVersion,
+        q: query,
+        limit: String(limit),
+        offset: String(offset),
+    });
+    if (nodeType) params.set("node_type", nodeType);
+    return getKnowledgeGraphJson<KnowledgeGraphNodeListResponse>(
+        `/api/admin/knowledge-graph/nodes?${params.toString()}`,
+        "知识图谱节点加载失败",
+    );
+}
+
+export async function getKnowledgeGraphSubgraph(
+    releaseVersion: string,
+    seedNodeId: string,
+    maxHops = 2,
+    maxNodes = 80,
+    maxPaths = 100,
+): Promise<KnowledgeGraphSubgraphResponse> {
+    const params = new URLSearchParams({
+        release_version: releaseVersion,
+        seed_node_id: seedNodeId,
+        max_hops: String(maxHops),
+        max_nodes: String(maxNodes),
+        max_paths: String(maxPaths),
+    });
+    return getKnowledgeGraphJson<KnowledgeGraphSubgraphResponse>(
+        `/api/admin/knowledge-graph/subgraph?${params.toString()}`,
+        "知识图谱关系加载失败",
     );
 }
 
