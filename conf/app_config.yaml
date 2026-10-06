@@ -51,6 +51,14 @@ es:
   index_name: data_agent
   timeout_seconds: ${oc.env:ES_TIMEOUT_SECONDS,10}
 
+neo4j:
+  enabled: ${oc.env:NEO4J_ENABLED,false}
+  uri: ${oc.env:NEO4J_URI,bolt://127.0.0.1:7687}
+  user: ${oc.env:NEO4J_USER,neo4j}
+  password: ${oc.env:NEO4J_PASSWORD,''}
+  database: ${oc.env:NEO4J_DATABASE,neo4j}
+  timeout_seconds: ${oc.env:NEO4J_TIMEOUT_SECONDS,2}
+
 redis:
   enabled: ${oc.env:REDIS_ENABLED,true}
   host: ${oc.env:REDIS_HOST,127.0.0.1}

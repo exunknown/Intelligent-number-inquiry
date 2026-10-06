@@ -18,6 +18,7 @@ dependencies = [
     "langgraph>=1.1.6",
     "loguru>=0.7.3",
     "minio>=7.2,<8",
+    "neo4j>=6,<7",
     "omegaconf>=2.3.0",
     "prometheus-client>=0.21,<1",
     "pycasbin==2.8.0",

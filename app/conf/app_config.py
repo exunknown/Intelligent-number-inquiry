@@ -94,6 +94,18 @@ class ESConfig:
 
 
 @dataclass
+class Neo4jConfig:
+    """Neo4j 图数据库连接配置。"""
+
+    enabled: bool
+    uri: str
+    user: str
+    password: str
+    database: str
+    timeout_seconds: float
+
+
+@dataclass
 class RedisConfig:
     """Redis 短期事件存储配置。"""
 
@@ -289,6 +301,7 @@ class AppConfig:
     qdrant: QdrantConfig
     embedding: EmbeddingConfig
     es: ESConfig
+    neo4j: Neo4jConfig
     redis: RedisConfig
     cache: CacheConfig
     minio: MinIOConfig

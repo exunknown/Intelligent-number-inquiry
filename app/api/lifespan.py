@@ -20,6 +20,7 @@ from app.clients.mysql_client_manager import (
     meta_mysql_client_manager,
     sql_fallback_mysql_client_manager,
 )
+from app.clients.neo4j_client_manager import get_neo4j_client_manager
 from app.clients.oidc_client_manager import get_oidc_client_manager
 from app.clients.qdrant_client_manager import get_qdrant_client_manager
 from app.clients.redis_client_manager import get_redis_client_manager
@@ -38,6 +39,8 @@ async def lifespan(app: FastAPI):
     get_oidc_client_manager().init()
     get_redis_client_manager().init()
     get_minio_client_manager().init()
+    if app_config.neo4j.enabled:
+        get_neo4j_client_manager().init()
     meta_mysql_client_manager.init()
     dw_mysql_client_manager.init()
     if app_config.sql_safety.enabled:
@@ -53,6 +56,8 @@ async def lifespan(app: FastAPI):
     await get_oidc_client_manager().close()
     await get_redis_client_manager().close()
     await get_minio_client_manager().close()
+    if app_config.neo4j.enabled:
+        await get_neo4j_client_manager().close()
     await close_keycloak_admin_client()
     await meta_mysql_client_manager.close()
     await dw_mysql_client_manager.close()
