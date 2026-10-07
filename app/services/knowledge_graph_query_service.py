@@ -26,6 +26,7 @@ from app.repositories.mysql.meta.metadata_release_repository import (
 )
 
 KnowledgeGraphBackend = Literal["mysql", "neo4j"]
+KnowledgeGraphReleaseScope = Literal["business", "technical", "all"]
 
 
 class KnowledgeGraphReleaseNotFoundError(ValueError):
@@ -111,6 +112,23 @@ class KnowledgeGraphQueryService:
         )
         return await list_versions()
 
+    async def _list_release_versions(
+        self, scope: KnowledgeGraphReleaseScope
+    ) -> list[str]:
+        if scope == "business":
+            return await self._list_business_release_versions()
+        if scope == "technical":
+            list_versions = (
+                getattr(
+                    self.graph_repository,
+                    "list_technical_release_versions",
+                    None,
+                )
+                or self.graph_repository.list_release_versions
+            )
+            return await list_versions()
+        return await self.graph_repository.list_release_versions()
+
     async def list_releases(self) -> tuple[list[dict], str | None]:
         graph_versions = await self.graph_repository.list_release_versions()
         metadata_records = {
@@ -146,7 +164,14 @@ class KnowledgeGraphQueryService:
         limit: int,
         offset: int,
     ) -> tuple[str, list[KnowledgeGraphNode], int]:
-        version = await self._resolve_release(release_version)
+        scope = (
+            "business"
+            if node_type in BUSINESS_NODE_TYPES
+            else "technical"
+            if node_type in TECHNICAL_NODE_TYPES
+            else "all"
+        )
+        version = await self._resolve_release(release_version, scope=scope)
         nodes, total = await self.graph_repository.search_nodes(
             version,
             query=query,
@@ -164,7 +189,15 @@ class KnowledgeGraphQueryService:
         max_nodes: int,
         max_paths: int,
     ):
-        version = await self._resolve_release(release_version)
+        seed_type = seed_node_id.split(":", 1)[0]
+        scope = (
+            "business"
+            if seed_type in BUSINESS_NODE_TYPES
+            else "technical"
+            if seed_type in TECHNICAL_NODE_TYPES
+            else "all"
+        )
+        version = await self._resolve_release(release_version, scope=scope)
         nodes, edges, paths = await self.graph_repository.expand_paths(
             version,
             [seed_node_id],
@@ -184,7 +217,10 @@ class KnowledgeGraphQueryService:
     ) -> KnowledgeGraphOntologyResponse:
         """返回由白名单定义驱动的本体类型和关系计数。"""
 
-        version = await self._resolve_release(release_version)
+        version = await self._resolve_release(
+            release_version,
+            scope="technical" if scope == "schema" else scope,
+        )
         nodes, edges = await self.graph_repository.list_release(version)
         allowed_node_types, allowed_edge_types = self._scope_types(scope)
         node_counts = Counter(
@@ -253,7 +289,10 @@ class KnowledgeGraphQueryService:
             raise ValueError("max_edges must be between 1 and 400")
         if scenario is not None and scenario not in _SCENARIO_TYPES:
             raise ValueError("unsupported graph scenario")
-        version = await self._resolve_release(release_version)
+        version = await self._resolve_release(
+            release_version,
+            scope="business" if view == "relation" else "technical",
+        )
         allowed_node_types, allowed_edge_types = self._view_types(view)
         unknown_nodes = object_types - allowed_node_types
         unknown_edges = relation_types - allowed_edge_types
@@ -325,7 +364,12 @@ class KnowledgeGraphQueryService:
             backend=self.backend,
         )
 
-    async def _resolve_release(self, release_version: str | None) -> str:
+    async def _resolve_release(
+        self,
+        release_version: str | None,
+        *,
+        scope: KnowledgeGraphReleaseScope = "all",
+    ) -> str:
         if release_version:
             node_count, edge_count = await self.graph_repository.count_release(
                 release_version
@@ -334,7 +378,7 @@ class KnowledgeGraphQueryService:
                 raise KnowledgeGraphReleaseNotFoundError(release_version)
             return release_version
 
-        graph_versions = await self._list_business_release_versions()
+        graph_versions = await self._list_release_versions(scope)
         if graph_versions:
             return graph_versions[0]
         raise KnowledgeGraphReleaseNotFoundError("graph release not found")

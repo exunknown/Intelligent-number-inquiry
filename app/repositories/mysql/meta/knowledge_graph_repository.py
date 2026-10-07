@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.entities.knowledge_graph import (
     BUSINESS_NODE_TYPES,
     EDGE_TYPES,
+    TECHNICAL_NODE_TYPES,
     KnowledgeGraphEdge,
     KnowledgeGraphNode,
     KnowledgeGraphPath,
@@ -107,6 +108,23 @@ class KnowledgeGraphRepository:
                 func.max(KnowledgeGraphNodeMySQL.created_at).label("latest_created_at"),
             )
             .where(KnowledgeGraphNodeMySQL.node_type.in_(BUSINESS_NODE_TYPES))
+            .group_by(KnowledgeGraphNodeMySQL.release_version)
+            .order_by(
+                func.max(KnowledgeGraphNodeMySQL.created_at).desc(),
+                KnowledgeGraphNodeMySQL.release_version.desc(),
+            )
+        )
+        return [row[0] for row in result.all()]
+
+    async def list_technical_release_versions(self) -> list[str]:
+        """返回包含技术节点的图谱版本，最新写入版本排在前面。"""
+
+        result = await self.session.execute(
+            select(
+                KnowledgeGraphNodeMySQL.release_version,
+                func.max(KnowledgeGraphNodeMySQL.created_at).label("latest_created_at"),
+            )
+            .where(KnowledgeGraphNodeMySQL.node_type.in_(TECHNICAL_NODE_TYPES))
             .group_by(KnowledgeGraphNodeMySQL.release_version)
             .order_by(
                 func.max(KnowledgeGraphNodeMySQL.created_at).desc(),

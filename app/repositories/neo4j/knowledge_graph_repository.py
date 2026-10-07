@@ -9,6 +9,7 @@ from neo4j import AsyncDriver, AsyncManagedTransaction
 from app.entities.knowledge_graph import (
     BUSINESS_NODE_TYPES,
     EDGE_TYPES,
+    TECHNICAL_NODE_TYPES,
     KnowledgeGraphEdge,
     KnowledgeGraphNode,
     KnowledgeGraphPath,
@@ -105,6 +106,13 @@ ORDER BY release_version DESC
 _LIST_BUSINESS_RELEASE_VERSIONS_QUERY = f"""
 MATCH (node:{_NODE_LABEL})
 WHERE node.node_type IN $business_node_types
+RETURN DISTINCT node.release_version AS release_version
+ORDER BY release_version DESC
+"""
+
+_LIST_TECHNICAL_RELEASE_VERSIONS_QUERY = f"""
+MATCH (node:{_NODE_LABEL})
+WHERE node.node_type IN $technical_node_types
 RETURN DISTINCT node.release_version AS release_version
 ORDER BY release_version DESC
 """
@@ -327,6 +335,15 @@ class Neo4jKnowledgeGraphRepository:
         records = await self._execute(
             _LIST_BUSINESS_RELEASE_VERSIONS_QUERY,
             business_node_types=list(BUSINESS_NODE_TYPES),
+        )
+        return [record["release_version"] for record in records]
+
+    async def list_technical_release_versions(self) -> list[str]:
+        """返回 Neo4j 中包含技术节点的图谱版本。"""
+
+        records = await self._execute(
+            _LIST_TECHNICAL_RELEASE_VERSIONS_QUERY,
+            technical_node_types=list(TECHNICAL_NODE_TYPES),
         )
         return [record["release_version"] for record in records]
 
