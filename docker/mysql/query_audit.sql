@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS query_audit
     llm_output_tokens INT,
     llm_cost_units DOUBLE,
     metadata_release_version VARCHAR(64),
+    business_graph_snapshot_version VARCHAR(128),
     outcome      VARCHAR(32) NOT NULL,
     error_code   VARCHAR(64),
     verified     BOOLEAN,

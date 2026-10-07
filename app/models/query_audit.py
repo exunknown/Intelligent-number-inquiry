@@ -65,6 +65,9 @@ class QueryAuditMySQL(Base):
     metadata_release_version: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
+    business_graph_snapshot_version: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
     outcome: Mapped[str] = mapped_column(String(32), nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     verified: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

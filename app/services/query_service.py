@@ -972,6 +972,7 @@ class QueryService:
                     llm_output_tokens=llm_output_tokens,
                     llm_cost_units=None,
                     metadata_release_version=metadata_release_version,
+                    business_graph_snapshot_version=business_graph_snapshot_version,
                     session_id=session_id,
                 )
                 try:

@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context import request_id_ctx_var
@@ -17,51 +17,69 @@ class QueryAuditRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def save(self, record: QueryAuditRecord) -> None:
-        model = QueryAuditMySQL(
-            id=str(uuid4()),
-            request_id=request_id_ctx_var.get(),
-            session_id=record.session_id,
-            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
-            user_id=record.user_id,
-            username=record.username,
-            roles=sorted(set(record.roles)),
-            policy_version=record.policy_version,
-            allowed_department_ids=sorted(set(record.allowed_department_ids)),
-            authz_outcome=record.authz_outcome,
-            query_text=record.query_text,
-            query_mode=record.query_mode,
-            route_reason=record.route_reason,
-            metric_query=record.metric_query,
-            cube_query=record.cube_query,
-            sql=record.sql,
-            normalized_sql=record.normalized_sql,
-            executed_sql=record.executed_sql,
-            sql_policy_outcome=record.sql_policy_outcome,
-            sql_rejection_reason=record.sql_rejection_reason,
-            sql_estimated_rows=record.sql_estimated_rows,
-            sql_query_cost=record.sql_query_cost,
-            result_row_count=record.result_row_count,
-            result_bytes=record.result_bytes,
-            result_truncated=record.result_truncated,
-            sql_execution_duration_ms=record.sql_execution_duration_ms,
-            llm_call_count=record.llm_call_count,
-            embedding_call_count=record.embedding_call_count,
-            llm_input_tokens=record.llm_input_tokens,
-            llm_output_tokens=record.llm_output_tokens,
-            llm_cost_units=record.llm_cost_units,
-            metadata_release_version=record.metadata_release_version,
-            outcome=record.outcome,
-            error_code=record.error_code,
-            verified=record.verified,
-            duration_ms=record.duration_ms,
+    @staticmethod
+    def _values(record: QueryAuditRecord) -> dict[str, object]:
+        return {
+            "id": str(uuid4()),
+            "request_id": request_id_ctx_var.get(),
+            "session_id": record.session_id,
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
+            "user_id": record.user_id,
+            "username": record.username,
+            "roles": sorted(set(record.roles)),
+            "policy_version": record.policy_version,
+            "allowed_department_ids": sorted(set(record.allowed_department_ids)),
+            "authz_outcome": record.authz_outcome,
+            "query_text": record.query_text,
+            "query_mode": record.query_mode,
+            "route_reason": record.route_reason,
+            "metric_query": record.metric_query,
+            "cube_query": record.cube_query,
+            "sql": record.sql,
+            "normalized_sql": record.normalized_sql,
+            "executed_sql": record.executed_sql,
+            "sql_policy_outcome": record.sql_policy_outcome,
+            "sql_rejection_reason": record.sql_rejection_reason,
+            "sql_estimated_rows": record.sql_estimated_rows,
+            "sql_query_cost": record.sql_query_cost,
+            "result_row_count": record.result_row_count,
+            "result_bytes": record.result_bytes,
+            "result_truncated": record.result_truncated,
+            "sql_execution_duration_ms": record.sql_execution_duration_ms,
+            "llm_call_count": record.llm_call_count,
+            "embedding_call_count": record.embedding_call_count,
+            "llm_input_tokens": record.llm_input_tokens,
+            "llm_output_tokens": record.llm_output_tokens,
+            "llm_cost_units": record.llm_cost_units,
+            "metadata_release_version": record.metadata_release_version,
+            "business_graph_snapshot_version": record.business_graph_snapshot_version,
+            "outcome": record.outcome,
+            "error_code": record.error_code,
+            "verified": record.verified,
+            "duration_ms": record.duration_ms,
+        }
+
+    @staticmethod
+    def _is_missing_graph_snapshot_column(error: Exception) -> bool:
+        message = str(error).lower()
+        return "business_graph_snapshot_version" in message and (
+            "unknown column" in message or "1054" in message
         )
+
+    async def save(self, record: QueryAuditRecord) -> None:
+        values = self._values(record)
+        model = QueryAuditMySQL(**values)
         try:
             self.session.add(model)
             await self.session.commit()
-        except Exception:
+        except Exception as error:
             await self.session.rollback()
-            raise
+            if not self._is_missing_graph_snapshot_column(error):
+                raise
+            legacy_values = dict(values)
+            legacy_values.pop("business_graph_snapshot_version", None)
+            await self.session.execute(insert(QueryAuditMySQL).values(**legacy_values))
+            await self.session.commit()
 
     async def has_owned_request(self, request_id: str, user_id: str) -> bool:
         """确认请求审计记录属于当前用户，避免重放接口泄露请求存在性。"""
