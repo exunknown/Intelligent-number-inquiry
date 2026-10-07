@@ -100,20 +100,26 @@ class KnowledgeGraphQueryService:
     metadata_release_repository: MetadataReleaseRepository
     backend: KnowledgeGraphBackend
 
+    async def _list_business_release_versions(self) -> list[str]:
+        list_versions = (
+            getattr(
+                self.graph_repository,
+                "list_business_release_versions",
+                None,
+            )
+            or self.graph_repository.list_release_versions
+        )
+        return await list_versions()
+
     async def list_releases(self) -> tuple[list[dict], str | None]:
         graph_versions = await self.graph_repository.list_release_versions()
         metadata_records = {
             record["release_version"]: record
             for record in await self.metadata_release_repository.list_releases()
         }
-        metadata_active_version = (
-            await self.metadata_release_repository.get_active_version()
-        )
-        active_version = (
-            metadata_active_version
-            if metadata_active_version in graph_versions
-            else (graph_versions[0] if graph_versions else None)
-        )
+        # 图谱有独立的物化顺序，不能用 Cube/元数据 active 版本覆盖它。
+        business_graph_versions = await self._list_business_release_versions()
+        active_version = business_graph_versions[0] if business_graph_versions else None
         items = []
         for release_version in graph_versions:
             record = metadata_records.get(release_version, {})
@@ -328,14 +334,7 @@ class KnowledgeGraphQueryService:
                 raise KnowledgeGraphReleaseNotFoundError(release_version)
             return release_version
 
-        active_version = await self.metadata_release_repository.get_active_version()
-        if active_version:
-            node_count, edge_count = await self.graph_repository.count_release(
-                active_version
-            )
-            if node_count > 0 or edge_count > 0:
-                return active_version
-        graph_versions = await self.graph_repository.list_release_versions()
+        graph_versions = await self._list_business_release_versions()
         if graph_versions:
             return graph_versions[0]
         raise KnowledgeGraphReleaseNotFoundError("graph release not found")

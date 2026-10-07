@@ -92,7 +92,7 @@ function messageTime(value: string) {
 }
 
 function queryMode(value: string | null | undefined): QueryMode | undefined {
-    return value === "metric" || value === "sql" ? value : undefined;
+    return value === "metric" || value === "sql" || value === "graph" ? value : undefined;
 }
 
 function progressStatus(value: string): ProgressStatus {

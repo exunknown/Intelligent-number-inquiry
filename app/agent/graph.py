@@ -13,7 +13,9 @@ from langgraph.graph import StateGraph
 
 from app.agent.context import DataAgentContext
 from app.agent.nodes.add_extra_context import add_extra_context
+from app.agent.nodes.answer_knowledge_graph import answer_knowledge_graph
 from app.agent.nodes.apply_selector import apply_selector
+from app.agent.nodes.classify_query_intent import classify_query_intent
 from app.agent.nodes.conversation_clarification import conversation_clarification
 from app.agent.nodes.correct_sql import correct_sql
 from app.agent.nodes.estimate_sql import estimate_sql
@@ -70,6 +72,12 @@ def route_conversation_mode(state: DataAgentState) -> str:
     return mode
 
 
+def route_knowledge_graph_query(state: DataAgentState) -> str:
+    """纯关系问题直接返回图谱证据，混合问题继续走 Cube 指标链路。"""
+
+    return "relation" if state.get("query_intent") == "relation" else "continue"
+
+
 # StateGraph 声明整张图使用的状态结构和运行时上下文结构
 graph_builder = StateGraph(state_schema=DataAgentState, context_schema=DataAgentContext)
 
@@ -77,6 +85,8 @@ graph_builder = StateGraph(state_schema=DataAgentState, context_schema=DataAgent
 graph_builder.add_node("resolve_conversation", resolve_conversation)
 graph_builder.add_node("conversation_clarification", conversation_clarification)
 graph_builder.add_node("extract_keywords", extract_keywords)
+graph_builder.add_node("answer_knowledge_graph", answer_knowledge_graph)
+graph_builder.add_node("classify_query_intent", classify_query_intent)
 graph_builder.add_node("recall_column", recall_column)
 graph_builder.add_node("recall_value", recall_value)
 graph_builder.add_node("recall_cube_member", recall_cube_member)
@@ -110,16 +120,25 @@ graph_builder.add_conditional_edges(
 )
 graph_builder.add_edge("conversation_clarification", END)
 
-# 关键词抽取后并行进入三类召回，分别面向字段 字段值和 Cube 受治理成员
-graph_builder.add_edge("extract_keywords", "recall_column")
-graph_builder.add_edge("extract_keywords", "recall_value")
-graph_builder.add_edge("extract_keywords", "recall_cube_member")
+# 关键词抽取后先识别意图，再并行进入三类召回
+graph_builder.add_edge("extract_keywords", "classify_query_intent")
+graph_builder.add_edge("classify_query_intent", "recall_column")
+graph_builder.add_edge("classify_query_intent", "recall_value")
+graph_builder.add_edge("classify_query_intent", "recall_cube_member")
 
-# 三路召回都完成后，先做可降级图谱推理，再进入统一信息合并节点
+# 三路召回都完成后，关系问题直接返回图谱证据，混合问题进入统一信息合并节点
 graph_builder.add_edge("recall_column", "recall_knowledge_graph")
 graph_builder.add_edge("recall_value", "recall_knowledge_graph")
 graph_builder.add_edge("recall_cube_member", "recall_knowledge_graph")
-graph_builder.add_edge("recall_knowledge_graph", "merge_retrieved_info")
+graph_builder.add_conditional_edges(
+    source="recall_knowledge_graph",
+    path=route_knowledge_graph_query,
+    path_map={
+        "relation": "answer_knowledge_graph",
+        "continue": "merge_retrieved_info",
+    },
+)
+graph_builder.add_edge("answer_knowledge_graph", END)
 
 # 优先尝试受治理指标链路；语义未覆盖或 unmatched 决策在阶段 1 由安全门禁拒绝
 graph_builder.add_edge("merge_retrieved_info", "semantic_coverage_gate")

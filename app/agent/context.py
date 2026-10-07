@@ -65,6 +65,8 @@ class DataAgentContext(TypedDict):
     semantic_model_snapshot: NotRequired[SemanticModelSnapshot]
     # 当前生效的元数据版本，用于缓存隔离和审计关联
     metadata_release_version: NotRequired[str | None]
+    # 可选业务知识图谱快照版本；未提供时兼容使用元数据版本
+    business_graph_snapshot_version: NotRequired[str | None]
     # 图谱仓储只按当前发布版本查询有界关系路径
     knowledge_graph_repository: NotRequired[
         KnowledgeGraphRepository | Neo4jKnowledgeGraphRepository

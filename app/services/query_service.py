@@ -457,6 +457,46 @@ class QueryService:
             logger.warning("Failed to read active semantic model snapshot")
         return None
 
+    async def _load_business_graph_snapshot_version(
+        self, budget: RequestBudget
+    ) -> str | None:
+        """读取独立业务图谱快照版本，不回退到 Cube 元数据版本。"""
+
+        config = self.knowledge_graph_config
+        if (
+            self.knowledge_graph_repository is None
+            or not isinstance(config, Mapping)
+            or not bool(config.get("enabled"))
+        ):
+            return None
+        timeout_seconds = min(0.5, budget.remaining_seconds())
+        if timeout_seconds <= 0:
+            return None
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                list_versions = (
+                    getattr(
+                        self.knowledge_graph_repository,
+                        "list_business_release_versions",
+                        None,
+                    )
+                    or self.knowledge_graph_repository.list_release_versions
+                )
+                versions = await list_versions()
+            if not isinstance(versions, list):
+                return None
+            return next(
+                (
+                    version
+                    for version in versions
+                    if isinstance(version, str) and version.strip()
+                ),
+                None,
+            )
+        except Exception:
+            logger.warning("Failed to read active business graph snapshot")
+            return None
+
     async def _externalize_result(
         self,
         payload: dict,
@@ -569,6 +609,9 @@ class QueryService:
                 logger.warning("Failed to read active metadata release")
         if self.meta_mysql_repository is not None:
             self.meta_mysql_repository.set_release_version(metadata_release_version)
+        business_graph_snapshot_version = (
+            await self._load_business_graph_snapshot_version(budget)
+        )
 
         recent_turn_contexts = []
         if (
@@ -636,6 +679,7 @@ class QueryService:
             permissions=principal.permissions,
             auth=principal.auth,
             metadata_release_version=metadata_release_version,
+            business_graph_snapshot_version=business_graph_snapshot_version,
             resource_budget=budget,
             dependency_breakers=get_dependency_breakers(),
             cache_service=self.cache_service,

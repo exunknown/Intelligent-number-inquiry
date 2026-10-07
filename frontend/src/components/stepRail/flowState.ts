@@ -9,7 +9,7 @@ import type {
 export type LaneState = "active" | "inactive" | "unknown";
 
 export type OutcomeState = {
-  id: "metric-result" | "sql-result" | "clarification" | "error";
+  id: "metric-result" | "graph-result" | "sql-result" | "clarification" | "error";
   status: FlowStatus;
   label: string;
 };
@@ -121,6 +121,9 @@ export function getOutcomeState(
   }
   if (queryMode === "sql") {
     return { id: "sql-result", status: "success", label: "未验证结果" };
+  }
+  if (queryMode === "graph") {
+    return { id: "graph-result", status: "success", label: "业务关系结果" };
   }
   return null;
 }

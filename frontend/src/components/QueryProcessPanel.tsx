@@ -50,7 +50,12 @@ function getQuerySummaryState(
     if (queryMode) {
         return {
             tone: "terminal",
-            text: queryMode === "metric" ? "治理指标查询" : "智能 SQL 查询",
+            text:
+                queryMode === "metric"
+                    ? "治理指标查询"
+                    : queryMode === "graph"
+                      ? "业务关系查询"
+                      : "智能 SQL 查询",
         };
     }
     return { tone: "terminal", text: "查询已创建" };
@@ -146,9 +151,11 @@ export function QueryProcessPanel({
                                 <div>
                                     {queryMode === "metric"
                                         ? "治理指标"
-                                        : queryMode === "sql"
-                                          ? "智能 SQL"
-                                          : "待确定"}
+                                        : queryMode === "graph"
+                                          ? "业务知识图谱"
+                                          : queryMode === "sql"
+                                            ? "智能 SQL"
+                                            : "待确定"}
                                 </div>
                             </div>
                             <div>

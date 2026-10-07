@@ -216,6 +216,9 @@ function connectorVisible(
     if (connector.id === "error-end") {
         return outcomeId === "error";
     }
+    if (connector.id === "route-graph") {
+        return outcomeId === "graph-result";
+    }
     return true;
 }
 
@@ -260,7 +263,7 @@ export function StepRail({
                     {summary}
                 </span>
                 <span className="hidden shrink-0 text-xs text-ink/40 sm:inline">
-                    共享语义 · 双路径
+                    共享语义 · 多路径
                 </span>
             </div>
 
@@ -360,7 +363,13 @@ export function StepRail({
                         <OutcomeCard
                             node={outcomeNode}
                             status={outcome.status}
-                            note={outcome.id === "sql-result" ? "需人工核对" : undefined}
+                            note={
+                                outcome.id === "sql-result"
+                                    ? "需人工核对"
+                                    : outcome.id === "graph-result"
+                                      ? "关系证据"
+                                      : undefined
+                            }
                         />
                     )}
 

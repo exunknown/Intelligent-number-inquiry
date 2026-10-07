@@ -15,6 +15,7 @@ export type FlowNodeId =
   | "metric-validate"
   | "cube-execute"
   | "metric-result"
+  | "graph-result"
   | "sql-security"
   | "schema-size"
   | "schema-selector"
@@ -144,6 +145,14 @@ export const FLOW_NODES: readonly FlowNodeDefinition[] = [
     x: 690,
     y: 298,
     width: 142,
+  },
+  {
+    id: "graph-result",
+    lane: "outcome",
+    label: "业务关系结果",
+    x: 690,
+    y: 394,
+    width: 156,
   },
   {
     id: "sql-security",
@@ -284,6 +293,14 @@ export const FLOW_CONNECTORS: readonly FlowConnector[] = [
     label: "语义未覆盖且允许 SQL fallback",
     labelX: 720,
     labelY: 440,
+  },
+  {
+    id: "route-graph",
+    path: "M898 156 V370 H690 V394",
+    kind: "branch",
+    label: "业务关系查询",
+    labelX: 904,
+    labelY: 352,
   },
   { id: "metric-query-validate", path: "M210 320 H234", kind: "normal" },
   { id: "metric-validate-cube", path: "M402 320 H439", kind: "normal" },

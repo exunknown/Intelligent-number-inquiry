@@ -133,6 +133,11 @@ class DataAgentState(TypedDict):
     inherited_from_context_id: NotRequired[str | None]
     conversation_reason: NotRequired[str]
     keywords: list[str]  # 抽取的关键词
+    query_intent: NotRequired[Literal["metric", "relation", "hybrid", "detail"]]
+    query_intent_confidence: NotRequired[float]
+    query_plan: NotRequired[dict[str, object]]
+    metadata_release_version: NotRequired[str | None]
+    business_graph_snapshot_version: NotRequired[str | None]
     retrieved_column_infos: list[ColumnInfo]  # 检索到的字段信息
     retrieved_metric_infos: list[MetricInfo]  # 检索到的指标信息
     retrieved_value_infos: list[ValueInfo]  # 检索到的取值信息
@@ -167,8 +172,10 @@ class DataAgentState(TypedDict):
     metric_query_decision: MetricQueryDecision  # 确定性校验后的指标查询决策
     metric_result_cacheable: bool  # 当前指标查询结果是否允许写入短 TTL 缓存
     cube_query: dict  # 可直接发送给 Cube 的查询对象
-    query_mode: Literal["metric", "sql"]  # 当前请求最终执行模式
-    route_reason: SemanticMissReason | Literal["governed_measure_matched"]
+    query_mode: Literal["metric", "sql", "graph"]  # 当前请求最终执行模式
+    route_reason: SemanticMissReason | Literal[
+        "governed_measure_matched", "knowledge_graph_relation"
+    ]
 
     sql: str  # 兼容旧审计字段，后续执行不得读取
     error: str | None  # 兼容旧状态字段，后续路由不得读取
@@ -263,6 +270,11 @@ def build_graph_evidence(
             break
 
     return {
+        "source": "knowledge_graph",
+        "authoritative": False,
+        "snapshot_version": state.get("business_graph_snapshot_version")
+        or state.get("metadata_release_version"),
+        "query_intent": state.get("query_intent"),
         "nodes": [
             {"id": node.node_id, "type": node.node_type} for node in selected_nodes
         ],
@@ -464,13 +476,14 @@ def build_turn_context_payload(
     """构造不含 SQL 和原始结果的内部轮次上下文事件。"""
 
     query_mode = state.get("query_mode")
-    if query_mode not in {"metric", "sql"}:
+    if query_mode not in {"metric", "sql", "graph"}:
         query_mode = "sql" if state.get("raw_sql") else "metric"
-    context = (
-        _metric_turn_context(state)
-        if query_mode == "metric"
-        else _sql_turn_context(state)
-    )
+    if query_mode == "metric":
+        context = _metric_turn_context(state)
+    elif query_mode == "graph":
+        context = {"graph_evidence": state.get("graph_evidence") or {}}
+    else:
+        context = _sql_turn_context(state)
     return {
         "effective_query": state.get("effective_query") or state.get("query", ""),
         "query_mode": query_mode,

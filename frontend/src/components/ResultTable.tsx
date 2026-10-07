@@ -95,6 +95,9 @@ function compareValues(
 
 function sourceLabel(source?: QueryMode, verified?: boolean, warning?: string | null) {
     if (verified === true) return "数据来源：指标平台口径";
+    if (source === "graph") {
+        return `数据来源：业务知识图谱${warning ? `，${warning}` : "，关系证据需结合业务口径核对"}`;
+    }
     if (verified === false) {
         return `数据来源：智能 SQL${warning ? `，${warning}` : "，需人工核对"}`;
     }

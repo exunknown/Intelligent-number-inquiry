@@ -26,7 +26,7 @@ export type MetricsEvent = {
   data: MetricItem[];
 };
 
-export type QueryMode = "metric" | "sql";
+export type QueryMode = "metric" | "sql" | "graph";
 
 export type RouteEvent = {
   type: "route";

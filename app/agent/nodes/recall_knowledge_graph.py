@@ -266,6 +266,24 @@ async def recall_knowledge_graph(
     writer = writer or runtime.stream_writer
     step = "知识图谱推理"
     writer({"type": "progress", "step": step, "status": "running"})
+    query_intent = state.get("query_intent")
+    if query_intent is not None and query_intent not in {"relation", "hybrid"}:
+        result = _empty_result(enabled=False)
+        result["graph_evidence_summary"] = {
+            **result["graph_evidence_summary"],
+            "skipped": True,
+            "skip_reason": "query_intent_does_not_require_graph",
+            "query_intent": query_intent,
+        }
+        writer(
+            {
+                "type": "progress",
+                "step": step,
+                "status": "success",
+                "message": "按查询意图跳过业务知识图谱",
+            }
+        )
+        return result
     context = runtime.context
     config = context.get("knowledge_graph_config", {})
     enabled = bool(_config_value(config, "enabled"))
@@ -279,7 +297,11 @@ async def recall_knowledge_graph(
         if business_seed not in seed_ids:
             seed_ids.append(business_seed)
     repository = context.get("knowledge_graph_repository")
-    release_version = context.get("metadata_release_version")
+    if "business_graph_snapshot_version" in context:
+        release_version = context.get("business_graph_snapshot_version")
+    else:
+        # 兼容未经过 QueryService 组装的旧调试调用。
+        release_version = context.get("metadata_release_version")
     if (
         repository is None
         or not isinstance(release_version, str)
@@ -345,6 +367,7 @@ async def recall_knowledge_graph(
             "retrieved_graph_nodes": filtered_nodes,
             "retrieved_graph_edges": filtered_edges,
             "graph_paths": filtered_paths,
+            "business_graph_snapshot_version": release_version,
             "graph_evidence_summary": {
                 "enabled": True,
                 "degraded": False,

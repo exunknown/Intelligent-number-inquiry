@@ -23,7 +23,14 @@ async def correct_sql(state: DataAgentState, runtime: Runtime[DataAgentContext])
 
     writer = runtime.stream_writer
     step = "校正SQL"
-    writer({"type": "progress", "step": step, "status": "running"})
+    writer(
+        {
+            "type": "progress",
+            "step": step,
+            "status": "running",
+            "message": "正在根据校验结果修正查询",
+        }
+    )
 
     try:
         # 校正 SQL 仍然需要完整上下文，避免模型只根据报错修语法却改丢业务语义
@@ -80,7 +87,14 @@ async def correct_sql(state: DataAgentState, runtime: Runtime[DataAgentContext])
         )
 
         logger.info("SQL candidate corrected chars={}", len(result))
-        writer({"type": "progress", "step": step, "status": "success"})
+        writer(
+            {
+                "type": "progress",
+                "step": step,
+                "status": "success",
+                "message": "查询已修正，准备重新校验",
+            }
+        )
         writer({"type": "audit", "sql_correction_candidate": result})
         return {
             "sql": result,
@@ -90,5 +104,12 @@ async def correct_sql(state: DataAgentState, runtime: Runtime[DataAgentContext])
         }
     except Exception:
         logger.error("SQL candidate correction failed")
-        writer({"type": "progress", "step": step, "status": "error"})
+        writer(
+            {
+                "type": "progress",
+                "step": step,
+                "status": "error",
+                "message": "查询自动修正失败",
+            }
+        )
         raise

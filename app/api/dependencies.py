@@ -315,7 +315,7 @@ async def get_semantic_model_service(
                 app_config.cube,
             )
         ),
-        knowledge_graph_service=KnowledgeGraphService(
+        lineage_graph_service=KnowledgeGraphService(
             KnowledgeGraphRepository(repository.session),
             meta_repository,
         ),

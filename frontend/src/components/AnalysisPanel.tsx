@@ -119,7 +119,11 @@ export function AnalysisPanel({
                                 <Route className="h-3.5 w-3.5 shrink-0 text-indigo" aria-hidden="true" />
                                 <span className="shrink-0 font-semibold text-ink/75">查询路由</span>
                                 <span className="shrink-0 whitespace-nowrap font-mono text-indigo">
-                                    {queryMode === "metric" ? "治理指标" : "智能 SQL"}
+                                    {queryMode === "metric"
+                                        ? "治理指标"
+                                        : queryMode === "graph"
+                                          ? "业务知识图谱"
+                                          : "智能 SQL"}
                                 </span>
                                 {routeReason && (
                                     <span className="min-w-0 truncate text-ink/45" title={routeReason}>

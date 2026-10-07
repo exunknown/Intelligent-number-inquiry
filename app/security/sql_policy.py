@@ -100,11 +100,13 @@ _FORBIDDEN_EXPRESSION_TYPES = _expression_types(
 
 _ALLOWED_FUNCTION_TYPES = _expression_types(
     "Avg",
+    "Case",
     "Cast",
     "Coalesce",
     "Count",
     "Day",
     "Exists",
+    "If",
     "Max",
     "Min",
     "Month",
@@ -112,6 +114,7 @@ _ALLOWED_FUNCTION_TYPES = _expression_types(
     "Quarter",
     "Round",
     "Sum",
+    "StrToDate",
     "TimeToStr",
     "TsOrDsToDate",
     "TsOrDsToTimestamp",
