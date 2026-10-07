@@ -169,8 +169,8 @@ services:
       - neo4j
     restart: unless-stopped
     environment:
-      NEO4J_USER: ${NEO4J_USER:-neo4j}
-      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-neo4j_dev_password}
+      KG_NEO4J_USER: ${NEO4J_USER:-neo4j}
+      KG_NEO4J_PASSWORD: ${NEO4J_PASSWORD:-neo4j_dev_password}
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-neo4j_dev_password}
     ports:
       - "7474:7474"
@@ -181,7 +181,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "cypher-shell -a bolt://127.0.0.1:7687 -u \"$$NEO4J_USER\" -p \"$$NEO4J_PASSWORD\" 'RETURN 1' >/dev/null",
+          "cypher-shell -a bolt://127.0.0.1:7687 -u \"$$KG_NEO4J_USER\" -p \"$$KG_NEO4J_PASSWORD\" 'RETURN 1' >/dev/null",
         ]
       interval: 10s
       timeout: 5s
