@@ -15,13 +15,22 @@ type BusinessRelationGraphProps = {
 };
 
 const nodeTones: Record<string, { fill: string; stroke: string; label: string }> = {
+    brand: { fill: "#EDE9FE", stroke: "#7C3AED", label: "品牌" },
     product: { fill: "#DBEAFE", stroke: "#2563EB", label: "商品" },
     category: { fill: "#FEF3C7", stroke: "#D97706", label: "品类" },
+    region: { fill: "#CCFBF1", stroke: "#0F766E", label: "区域" },
+    customer: { fill: "#E0E7FF", stroke: "#4F46E5", label: "客户" },
     customer_segment: { fill: "#FCE7F3", stroke: "#DB2777", label: "客户群体" },
+    metric: { fill: "#D1FAE5", stroke: "#059669", label: "经营指标" },
+    time_period: { fill: "#ECFDF5", stroke: "#10B981", label: "时间周期" },
 };
 
 function toneForType(nodeType: string) {
-    return nodeTones[nodeType] ?? { fill: "#D1FAE5", stroke: "#059669", label: "经营对象" };
+    return nodeTones[nodeType] ?? {
+        fill: "#D1FAE5",
+        stroke: "#059669",
+        label: "经营对象",
+    };
 }
 
 function eventTargetId(event: IEvent) {
@@ -52,6 +61,28 @@ function toGraphData(graph: KnowledgeGraphGraphResponse) {
     };
 }
 
+function applySelection(
+    instance: Graph,
+    previousSelectionRef: { current: string[] },
+    selectedNodeId: string | null,
+    selectedEdgeId: string | null,
+) {
+    if (instance.destroyed) return;
+
+    const currentSelection = [selectedNodeId, selectedEdgeId].filter(
+        (id): id is string => Boolean(id),
+    );
+    const states: Record<string, "selected" | []> = {};
+    for (const id of previousSelectionRef.current) {
+        if (!currentSelection.includes(id)) states[id] = [];
+    }
+    for (const id of currentSelection) states[id] = "selected";
+    previousSelectionRef.current = currentSelection;
+    if (Object.keys(states).length > 0) {
+        void instance.setElementState(states).catch(() => undefined);
+    }
+}
+
 export function BusinessRelationGraph({
     graph,
     loading,
@@ -62,11 +93,19 @@ export function BusinessRelationGraph({
 }: BusinessRelationGraphProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const graphRef = useRef<Graph | null>(null);
+    const renderedGraphRef = useRef<Graph | null>(null);
     const previousSelectionRef = useRef<string[]>([]);
+    const selectionRef = useRef({
+        selectedNodeId,
+        selectedEdgeId,
+    });
+    selectionRef.current = { selectedNodeId, selectedEdgeId };
 
     useEffect(() => {
         const container = containerRef.current;
-        if (!container || !graph || graph.nodes.length === 0) return;
+        if (loading || !container || !graph || graph.nodes.length === 0) return;
+        let disposed = false;
+        let renderSettled = false;
 
         const instance = new Graph({
             container,
@@ -130,6 +169,7 @@ export function BusinessRelationGraph({
         });
 
         graphRef.current = instance;
+        renderedGraphRef.current = null;
         instance.on("node:click", (event) => {
             const nodeId = eventTargetId(event);
             if (nodeId) onSelectNode(nodeId);
@@ -138,33 +178,57 @@ export function BusinessRelationGraph({
             const edgeId = eventTargetId(event);
             if (edgeId) onSelectEdge(edgeId);
         });
-        void instance.render();
+        void instance.render()
+            .then(() => {
+                if (disposed || instance.destroyed) return;
+                renderedGraphRef.current = instance;
+                applySelection(
+                    instance,
+                    previousSelectionRef,
+                    selectionRef.current.selectedNodeId,
+                    selectionRef.current.selectedEdgeId,
+                );
+            })
+            .catch(() => {
+                if (graphRef.current === instance) {
+                    graphRef.current = null;
+                    renderedGraphRef.current = null;
+                }
+            })
+            .finally(() => {
+                renderSettled = true;
+                if (disposed && !instance.destroyed) instance.destroy();
+            });
 
         return () => {
-            instance.destroy();
-            graphRef.current = null;
+            disposed = true;
+            if (graphRef.current === instance) graphRef.current = null;
+            if (renderedGraphRef.current === instance) {
+                renderedGraphRef.current = null;
+            }
             previousSelectionRef.current = [];
+            if (renderSettled && !instance.destroyed) instance.destroy();
         };
-    }, [graph, onSelectEdge, onSelectNode]);
+    }, [graph, loading, onSelectEdge, onSelectNode]);
 
     useEffect(() => {
-        const instance = graphRef.current;
+        const instance = renderedGraphRef.current;
         if (!instance) return;
-
-        const currentSelection = [selectedNodeId, selectedEdgeId].filter(
-            (id): id is string => Boolean(id),
+        applySelection(
+            instance,
+            previousSelectionRef,
+            selectedNodeId,
+            selectedEdgeId,
         );
-        const states: Record<string, "selected" | []> = {};
-        for (const id of previousSelectionRef.current) {
-            if (!currentSelection.includes(id)) states[id] = [];
-        }
-        for (const id of currentSelection) states[id] = "selected";
-        previousSelectionRef.current = currentSelection;
-        if (Object.keys(states).length > 0) void instance.setElementState(states);
     }, [selectedEdgeId, selectedNodeId]);
 
     if (loading) return <div className="grid min-h-[620px] place-items-center border border-ink/10 bg-white text-sm text-ink/45">正在展开业务关系…</div>;
     if (!graph || graph.nodes.length === 0) return <div className="grid min-h-[620px] place-items-center border border-ink/10 bg-white text-sm text-ink/45">当前版本暂无业务关系数据</div>;
+
+    const legendTypes = Array.from(new Set(graph.nodes.map((node) => node.node_type)))
+        .sort((left, right) =>
+            toneForType(left).label.localeCompare(toneForType(right).label),
+        );
 
     return (
         <div className="relative min-h-[620px] overflow-hidden border border-ink/10 bg-white shadow-line" aria-label="业务关系图">
@@ -172,12 +236,21 @@ export function BusinessRelationGraph({
                 {graph.nodes.length} 个对象 · {graph.edges.length} 条经营关系{graph.partial ? " · 已按预算截断" : ""}
             </div>
             <div className="pointer-events-none absolute bottom-4 left-4 z-10 flex flex-wrap gap-2 border border-ink/10 bg-white/90 px-3 py-2 text-[11px] text-ink/60">
-                {Object.entries(nodeTones).map(([type, tone]) => (
-                    <span key={type} className="flex items-center gap-1.5">
-                        <i className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tone.fill, border: `2px solid ${tone.stroke}` }} />
-                        {tone.label}
-                    </span>
-                ))}
+                {legendTypes.map((type) => {
+                    const tone = toneForType(type);
+                    return (
+                        <span key={type} className="flex items-center gap-1.5">
+                            <i
+                                className="h-2.5 w-2.5 rounded-full"
+                                style={{
+                                    backgroundColor: tone.fill,
+                                    border: `2px solid ${tone.stroke}`,
+                                }}
+                            />
+                            {tone.label}
+                        </span>
+                    );
+                })}
             </div>
             <div ref={containerRef} className="h-[620px] w-full" />
         </div>

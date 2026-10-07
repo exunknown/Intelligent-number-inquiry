@@ -89,7 +89,11 @@ _SCENARIO_TYPES = {
     "product": {"product", "category", "brand", "region", "metric"},
     "customer": {"customer", "customer_segment", "product", "category", "brand"},
     "region": {"region", "product", "category", "brand", "metric"},
-    "metric": {"metric", "category", "time_period", "product", "region"},
+    "metric": {"metric", "category", "time_period"},
+}
+
+_SCENARIO_EDGE_TYPES = {
+    "metric": {"METRIC_IN_PERIOD", "METRIC_MEASURES_OBJECT"},
 }
 
 
@@ -299,7 +303,12 @@ class KnowledgeGraphQueryService:
         if unknown_nodes or unknown_edges:
             raise ValueError("graph filters contain unsupported types")
         selected_node_types = object_types or allowed_node_types
-        selected_edge_types = relation_types or allowed_edge_types
+        default_edge_types = (
+            _SCENARIO_EDGE_TYPES.get(scenario or "", allowed_edge_types)
+            if view == "relation"
+            else allowed_edge_types
+        )
+        selected_edge_types = relation_types or default_edge_types
         all_nodes, _ = await self.graph_repository.list_release(version)
         filtered_nodes = [
             node for node in all_nodes if node.node_type in selected_node_types

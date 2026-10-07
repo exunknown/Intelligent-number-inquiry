@@ -273,8 +273,9 @@ class KnowledgeGraphRepository:
                     and len(selected_node_ids) >= max_nodes
                 ):
                     continue
-                selected_node_ids.append(edge.target_node_id)
-                selected_node_set.add(edge.target_node_id)
+                if edge.target_node_id not in selected_node_set:
+                    selected_node_ids.append(edge.target_node_id)
+                    selected_node_set.add(edge.target_node_id)
                 selected_edge_ids.append(edge.edge_id)
                 selected_edge_set.add(edge.edge_id)
                 next_score = score * edge.weight

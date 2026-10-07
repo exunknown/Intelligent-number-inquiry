@@ -31,6 +31,8 @@ const objectTypeOptions = [
     ["brand", "品牌"],
     ["customer_segment", "客户群体"],
     ["region", "地区"],
+    ["metric", "业务指标"],
+    ["time_period", "时间周期"],
 ] as const;
 
 const relationTypeOptions = [
@@ -38,6 +40,7 @@ const relationTypeOptions = [
     ["PRODUCT_HOT_IN_REGION", "热销于"],
     ["PRODUCT_ASSOCIATED_WITH_PRODUCT", "关联购买"],
     ["METRIC_MEASURES_OBJECT", "指标度量"],
+    ["METRIC_IN_PERIOD", "指标周期"],
 ] as const;
 
 function filterGraph(
@@ -132,6 +135,11 @@ export function KnowledgeGraphPage({ onBack }: KnowledgeGraphPageProps) {
         () => filterGraph(graph, search, objectTypes, relationTypes),
         [graph, objectTypes, relationTypes, search],
     );
+    const selectGraphEdge = useCallback((edgeId: string) => {
+        const edge = visibleGraph?.edges.find((item) => item.edge_id === edgeId);
+        setSelectedEdgeId(edgeId);
+        setSelectedNodeId(edge?.source_node_id ?? null);
+    }, [visibleGraph]);
     const selectedNode = visibleGraph?.nodes.find((node) => node.node_id === selectedNodeId) ?? null;
     const selectedEdge = visibleGraph?.edges.find((edge) => edge.edge_id === selectedEdgeId) ?? null;
     const selectedEvidence = visibleGraph?.evidence.find((item) => item.edge_id === selectedEdgeId) ?? null;
@@ -147,7 +155,7 @@ export function KnowledgeGraphPage({ onBack }: KnowledgeGraphPageProps) {
                     </div>
                     <div className="flex shrink-0 items-center gap-2"><span className="hidden border border-ink/15 bg-white px-3 py-2 text-xs text-ink/65 sm:inline">{selectedRelease || "暂无版本"}</span>{release?.active && <span className="bg-pine px-3 py-2 text-xs font-semibold text-white">当前版本</span>}<button type="button" onClick={() => void loadReleases()} disabled={loading} title="刷新知识图谱" aria-label="刷新知识图谱" className="grid h-10 w-10 place-items-center rounded-full text-ink/60 transition hover:bg-ink/5 disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" /></button></div>
                 </header>
-                <KnowledgeGraphToolbar releases={releaseData?.items ?? []} selectedRelease={selectedRelease} backend={releaseData?.backend ?? "mysql"} workspace={workspace} scenario={scenario} search={search} onReleaseChange={(value) => { setSelectedRelease(value); setSelectedNodeId(null); setSelectedEdgeId(null); }} onWorkspaceChange={(value) => { setWorkspace(value); setSelectedNodeId(null); setSelectedEdgeId(null); }} onScenarioChange={(value) => { setScenario(value); setWorkspace("relation"); setSelectedNodeId(null); setSelectedEdgeId(null); }} onSearchChange={setSearch} />
+                <KnowledgeGraphToolbar releases={releaseData?.items ?? []} selectedRelease={selectedRelease} backend={releaseData?.backend ?? "mysql"} workspace={workspace} scenario={scenario} search={search} onReleaseChange={(value) => { setSelectedRelease(value); setSelectedNodeId(null); setSelectedEdgeId(null); }} onWorkspaceChange={(value) => { setWorkspace(value); setSelectedNodeId(null); setSelectedEdgeId(null); }} onScenarioChange={(value) => { setScenario(value); setWorkspace("relation"); setObjectTypes([]); setRelationTypes([]); setSelectedNodeId(null); setSelectedEdgeId(null); }} onSearchChange={setSearch} />
                 <div className="min-h-0 flex-1 overflow-y-auto bg-canvas p-4 lg:p-6">
                     <div className="mx-auto grid min-h-full max-w-[1800px] gap-4 xl:grid-cols-[220px_minmax(0,1fr)_300px]">
                         <aside className="border border-ink/10 bg-white p-4 shadow-line" aria-label="图谱筛选">
@@ -159,7 +167,7 @@ export function KnowledgeGraphPage({ onBack }: KnowledgeGraphPageProps) {
                         <main className="min-w-0">
                             <div className="mb-3 flex items-center justify-between gap-3 border-b border-ink/10 pb-3 text-xs text-ink/50"><span>{release ? `${release.node_count} 个对象 · ${release.edge_count} 条关系` : "等待图谱版本"}</span>{contentLoading && <span className="text-cinnabar">正在读取图谱…</span>}</div>
                             {error && <div role="alert" className="mb-3 border border-oxide/25 bg-oxide/5 px-4 py-3 text-sm text-oxide">{error}</div>}
-                            {workspace === "ontology" ? <OntologyWorkbench ontology={ontology} loading={contentLoading} search={search} /> : workspace === "relation" ? <BusinessRelationGraph graph={visibleGraph} loading={contentLoading} selectedNodeId={selectedNodeId} selectedEdgeId={selectedEdgeId} onSelectNode={setSelectedNodeId} onSelectEdge={setSelectedEdgeId} /> : <SchemaGraph graph={visibleGraph} loading={contentLoading} selectedNodeId={selectedNodeId} selectedEdgeId={selectedEdgeId} onSelectNode={setSelectedNodeId} onSelectEdge={setSelectedEdgeId} />}
+                            {workspace === "ontology" ? <OntologyWorkbench ontology={ontology} loading={contentLoading} search={search} /> : workspace === "relation" ? <BusinessRelationGraph graph={visibleGraph} loading={contentLoading} selectedNodeId={selectedNodeId} selectedEdgeId={selectedEdgeId} onSelectNode={setSelectedNodeId} onSelectEdge={selectGraphEdge} /> : <SchemaGraph graph={visibleGraph} loading={contentLoading} selectedNodeId={selectedNodeId} selectedEdgeId={selectedEdgeId} onSelectNode={setSelectedNodeId} onSelectEdge={selectGraphEdge} />}
                         </main>
                         <GraphDetailPanel view={workspace === "ontology" ? "schema" : workspace} node={selectedNode} edge={selectedEdge} evidence={selectedEvidence} />
                     </div>
