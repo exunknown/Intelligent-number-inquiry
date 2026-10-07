@@ -173,9 +173,10 @@ class DataAgentState(TypedDict):
     metric_result_cacheable: bool  # 当前指标查询结果是否允许写入短 TTL 缓存
     cube_query: dict  # 可直接发送给 Cube 的查询对象
     query_mode: Literal["metric", "sql", "graph"]  # 当前请求最终执行模式
-    route_reason: SemanticMissReason | Literal[
-        "governed_measure_matched", "knowledge_graph_relation"
-    ]
+    route_reason: (
+        SemanticMissReason
+        | Literal["governed_measure_matched", "knowledge_graph_relation"]
+    )
 
     sql: str  # 兼容旧审计字段，后续执行不得读取
     error: str | None  # 兼容旧状态字段，后续路由不得读取
@@ -272,8 +273,7 @@ def build_graph_evidence(
     return {
         "source": "knowledge_graph",
         "authoritative": False,
-        "snapshot_version": state.get("business_graph_snapshot_version")
-        or state.get("metadata_release_version"),
+        "snapshot_version": state.get("business_graph_snapshot_version"),
         "query_intent": state.get("query_intent"),
         "nodes": [
             {"id": node.node_id, "type": node.node_type} for node in selected_nodes
