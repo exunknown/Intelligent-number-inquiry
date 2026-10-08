@@ -19,7 +19,7 @@ class MetricDisplayEntryResponse(BaseModel):
 
 
 class MissingRequirementResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
     type: Literal["metric", "dimension", "time_range", "field", "data_scope"]
     label: str
