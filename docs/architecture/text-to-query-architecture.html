@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>慧析智能问数系统架构</title>
+  <style>
+    :root { color-scheme: light; background: #F5F7FA; }
+    html, body { margin: 0; min-width: 1600px; background: #F5F7FA; }
+    body { padding: 24px; font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif; }
+    main { width: 1600px; margin: 0 auto; }
+    img { display: block; width: 1600px; height: auto; }
+    img + img { margin-top: 24px; }
+    .caption { margin: 10px 0 0; color: #4B5563; font-size: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+  <main>
+    <img src="../images/text-to-query-architecture.svg" alt="慧析智能问数系统架构分层总览">
+    <p class="caption">分层总览：接入层、编排与语义路由层、数据与治理底座；图谱关系作答 / Text to Metric / Text to SQL 三条终态路径三选一，非并行。</p>
+    <img src="../images/text-to-query-flow-detail.svg" alt="慧析问数执行链路详图">
+    <p class="caption">执行链路详图：三路召回汇入图谱召回，经语义覆盖门禁分流至 Metric 主路径、图谱作答或默认关闭的 SQL 兜底路径。</p>
+  </main>
+</body>
+</html>

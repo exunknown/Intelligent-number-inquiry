@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>慧析问数执行链路 · 详情</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #F5F7FA;   /* 数字账房冷白纸面 */
+      --color-ink:     #1F2937;   /* slate-800 */
+      --color-muted:   #4B5563;   /* gray-600 */
+      --color-accent:  #155E75;   /* dai 青 */
+      --font-sans:     'Geist', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif SC', 'Songti SC', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1200px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 1280px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · Flow Detail</p>
+    <h1>慧析问数执行链路 · 详情</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1280 950" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="text-to-query-flow-detail-title text-to-query-flow-detail-desc">
+        <title id="text-to-query-flow-detail-title">慧析问数执行链路节点详情</title>
+        <desc id="text-to-query-flow-detail-desc">自然语言问题经会话解析、关键词抽取、意图识别后并行召回字段、取值与 Cube 成员，三路结果汇入图谱召回（仅 relation/hybrid 实际访问）；纯 relation 由图谱证据直接作答，其余意图合并过滤后经语义覆盖门禁分流：主路径为 Metric 生成、确定性校验、Cube 执行；默认关闭的 SQL 路径经安全门禁、Schema 裁剪、生成修正、AST 校验与 EXPLAIN 只读执行。</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4B5563"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#155E75"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#F5F7FA"/>
+
+        <!-- ===== zones ===== -->
+        <rect x="40" y="64" width="1200" height="120" rx="8" fill="rgba(31,41,55,0.02)" stroke="rgba(31,41,55,0.10)" stroke-width="0.8"/>
+        <rect x="52" y="68" width="76" height="16" rx="2" fill="#F5F7FA"/>
+        <text x="90" y="80" fill="rgba(31,41,55,0.55)" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">会话与意图</text>
+
+        <rect x="40" y="232" width="1200" height="380" rx="8" fill="rgba(31,41,55,0.02)" stroke="rgba(31,41,55,0.10)" stroke-width="0.8"/>
+        <rect x="52" y="236" width="76" height="16" rx="2" fill="#F5F7FA"/>
+        <text x="90" y="248" fill="rgba(31,41,55,0.55)" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">召回与门禁</text>
+
+        <rect x="40" y="628" width="1200" height="252" rx="8" fill="rgba(31,41,55,0.02)" stroke="rgba(31,41,55,0.10)" stroke-width="0.8"/>
+        <rect x="52" y="632" width="76" height="16" rx="2" fill="#F5F7FA"/>
+        <text x="90" y="644" fill="rgba(31,41,55,0.55)" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">三终态执行</text>
+
+        <!-- ===== arrows ===== -->
+        <!-- Z1 内部 -->
+        <line x1="264" y1="132" x2="344" y2="132" stroke="#4B5563" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="544" y1="132" x2="624" y2="132" stroke="#4B5563" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 意图识别 -> 三路召回（底边扇出 x=664/704/744） -->
+        <path d="M664,168 L664,188 Q664,196 656,196 L412,196 Q404,196 404,204 L404,248" fill="none" stroke="#4B5563" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="704" y1="168" x2="704" y2="248" stroke="#4B5563" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M744,168 L744,196 Q744,204 752,204 L876,204 Q884,204 884,212 L884,248" fill="none" stroke="#4B5563" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 三路召回 -> 图谱召回（顶边扇入 x=584/644/704） -->
+        <path d="M404,320 L404,336 Q404,344 412,344 L576,344 Q584,344 584,352 L584,380" fill="none" stroke="#4B5563" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="644" y1="320" x2="644" y2="380" stroke="#4B5563" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M884,320 L884,352 Q884,360 876,360 L712,360 Q704,360 704,368 L704,380" fill="none" stroke="#4B5563" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 图谱召回 -> 合并与过滤（其他意图） -->
+        <path d="M604,452 L604,468 Q604,476 596,476 L472,476 Q464,476 464,484 L464,512" fill="none" stroke="#4B5563" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 图谱召回 -> 图谱作答（纯 relation，右侧绕行） -->
+        <path d="M744,416 L932,416 Q940,416 940,424 L940,636 Q940,644 948,644 L1108,644 Q1116,644 1116,652 L1116,660" fill="none" stroke="#4B5563" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 合并与过滤 -> 语义覆盖门禁 -->
+        <line x1="584" y1="548" x2="664" y2="548" stroke="#4B5563" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 门禁 -> Metric 主路径（有 measure 候选） -->
+        <path d="M724,584 L724,612 Q724,620 716,620 L412,620 Q404,620 404,628 L404,660" fill="none" stroke="#155E75" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <!-- 门禁 -> SQL 兜底（未覆盖，默认关闭） -->
+        <path d="M824,584 L824,628 Q824,636 816,636 L232,636 Q224,636 224,644 L224,792" fill="none" stroke="#4B5563" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <!-- Metric 行内部 -->
+        <line x1="504" y1="696" x2="544" y2="696" stroke="#155E75" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <line x1="744" y1="696" x2="784" y2="696" stroke="#155E75" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <!-- SQL 行内部 -->
+        <line x1="244" y1="828" x2="284" y2="828" stroke="#4B5563" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <line x1="464" y1="828" x2="504" y2="828" stroke="#4B5563" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <line x1="704" y1="828" x2="744" y2="828" stroke="#4B5563" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <line x1="924" y1="828" x2="964" y2="828" stroke="#4B5563" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+
+        <!-- ===== arrow labels ===== -->
+        <rect x="652" y="338" width="132" height="16" rx="2" fill="#F5F7FA"/>
+        <text x="656" y="350" fill="#4B5563" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif">仅 relation · hybrid 访问</text>
+
+        <rect x="478" y="468" width="100" height="16" rx="2" fill="#F5F7FA"/>
+        <text x="528" y="480" fill="#4B5563" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">其他意图合并</text>
+
+        <rect x="948" y="520" width="84" height="16" rx="2" fill="#F5F7FA"/>
+        <text x="952" y="532" fill="#4B5563" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif">纯 relation</text>
+
+        <rect x="732" y="588" width="84" height="16" rx="2" fill="#F5F7FA"/>
+        <text x="736" y="600" fill="#4B5563" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif">有 measure 候选</text>
+
+        <rect x="832" y="588" width="48" height="16" rx="2" fill="#F5F7FA"/>
+        <text x="836" y="600" fill="#4B5563" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif">未覆盖</text>
+
+        <!-- ===== nodes ===== -->
+        <!-- 会话解析 -->
+        <rect x="64" y="96" width="200" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="64" y="96" width="200" height="72" rx="6" fill="#ffffff" stroke="#1F2937" stroke-width="1"/>
+        <rect x="72" y="102" width="28" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="86" y="111" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">SESS</text>
+        <text x="164" y="132" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">会话解析</text>
+        <text x="164" y="152" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">失败降级 · 存疑则澄清</text>
+
+        <!-- 关键词抽取 -->
+        <rect x="344" y="96" width="200" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="344" y="96" width="200" height="72" rx="6" fill="#ffffff" stroke="#1F2937" stroke-width="1"/>
+        <rect x="352" y="102" width="18" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="361" y="111" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">KW</text>
+        <text x="444" y="132" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">关键词抽取</text>
+        <text x="444" y="152" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">业务术语 · 同义词扩展</text>
+
+        <!-- 意图识别 -->
+        <rect x="624" y="96" width="200" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="624" y="96" width="200" height="72" rx="6" fill="#ffffff" stroke="#1F2937" stroke-width="1"/>
+        <rect x="632" y="102" width="36" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="650" y="111" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">INTENT</text>
+        <text x="724" y="132" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">意图识别</text>
+        <text x="724" y="152" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">四类意图 · 决定召回组合</text>
+
+        <!-- 字段召回 -->
+        <rect x="304" y="248" width="200" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="304" y="248" width="200" height="72" rx="6" fill="#ffffff" stroke="#1F2937" stroke-width="1"/>
+        <rect x="312" y="254" width="24" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="324" y="263" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">COL</text>
+        <text x="404" y="284" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">字段召回</text>
+        <text x="404" y="304" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">Qdrant 向量 · 权限过滤</text>
+
+        <!-- 取值召回 -->
+        <rect x="544" y="248" width="200" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="544" y="248" width="200" height="72" rx="6" fill="#ffffff" stroke="#1F2937" stroke-width="1"/>
+        <rect x="552" y="254" width="24" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="564" y="263" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">VAL</text>
+        <text x="644" y="284" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">取值召回</text>
+        <text x="644" y="304" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">ES 全文 · 枚举值命中</text>
+
+        <!-- 成员召回 -->
+        <rect x="784" y="248" width="200" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="784" y="248" width="200" height="72" rx="6" fill="#ffffff" stroke="#1F2937" stroke-width="1"/>
+        <rect x="792" y="254" width="24" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="804" y="263" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">DIM</text>
+        <text x="884" y="284" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">成员召回</text>
+        <text x="884" y="304" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">Qdrant alias · Cube 成员</text>
+
+        <!-- 图谱召回 -->
+        <rect x="544" y="380" width="200" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="544" y="380" width="200" height="72" rx="6" fill="#ffffff" stroke="#1F2937" stroke-width="1"/>
+        <rect x="552" y="386" width="32" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="568" y="395" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">GRAPH</text>
+        <text x="644" y="416" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">图谱召回</text>
+        <text x="644" y="436" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">Meta / Neo4j · 1~2 跳</text>
+
+        <!-- 合并与过滤 -->
+        <rect x="304" y="512" width="280" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="304" y="512" width="280" height="72" rx="6" fill="#ffffff" stroke="#1F2937" stroke-width="1"/>
+        <rect x="312" y="518" width="32" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="328" y="527" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">MERGE</text>
+        <text x="444" y="548" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">合并与过滤</text>
+        <text x="444" y="568" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">去重 · 相关性阈值截断</text>
+
+        <!-- 语义覆盖门禁（焦点） -->
+        <rect x="664" y="512" width="240" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="664" y="512" width="240" height="72" rx="6" fill="rgba(21,94,117,0.08)" stroke="#155E75" stroke-width="1"/>
+        <rect x="672" y="518" width="28" height="12" rx="2" fill="none" stroke="rgba(21,94,117,0.40)" stroke-width="0.8"/>
+        <text x="686" y="527" fill="rgba(21,94,117,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">GATE</text>
+        <text x="784" y="548" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">语义覆盖门禁</text>
+        <text x="784" y="568" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">覆盖不足即拒绝 · 禁回退</text>
+
+        <!-- Metric生成 -->
+        <rect x="304" y="660" width="200" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="304" y="660" width="200" height="72" rx="6" fill="#ffffff" stroke="#1F2937" stroke-width="1"/>
+        <rect x="312" y="666" width="36" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="330" y="675" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">METRIC</text>
+        <text x="404" y="696" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">Metric生成</text>
+        <text x="404" y="716" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">组装 Cube 查询 DSL</text>
+
+        <!-- 确定性校验 -->
+        <rect x="544" y="660" width="200" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="544" y="660" width="200" height="72" rx="6" fill="#ffffff" stroke="#1F2937" stroke-width="1"/>
+        <rect x="552" y="666" width="32" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="568" y="675" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">CHECK</text>
+        <text x="644" y="696" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">确定性校验</text>
+        <text x="644" y="716" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">维度 / 过滤白名单核对</text>
+
+        <!-- Cube执行（焦点） -->
+        <rect x="784" y="660" width="200" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="784" y="660" width="200" height="72" rx="6" fill="rgba(21,94,117,0.08)" stroke="#155E75" stroke-width="1"/>
+        <rect x="792" y="666" width="28" height="12" rx="2" fill="none" stroke="rgba(21,94,117,0.40)" stroke-width="0.8"/>
+        <text x="806" y="675" fill="rgba(21,94,117,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">CUBE</text>
+        <text x="884" y="696" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">Cube执行</text>
+        <text x="884" y="716" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">queryRewrite 追加部门过滤</text>
+
+        <!-- 图谱作答 -->
+        <rect x="1016" y="660" width="200" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="1016" y="660" width="200" height="72" rx="6" fill="#ffffff" stroke="#1F2937" stroke-width="1"/>
+        <rect x="1024" y="666" width="24" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="1036" y="675" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">ANS</text>
+        <text x="1116" y="696" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">图谱作答</text>
+        <text x="1116" y="716" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">source=graph · 白名单证据</text>
+
+        <!-- SQL安全门禁（可选） -->
+        <rect x="64" y="792" width="180" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="64" y="792" width="180" height="72" rx="6" fill="rgba(31,41,55,0.02)" stroke="rgba(31,41,55,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="72" y="798" width="28" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="86" y="807" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">SAFE</text>
+        <text x="154" y="828" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">SQL安全门禁</text>
+        <text x="154" y="848" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">表 / 列权限 · 禁 DDL</text>
+
+        <!-- Schema裁剪（可选） -->
+        <rect x="284" y="792" width="180" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="284" y="792" width="180" height="72" rx="6" fill="rgba(31,41,55,0.02)" stroke="rgba(31,41,55,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="292" y="798" width="32" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="308" y="807" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">PRUNE</text>
+        <text x="374" y="828" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">Schema裁剪</text>
+        <text x="374" y="848" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">最小表列子集 · 降 token</text>
+
+        <!-- SQL生成与修正（可选） -->
+        <rect x="504" y="792" width="200" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="504" y="792" width="200" height="72" rx="6" fill="rgba(31,41,55,0.02)" stroke="rgba(31,41,55,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="512" y="798" width="24" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="524" y="807" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">GEN</text>
+        <text x="604" y="828" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">SQL生成与修正</text>
+        <text x="604" y="848" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">LLM 生成 · 错误回环修正</text>
+
+        <!-- AST校验（可选） -->
+        <rect x="744" y="792" width="180" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="744" y="792" width="180" height="72" rx="6" fill="rgba(31,41,55,0.02)" stroke="rgba(31,41,55,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="752" y="798" width="24" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="764" y="807" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">AST</text>
+        <text x="834" y="828" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">AST校验</text>
+        <text x="834" y="848" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">sqlglot 解析 · 只读断言</text>
+
+        <!-- EXPLAIN·只读执行（可选） -->
+        <rect x="964" y="792" width="240" height="72" rx="6" fill="#F5F7FA"/>
+        <rect x="964" y="792" width="240" height="72" rx="6" fill="rgba(31,41,55,0.02)" stroke="rgba(31,41,55,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="972" y="798" width="24" height="12" rx="2" fill="none" stroke="rgba(31,41,55,0.40)" stroke-width="0.8"/>
+        <text x="984" y="807" fill="rgba(31,41,55,0.8)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">RUN</text>
+        <text x="1084" y="828" fill="#1F2937" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">EXPLAIN·只读执行</text>
+        <text x="1084" y="848" fill="#4B5563" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">EXPLAIN 预算 · DW 只读</text>
+
+        <!-- ===== legend ===== -->
+        <line x1="40" y1="900" x2="1240" y2="900" stroke="rgba(31,41,55,0.10)" stroke-width="0.8"/>
+        <rect x="64" y="918" width="20" height="12" rx="2" fill="rgba(21,94,117,0.08)" stroke="#155E75" stroke-width="1"/>
+        <text x="92" y="928" fill="#4B5563" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif">焦点组件</text>
+        <line x1="196" y1="924" x2="232" y2="924" stroke="#155E75" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <text x="240" y="928" fill="#4B5563" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif">Metric 主路径</text>
+        <line x1="384" y1="924" x2="420" y2="924" stroke="#4B5563" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="428" y="928" fill="#4B5563" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif">SQL 路径 · 默认关闭</text>
+        <line x1="576" y1="924" x2="612" y2="924" stroke="#4B5563" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="620" y="928" fill="#4B5563" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif">其他执行流</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>
