@@ -1,6 +1,6 @@
 /**
  * 智能体执行流程图组件
- * 展示共享语义理解、Metric / SQL 双执行泳道和统一结果终点
+ * 展示共享语义理解、Metric / SQL / 知识图谱多执行路径和统一结果终点
  */
 import { Check, Circle, LoaderCircle, X } from "lucide-react";
 import { cn } from "../lib/format";
@@ -34,6 +34,7 @@ const laneLabels: Record<FlowLane, string> = {
     shared: "共享前置语义理解",
     metric: "Text to Metric · 受治理指标",
     sql: "Text to SQL · 受控 SQL fallback",
+    graph: "业务知识图谱 · 关系查询",
     outcome: "统一结果反馈",
 };
 
@@ -58,6 +59,11 @@ const sqlConnectorIds = new Set([
     "correct-validate",
     "estimate-run",
     "run-result",
+]);
+
+const graphConnectorIds = new Set([
+    "kg-graph-answer",
+    "graph-answer-result",
 ]);
 
 function NodeIcon({ status }: { status: FlowStatus }) {
@@ -174,6 +180,7 @@ function laneStateForNode(
 function connectorLane(connector: FlowConnector): Exclude<FlowLane, "outcome"> | null {
     if (metricConnectorIds.has(connector.id)) return "metric";
     if (sqlConnectorIds.has(connector.id)) return "sql";
+    if (graphConnectorIds.has(connector.id)) return "graph";
     return null;
 }
 
@@ -203,6 +210,9 @@ function connectorStroke(
     if (connectorLane(connector) === "sql" && queryMode === "sql") {
         return "rgba(194,65,86,0.72)";
     }
+    if (connectorLane(connector) === "graph" && queryMode === "graph") {
+        return "rgba(37,109,133,0.72)";
+    }
     return "rgba(31,41,55,0.42)";
 }
 
@@ -216,7 +226,7 @@ function connectorVisible(
     if (connector.id === "error-end") {
         return outcomeId === "error";
     }
-    if (connector.id === "route-graph") {
+    if (connector.id === "kg-graph-answer") {
         return outcomeId === "graph-result";
     }
     return true;
@@ -269,7 +279,7 @@ export function StepRail({
 
             <div className="mt-3 overflow-x-auto">
                 <div
-                    className="relative mx-auto h-[760px] w-[1160px]"
+                    className="relative mx-auto h-[760px] w-[1280px]"
                     aria-label="问数执行流程图"
                     role="img"
                 >
@@ -282,13 +292,16 @@ export function StepRail({
                     <div className="absolute left-0 top-[434px] font-serif text-xs font-bold text-oxide">
                         {laneLabels.sql}
                     </div>
+                    <div className="absolute left-0 top-[370px] font-serif text-xs font-bold text-indigo">
+                        {laneLabels.graph}
+                    </div>
                     <div className="absolute left-[690px] top-[258px] font-serif text-xs font-bold text-pine/75">
                         {laneLabels.outcome}
                     </div>
 
                     <svg
                         className="pointer-events-none absolute inset-0 h-full w-full"
-                        viewBox="0 0 1160 760"
+                        viewBox="0 0 1280 760"
                         fill="none"
                         aria-hidden="true"
                     >

@@ -289,7 +289,7 @@ async def recall_knowledge_graph(
     enabled = bool(_config_value(config, "enabled"))
     if not enabled:
         result = _empty_result(enabled=False)
-        writer({"type": "progress", "step": step, "status": "completed"})
+        writer({"type": "progress", "step": step, "status": "success"})
         return result
 
     seed_ids = _seed_node_ids(state)
@@ -308,11 +308,18 @@ async def recall_knowledge_graph(
         or not release_version
     ):
         result = _empty_result(enabled=True, degraded=True, seed_count=len(seed_ids))
-        writer({"type": "progress", "step": step, "status": "degraded"})
+        writer(
+            {
+                "type": "progress",
+                "step": step,
+                "status": "success",
+                "message": "知识图谱不可用，已降级为空证据",
+            }
+        )
         return result
     if not seed_ids:
         result = _empty_result(enabled=True, seed_count=0)
-        writer({"type": "progress", "step": step, "status": "completed"})
+        writer({"type": "progress", "step": step, "status": "success"})
         return result
 
     try:
@@ -377,7 +384,7 @@ async def recall_knowledge_graph(
                 "path_count": len(filtered_paths),
             },
         }
-        writer({"type": "progress", "step": step, "status": "completed"})
+        writer({"type": "progress", "step": step, "status": "success"})
         return result
     except Exception as error:
         logger.warning(
@@ -387,5 +394,12 @@ async def recall_knowledge_graph(
             type(error).__name__,
         )
         result = _empty_result(enabled=True, degraded=True, seed_count=len(seed_ids))
-        writer({"type": "progress", "step": step, "status": "degraded"})
+        writer(
+            {
+                "type": "progress",
+                "step": step,
+                "status": "success",
+                "message": "知识图谱召回失败，已降级为空证据",
+            }
+        )
         return result

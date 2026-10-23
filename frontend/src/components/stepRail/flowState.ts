@@ -54,7 +54,8 @@ export function getFlowStatus(
   verified = false,
 ): FlowStatus {
   if (node.id === "route") {
-    return queryMode ? "success" : "pending";
+    // 图谱路径在召回后直接返回业务关系，不经过语义覆盖判断
+    return queryMode === "metric" || queryMode === "sql" ? "success" : "pending";
   }
 
   if (node.id === "metric-validate") {

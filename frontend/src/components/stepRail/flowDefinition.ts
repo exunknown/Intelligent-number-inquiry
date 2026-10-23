@@ -1,20 +1,23 @@
 import type { ProgressStatus } from "../../types/agent";
 
 export type FlowStatus = ProgressStatus | "pending";
-export type FlowLane = "shared" | "metric" | "sql" | "outcome";
+export type FlowLane = "shared" | "metric" | "graph" | "sql" | "outcome";
 
 export type FlowNodeId =
   | "conversation"
   | "keywords"
+  | "intent"
   | "recall-column"
   | "recall-value"
   | "recall-cube"
+  | "kg-recall"
   | "merge"
   | "route"
   | "metric-query"
   | "metric-validate"
   | "cube-execute"
   | "metric-result"
+  | "graph-answer"
   | "graph-result"
   | "sql-security"
   | "schema-size"
@@ -55,16 +58,25 @@ export const FLOW_NODES: readonly FlowNodeDefinition[] = [
     lane: "shared",
     label: "解析会话上下文",
     stepNames: ["解析会话上下文"],
-    x: 82,
+    x: 80,
     y: 54,
-    width: 156,
+    width: 150,
   },
   {
     id: "keywords",
     lane: "shared",
     label: "抽取关键词",
     stepNames: ["抽取关键词"],
-    x: 262,
+    x: 238,
+    y: 54,
+    width: 128,
+  },
+  {
+    id: "intent",
+    lane: "shared",
+    label: "识别查询意图",
+    stepNames: ["识别查询意图"],
+    x: 384,
     y: 54,
     width: 140,
   },
@@ -73,44 +85,53 @@ export const FLOW_NODES: readonly FlowNodeDefinition[] = [
     lane: "shared",
     label: "召回字段",
     stepNames: ["召回字段信息"],
-    x: 430,
+    x: 540,
     y: 54,
-    width: 132,
+    width: 140,
   },
   {
     id: "recall-value",
     lane: "shared",
     label: "召回值域",
     stepNames: ["召回字段取值"],
-    x: 430,
+    x: 540,
     y: 112,
-    width: 132,
+    width: 140,
   },
   {
     id: "recall-cube",
     lane: "shared",
     label: "召回 Cube 成员",
     stepNames: ["召回 Cube 成员"],
-    x: 430,
+    x: 540,
     y: 170,
     width: 156,
+  },
+  {
+    id: "kg-recall",
+    lane: "shared",
+    label: "知识图谱推理",
+    stepNames: ["知识图谱推理"],
+    x: 710,
+    y: 112,
+    width: 150,
   },
   {
     id: "merge",
     lane: "shared",
     label: "合并召回信息",
     stepNames: ["合并召回信息"],
-    x: 628,
+    x: 870,
     y: 112,
-    width: 156,
+    width: 150,
   },
   {
     id: "route",
     lane: "shared",
     label: "语义覆盖判断",
-    x: 820,
+    x: 1052,
     y: 112,
-    width: 156,
+    width: 158,
   },
   {
     id: "metric-query",
@@ -147,10 +168,19 @@ export const FLOW_NODES: readonly FlowNodeDefinition[] = [
     width: 142,
   },
   {
+    id: "graph-answer",
+    lane: "graph",
+    label: "返回业务关系",
+    stepNames: ["返回业务关系"],
+    x: 850,
+    y: 394,
+    width: 150,
+  },
+  {
     id: "graph-result",
     lane: "outcome",
     label: "业务关系结果",
-    x: 690,
+    x: 1030,
     y: 394,
     width: 156,
   },
@@ -257,30 +287,41 @@ export const FLOW_NODES: readonly FlowNodeDefinition[] = [
     lane: "outcome",
     label: "需要补充上下文",
     stepNames: ["澄清会话上下文"],
-    x: 1000,
+    x: 1184,
     y: 178,
-    width: 168,
+    width: 160,
   },
   {
     id: "error",
     lane: "outcome",
     label: "查询失败",
-    x: 1000,
+    x: 1184,
     y: 178,
-    width: 168,
+    width: 160,
   },
 ];
 
 export const FLOW_CONNECTORS: readonly FlowConnector[] = [
-  { id: "conversation-keywords", path: "M160 74 H192", kind: "normal" },
-  { id: "keywords-recall", path: "M332 74 H370", kind: "normal" },
-  { id: "recall-column-merge", path: "M496 74 H560 V132 H550", kind: "normal" },
-  { id: "recall-value-merge", path: "M496 132 H550", kind: "normal" },
-  { id: "recall-cube-merge", path: "M496 190 H560 V132 H550", kind: "normal" },
-  { id: "merge-route", path: "M706 132 H742", kind: "normal" },
+  { id: "conversation-keywords", path: "M155 76 H170", kind: "normal" },
+  { id: "keywords-intent", path: "M302 76 H312", kind: "normal" },
+  { id: "intent-recall", path: "M454 76 H468", kind: "normal" },
+  { id: "recall-column-kg", path: "M610 76 H622 V128 H633", kind: "normal" },
+  { id: "recall-value-kg", path: "M610 134 H633", kind: "normal" },
+  { id: "recall-cube-kg", path: "M618 192 H628 V140 H633", kind: "normal" },
+  { id: "kg-merge", path: "M785 134 H793", kind: "normal" },
+  { id: "merge-route", path: "M945 134 H971", kind: "normal" },
+  {
+    id: "kg-graph-answer",
+    path: "M710 156 V240 H850 V394",
+    kind: "branch",
+    label: "纯关系查询",
+    labelX: 718,
+    labelY: 232,
+  },
+  { id: "graph-answer-result", path: "M925 416 H950", kind: "normal" },
   {
     id: "route-metric",
-    path: "M898 156 V276 H126 V298",
+    path: "M1052 156 V276 H126 V298",
     kind: "branch",
     label: "命中受治理指标",
     labelX: 280,
@@ -288,19 +329,11 @@ export const FLOW_CONNECTORS: readonly FlowConnector[] = [
   },
   {
     id: "route-sql",
-    path: "M898 156 V452 H126 V474",
+    path: "M1052 156 V452 H126 V474",
     kind: "branch",
     label: "语义未覆盖且允许 SQL fallback",
-    labelX: 720,
+    labelX: 140,
     labelY: 440,
-  },
-  {
-    id: "route-graph",
-    path: "M898 156 V370 H690 V394",
-    kind: "branch",
-    label: "业务关系查询",
-    labelX: 904,
-    labelY: 352,
   },
   { id: "metric-query-validate", path: "M210 320 H234", kind: "normal" },
   { id: "metric-validate-cube", path: "M402 320 H439", kind: "normal" },
@@ -347,18 +380,18 @@ export const FLOW_CONNECTORS: readonly FlowConnector[] = [
   { id: "run-result", path: "M1016 650 V680", kind: "normal" },
   {
     id: "clarification-end",
-    path: "M898 156 V200 H916",
+    path: "M1052 156 V200 H1102",
     kind: "branch",
     label: "需要澄清",
-    labelX: 916,
+    labelX: 1058,
     labelY: 170,
   },
   {
     id: "error-end",
-    path: "M898 156 V200 H916",
+    path: "M1052 156 V200 H1102",
     kind: "branch",
     label: "执行失败",
-    labelX: 916,
+    labelX: 1058,
     labelY: 190,
   },
 ];
